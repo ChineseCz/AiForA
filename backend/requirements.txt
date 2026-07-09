@@ -1,0 +1,19 @@
+# API 容器依赖（不含 playwright / 浏览器 —— 抓取任务在 Windows 宿主 worker 跑，见 requirements-host.txt）
+fastapi>=0.111
+uvicorn[standard]>=0.30
+pydantic>=2.7
+pydantic-settings>=2.3
+SQLAlchemy[asyncio]>=2.0.30
+asyncpg>=0.29
+psycopg[binary]>=3.1          # 仅迁移脚本用 COPY
+alembic>=1.13
+redis>=5.0
+markdown>=3.5
+requests>=2.31               # /api/stock/news 实时抓取
+pypinyin>=0.50               # 板块名拼音缩写
+openai>=1.40                 # summarizer（Phase 2 worker 用）
+celery>=5.4                  # worker/queues（Phase 2）
+PyJWT>=2.8                   # 管理员 JWT（Phase 3）
+bcrypt>=4.1                  # 管理员密码哈希（Phase 3）
+slowapi>=0.1.9               # 限流（Phase 3，Redis 存储，多实例共享）
+prometheus-fastapi-instrumentator>=7.0  # /metrics 可观测性（Phase 5）

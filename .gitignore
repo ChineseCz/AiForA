@@ -1,8 +1,31 @@
+# ===== 密钥 / 数据 / 本地产物（勿提交）=====
 .env
+.env.*
+!.env.example
 data/
 reports/
+backups/
+*.log
+
+# ===== Python =====
 __pycache__/
 *.pyc
 .venv/
 venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# ===== Node / 前端 =====
+node_modules/
+dist/
+.vite/
+
+# ===== 编辑器 =====
 .idea/
+.vscode/
+
+# 构建产物
+*.tsbuildinfo
+vite.config.js
+vite.config.d.ts

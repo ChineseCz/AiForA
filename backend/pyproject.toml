@@ -1,0 +1,17 @@
+[project]
+name = "natapp-backend"
+version = "0.1.0"
+description = "雪球大V看板 + A股选股 —— FastAPI 后端（Phase 1）"
+requires-python = ">=3.11"
+readme = "README.md"
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

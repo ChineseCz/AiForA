@@ -1,0 +1,112 @@
+# Phase 1：postgres + redis + api。
+# worker/beat 在 Phase 2 启用；其中「浏览器队列」worker（抓取/K线回补）跑在 Windows 宿主，
+# 不在此 compose 里 —— 它连本文件发布到宿主的 5432/6379 端口。
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-natapp}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-natapp}
+      POSTGRES_DB: ${POSTGRES_DB:-natapp}
+    ports:
+      - "5433:5432"          # 发布到宿主 5433（本机 5432 已被其它项目占用），供本地开发 + Phase 2 宿主 worker 连接
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-natapp}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # PgBouncer（Phase 5）：事务级连接池，收敛到 Postgres 的真实连接数（横向扩展多 API 实例时的护栏）。
+  # 默认不强制走它：api/worker 仍连 postgres 直连；要启用，把它们的 DATABASE_URL 主机改成 pgbouncer:5432
+  # （容器网络内 pgbouncer 监听 5432；宿主经发布端口 6432 访问）。
+  # asyncpg 经事务池需 statement_cache_size=0（已在 app/core/db.py 设置）。
+  pgbouncer:
+    image: edoburu/pgbouncer:latest
+    environment:
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_USER: ${POSTGRES_USER:-natapp}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-natapp}
+      DB_NAME: ${POSTGRES_DB:-natapp}
+      POOL_MODE: transaction
+      MAX_CLIENT_CONN: "1000"
+      DEFAULT_POOL_SIZE: "25"
+      AUTH_TYPE: plain
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "6432:5432"          # edoburu/pgbouncer 容器内监听 5432
+
+  redis:
+    image: redis:7
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6380:6379"          # 宿主 6380（本机 6379 已被其它项目占用）
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-natapp}:${POSTGRES_PASSWORD:-natapp}@postgres:5432/${POSTGRES_DB:-natapp}
+      REDIS_URL: redis://redis:6379/0
+    env_file:
+      - .env
+    ports:
+      - "8088:8000"          # 宿主 8088（8000 已被其它项目的 portainer 占用）
+
+  # ===== Phase 2：容器化 worker + beat（消费 default/llm 队列）=====
+  worker:
+    build: .
+    command: celery -A app.workers.celery_app worker -Q default,llm --concurrency=4 --loglevel=info
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-natapp}:${POSTGRES_PASSWORD:-natapp}@postgres:5432/${POSTGRES_DB:-natapp}
+      REDIS_URL: redis://redis:6379/0
+    env_file:
+      - .env
+
+  beat:
+    build: .
+    command: celery -A app.workers.celery_app beat --loglevel=info
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-natapp}:${POSTGRES_PASSWORD:-natapp}@postgres:5432/${POSTGRES_DB:-natapp}
+      REDIS_URL: redis://redis:6379/0
+    env_file:
+      - .env
+
+  # 浏览器队列 worker 不在这里 —— 依赖真实可见 Edge，在 Windows 宿主机运行（连本 compose 发布的 5433/6380）：
+  #   cd backend && pip install -r requirements-host.txt
+  #   celery -A app.workers.celery_app worker -Q browser --pool=solo --loglevel=info
+
+  # ===== Phase 4：前端（Nginx 托管静态产物 + 同源反代 /api → api:8000）=====
+  frontend:
+    build: ../frontend
+    depends_on:
+      - api
+    ports:
+      - "8090:80"          # 浏览器访问 http://localhost:8090
+
+volumes:
+  pgdata:
+  redisdata:

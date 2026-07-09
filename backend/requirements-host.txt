@@ -1,0 +1,7 @@
+# Windows 宿主 worker 依赖（Phase 2）：跑 QUEUE_BROWSER 队列的抓取 / K线回补任务。
+# 这些任务驱动真实可见的 Edge，无法容器化，必须在宿主机运行，连 Docker 里发布出来的 PG/Redis。
+# 用法（Phase 2）：pip install -r requirements-host.txt，然后
+#   celery -A app.workers.celery_app worker -Q browser --pool=solo
+-r requirements.txt
+playwright>=1.40
+beautifulsoup4>=4.12
