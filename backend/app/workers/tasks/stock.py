@@ -17,6 +17,38 @@ def task_stock_sync(source: str = "手动", job_id: int | None = None) -> int:
     return n
 
 
+# A股交易时段（含集合竞价），只在工作日的这两段时间内派发定时同步；不做节假日日历——
+# 节假日照样会派发但新浪快照数据没变化，多算一次预计算不影响正确性，只是浪费一点计算量。
+_TRADING_WINDOWS = [((9, 15), (11, 30)), ((13, 0), (15, 5))]
+
+
+def _in_trading_hours(now) -> bool:
+    if now.weekday() >= 5:
+        return False
+    hm = (now.hour, now.minute)
+    return any(start <= hm <= end for start, end in _TRADING_WINDOWS)
+
+
+@celery_app.task(name="stock.auto_sync_tick", queue=QUEUE_DEFAULT)
+def task_auto_sync_tick() -> None:
+    """全市场行情定时同步（每10分钟一次，见 celery_app.py 的 beat_schedule）。
+
+    只在交易时段内派发；若上一轮 stock_sync 或其触发的 recompute_indicators（全表重算）
+    还没跑完就跳过本轮——避免行情接口偶发变慢时任务在队列里越堆越多。
+    """
+    from datetime import datetime
+
+    from app.repositories import jobs
+
+    now = datetime.now()
+    if not _in_trading_hours(now):
+        return
+    if jobs.is_running("stock_sync") or jobs.is_running("recompute_indicators"):
+        print("… 上一轮行情同步/指标重算尚未结束，本轮跳过 …")
+        return
+    task_stock_sync.delay(source="定时(10分钟)")
+
+
 @celery_app.task(name="stock.recompute_indicators", queue=QUEUE_DEFAULT)
 def task_recompute_indicators(source: str = "手动", job_id: int | None = None) -> int:
     from app.services import indicator_precompute
