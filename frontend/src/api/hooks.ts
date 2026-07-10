@@ -59,7 +59,7 @@ export interface ScreenBody {
   conditions?: Condition[];
   name_query?: string;
   limit?: number;
-  mentioned?: { enabled: boolean; days: number; user_id: string };
+  mentioned?: { enabled: boolean; days: number; user_id: string; bullish_only?: boolean };
   sector?: { enabled: boolean; mode: string; names: string[]; days: number; user_id: string };
 }
 export const useScreen = () =>

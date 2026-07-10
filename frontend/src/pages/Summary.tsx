@@ -1,8 +1,10 @@
-import { Button, Card, Col, Empty, Input, List, Row, Select, Space, Tabs, Typography, message } from "antd";
+import { Button, Card, Collapse, Empty, Input, List, Select, Space, Tabs, Typography, message, theme } from "antd";
 import { useEffect, useState } from "react";
 
 import { errMsg } from "@/api/client";
 import { useAsk, useSummary, useSummaryKeys, useUsers } from "@/api/hooks";
+import MarkdownContent from "@/components/MarkdownContent";
+import { usePageContext } from "@/pageContext";
 
 const TABS = [
   { key: "daily", label: "日" }, { key: "weekly", label: "周" }, { key: "monthly", label: "月" },
@@ -10,14 +12,18 @@ const TABS = [
 ];
 
 export default function Summary() {
+  const { token } = theme.useToken();
   const { data: users } = useUsers();
   const [user, setUser] = useState<string>("");
   const [type, setType] = useState("daily");
   const [key, setKey] = useState("");
   const [question, setQuestion] = useState("");
+  const [listOpen, setListOpen] = useState(false);
 
   useEffect(() => {
-    if (!user && users?.length) setUser(users[0].id);
+    if (user || !users?.length) return;
+    const preferred = users.find((u) => u.name === "冰冰小美");
+    setUser((preferred ?? users[0]).id);
   }, [users, user]);
 
   const { data: keys } = useSummaryKeys(user, type);
@@ -25,6 +31,12 @@ export default function Summary() {
   const ask = useAsk();
 
   useEffect(() => { setKey(keys?.[0] ?? ""); }, [keys, type, user]);
+
+  const userName = users?.find((u) => u.id === user)?.name;
+  usePageContext(
+    `用户在"AI总结"页，看的是大V「${userName ?? user}」的${type}总结，当前日期/期号：${key || "（未选）"}。` +
+    (summary?.found ? `总结正文（markdown原文）：\n${summary.raw?.slice(0, 1500) ?? ""}` : "这份总结还没生成或为空。"),
+  );
 
   const doAsk = () => {
     if (!question.trim()) return;
@@ -43,30 +55,36 @@ export default function Summary() {
       }
     >
       <Tabs activeKey={type} onChange={setType} items={TABS.map((t) => ({ ...t, children: null }))} />
-      <Row gutter={16}>
-        <Col span={6}>
-          <List
-            size="small" bordered style={{ maxHeight: 480, overflow: "auto" }}
-            dataSource={keys ?? []}
-            locale={{ emptyText: "无总结，去后台生成" }}
-            renderItem={(k) => (
-              <List.Item
-                onClick={() => setKey(k)}
-                style={{ cursor: "pointer", background: k === key ? "#e6f0ff" : undefined }}
-              >
-                {k}
-              </List.Item>
-            )}
-          />
-        </Col>
-        <Col span={18}>
-          {summary?.found ? (
-            <div className="markdown-body" dangerouslySetInnerHTML={{ __html: summary.html }} />
-          ) : (
-            <Empty description="选择左侧日期查看总结；若为空，请在管理后台生成" />
-          )}
-        </Col>
-      </Row>
+      <Collapse
+        size="small"
+        style={{ marginBottom: 16 }}
+        activeKey={listOpen ? ["dates"] : []}
+        onChange={(k) => setListOpen((k as string[]).includes("dates"))}
+        items={[{
+          key: "dates",
+          label: key ? `日期：${key}` : "选择日期",
+          children: (
+            <List
+              size="small" style={{ maxHeight: 360, overflow: "auto" }}
+              dataSource={keys ?? []}
+              locale={{ emptyText: "无总结，去后台生成" }}
+              renderItem={(k) => (
+                <List.Item
+                  onClick={() => { setKey(k); setListOpen(false); }}
+                  style={{ cursor: "pointer", background: k === key ? token.colorPrimaryBg : undefined }}
+                >
+                  {k}
+                </List.Item>
+              )}
+            />
+          ),
+        }]}
+      />
+      {summary?.found ? (
+        <MarkdownContent className="markdown-body" html={summary.html} />
+      ) : (
+        <Empty description="点击上方展开选择日期查看总结；若为空，请在管理后台生成" />
+      )}
 
       <Card type="inner" title="向 AI 提问（基于当前总结）" style={{ marginTop: 16 }}>
         <Space.Compact style={{ width: "100%" }}>
@@ -78,8 +96,7 @@ export default function Summary() {
           <Button type="primary" loading={ask.isPending} onClick={doAsk} disabled={!summary?.found}>提问</Button>
         </Space.Compact>
         {ask.data && (
-          <div className="markdown-body" style={{ marginTop: 12 }}
-            dangerouslySetInnerHTML={{ __html: ask.data.html }} />
+          <MarkdownContent className="markdown-body" style={{ marginTop: 12 }} html={ask.data.html} />
         )}
       </Card>
     </Card>

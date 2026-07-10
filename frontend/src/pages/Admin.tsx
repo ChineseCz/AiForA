@@ -1,6 +1,6 @@
 import {
-  Alert, Button, Card, Col, DatePicker, Form, Input, InputNumber, Row, Select, Space, Switch,
-  Tag, Typography, message,
+  Alert, Button, Card, Checkbox, Col, DatePicker, Form, Input, InputNumber,
+  Row, Select, Space, Switch, Tag, Typography, message,
 } from "antd";
 import dayjs, { type Dayjs } from "dayjs";
 import { useEffect, useState } from "react";
@@ -108,8 +108,9 @@ function SummarizePanel() {
   const [type, setType] = useState("daily");
   const [user, setUser] = useState<string>("");
   const [range, setRange] = useState<[Dayjs | null, Dayjs | null] | null>(null);
+  const [regen, setRegen] = useState(false);
   const body = {
-    type, user,
+    type, user, regen,
     start: range?.[0] ? range[0].format("YYYY-MM-DD") : "",
     end: range?.[1] ? range[1].format("YYYY-MM-DD") : "",
   };
@@ -121,6 +122,9 @@ function SummarizePanel() {
         <Select allowClear placeholder="全部大V" style={{ width: 160 }} value={user || undefined}
           onChange={(v) => setUser(v || "")} options={users?.map((u) => ({ value: u.id, label: u.name }))} />
         <DatePicker.RangePicker value={range as never} onChange={(v) => setRange(v as never)} />
+        <Checkbox checked={regen} onChange={(e) => setRegen(e.target.checked)}>
+          强制重新生成（覆盖范围内已有的总结）
+        </Checkbox>
       </Space>
       <JobPanelInline kind="summarize" triggerPath="/api/summarize" statusPath="/api/summarize/status" body={body} />
     </Card>
@@ -157,8 +161,8 @@ export default function Admin({ login }: { login?: boolean }) {
       <Alert type="info"
         message="抓取 / 历史K线回补依赖真实浏览器，需在 Windows 宿主的 browser 队列 worker 上运行；此处触发的这两项会进入队列等待宿主 worker 消费。" />
 
-      <Row gutter={16}>
-        <Col span={12}>
+      <Row gutter={[16, 16]}>
+        <Col xs={24} md={12}>
           <Typography.Title level={5}>数据同步</Typography.Title>
           <JobPanel title="行情快照同步" desc="全市场A股最新行情快照" kind="stock_sync"
             triggerPath="/api/stock/sync" statusPath="/api/stock/sync/status" />
@@ -171,7 +175,7 @@ export default function Admin({ login }: { login?: boolean }) {
           <JobPanel title="历史K线回补（宿主队列）" desc="均线类策略依赖，需宿主 worker" kind="stock_backfill"
             triggerPath="/api/stock/backfill" statusPath="/api/stock/backfill/status" body={{ days: 60 }} />
         </Col>
-        <Col span={12}>
+        <Col xs={24} md={12}>
           <Typography.Title level={5}>采集与总结</Typography.Title>
           <JobPanel title="雪球采集（宿主队列）" desc="抓取大V新帖，需宿主 worker（真实 Edge）" kind="crawl"
             triggerPath="/api/crawl" statusPath="/api/crawl/status" body={{ summarize: true }} />
