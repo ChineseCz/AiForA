@@ -1,18 +1,23 @@
 import {
-  DashboardOutlined, FileTextOutlined, FundOutlined, RadarChartOutlined, SettingOutlined,
+  BulbFilled, BulbOutlined, DashboardOutlined, FileTextOutlined, FundOutlined,
+  MenuOutlined, RadarChartOutlined, SettingOutlined,
 } from "@ant-design/icons";
-import { Layout, Menu, Typography } from "antd";
+import { Button, Drawer, Grid, Layout, Menu, theme, Typography } from "antd";
+import { useState } from "react";
 import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 
 import { useAuth } from "./auth";
+import FeibiWidget from "./components/FeibiWidget";
 import Admin from "./pages/Admin";
 import Dashboard from "./pages/Dashboard";
 import Posts from "./pages/Posts";
 import Screener from "./pages/Screener";
 import StockDetail from "./pages/StockDetail";
 import Summary from "./pages/Summary";
+import { useThemeMode } from "./theme";
 
-const { Sider, Content } = Layout;
+const { Sider, Content, Header } = Layout;
+const { useBreakpoint } = Grid;
 
 const NAV = [
   { key: "/", icon: <DashboardOutlined />, label: "看板" },
@@ -28,30 +33,62 @@ function RequireAdmin({ children }: { children: JSX.Element }) {
   return loggedIn ? children : <Navigate to="/admin/login" replace state={{ from: loc.pathname }} />;
 }
 
+function Brand() {
+  return (
+    <div style={{ padding: "18px 16px" }}>
+      <Typography.Title level={4} style={{ margin: 0 }}>
+        雪球看板
+      </Typography.Title>
+      <Typography.Text type="secondary" style={{ fontSize: 12 }}>Xueqiu Insight</Typography.Text>
+    </div>
+  );
+}
+
 export default function App() {
   const nav = useNavigate();
   const loc = useLocation();
+  const { loggedIn } = useAuth();
   const selected = "/" + (loc.pathname.split("/")[1] || "");
+  const screens = useBreakpoint();
+  const isMobile = !screens.lg;
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const { mode, toggle } = useThemeMode();
+  const navTheme = mode === "dark" ? "dark" : "light";
+  // Layout.Header 的默认背景是固定的深色 token（不随亮暗算法变），得自己接管颜色
+  const { token } = theme.useToken();
+
+  const navMenu = (
+    <Menu
+      theme={navTheme}
+      mode="inline"
+      selectedKeys={[selected === "/" ? "/" : selected]}
+      items={NAV}
+      onClick={(e) => { nav(e.key); setDrawerOpen(false); }}
+    />
+  );
 
   return (
     <Layout style={{ minHeight: "100vh" }}>
-      <Sider theme="dark" width={200} breakpoint="lg" collapsedWidth={0}>
-        <div style={{ padding: "18px 16px", color: "#fff" }}>
-          <Typography.Title level={4} style={{ color: "#fff", margin: 0 }}>
-            雪球看板
-          </Typography.Title>
-          <Typography.Text style={{ color: "#8ea0b5", fontSize: 12 }}>Xueqiu Insight</Typography.Text>
-        </div>
-        <Menu
-          theme="dark"
-          mode="inline"
-          selectedKeys={[selected === "/" ? "/" : selected]}
-          items={NAV}
-          onClick={(e) => nav(e.key)}
-        />
-      </Sider>
+      {!isMobile && (
+        <Sider theme={navTheme} width={200}>
+          <Brand />
+          {navMenu}
+        </Sider>
+      )}
       <Layout>
-        <Content style={{ padding: 20, overflow: "auto" }}>
+        <Header className="app-header" style={{ background: token.colorBgContainer, borderBottom: `1px solid ${token.colorBorderSecondary}` }}>
+          {isMobile && (
+            <Button type="text" icon={<MenuOutlined />} onClick={() => setDrawerOpen(true)} />
+          )}
+          <Typography.Text strong className="app-header-title">雪球看板 · Xueqiu Insight</Typography.Text>
+          <Button
+            type="text"
+            icon={mode === "dark" ? <BulbOutlined /> : <BulbFilled />}
+            onClick={toggle}
+            title={mode === "dark" ? "切换为浅色主题" : "切换为深色主题"}
+          />
+        </Header>
+        <Content style={{ padding: isMobile ? 12 : 20, overflow: "auto" }}>
           <Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/posts" element={<Posts />} />
@@ -64,6 +101,18 @@ export default function App() {
           </Routes>
         </Content>
       </Layout>
+      <Drawer
+        placement="left"
+        open={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        width={220}
+        styles={{ body: { padding: 0 } }}
+        closeIcon={null}
+        title={<Brand />}
+      >
+        {navMenu}
+      </Drawer>
+      {loggedIn && <FeibiWidget />}
     </Layout>
   );
 }

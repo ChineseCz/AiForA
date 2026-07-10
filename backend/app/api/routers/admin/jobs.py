@@ -77,6 +77,30 @@ async def summarize_status(session: AsyncSession = Depends(db_session)):
     return await jobs.get_latest_state(session, "summarize")
 
 
+@router.post("/feibi/ask")
+async def feibi_ask(request: Request):
+    from app.services import summarizer
+    body = await _json_body(request)
+    question = str(body.get("question") or "").strip()
+    if not question:
+        return JSONResponse({"error": "说点什么嘛"}, status_code=400)
+    raw_history = body.get("history") or []
+    # 只信任 role/content 两个字段，且只认 user/assistant——不把前端传来的东西直接转发给 LLM API。
+    # 最多留最近 20 轮，够聊了，也别把 prompt 喂得没边。
+    history = [
+        {"role": h["role"], "content": str(h["content"])[:2000]}
+        for h in raw_history if isinstance(h, dict) and h.get("role") in ("user", "assistant") and h.get("content")
+    ][-20:]
+    # 前端各页面自己拼的一小段"我在看什么"（比如"当前在选股页，已筛出 xx 只"），只是文本提示，
+    # 不当结构化数据信任——截断长度防止有人把这个字段塞爆当 prompt 注入。
+    page_context = str(body.get("page_context") or "").strip()[:1000]
+    try:
+        answer = await run_in_threadpool(summarizer.ask_feibi, history, question, page_context)
+    except Exception as e:  # noqa: BLE001
+        return JSONResponse({"error": str(e)}, status_code=500)
+    return {"answer": answer}
+
+
 @router.post("/summary/ask")
 async def summary_ask(request: Request, session: AsyncSession = Depends(db_session)):
     from app.services import summarizer
