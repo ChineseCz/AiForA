@@ -12,6 +12,7 @@ __pycache__/
 *.pyc
 .venv/
 venv/
+.venv-host/
 *.egg-info/
 .pytest_cache/
 .ruff_cache/
