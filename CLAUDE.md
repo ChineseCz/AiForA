@@ -9,7 +9,7 @@
 - **后端 `backend/`（FastAPI）**：异步 SQLAlchemy 2.0(asyncpg) 轻量读 + 同步引擎(psycopg)跑重计算(选股/K线，`run_in_threadpool`)。
 - **PostgreSQL**：主库（migration 见 `backend/alembic/`，0001 建 11 表，0002 admins，0003 预计算指标表）。
 - **Redis**：读缓存（dataver 版本号失效）+ Celery broker + slowapi 限流存储。
-- **Celery**：9 任务 / 3 队列 —— `default`/`llm` 容器化 worker；`browser`（雪球抓取 + K线回补，依赖真实 Edge）**只能在 Windows 宿主 worker 跑**。beat 每 60s 读 `schedules` 表决定采集。
+- **Celery**：10 任务 / 3 队列 —— `default`/`llm` 容器化 worker；`browser`（雪球抓取 + K线回补，依赖真实 Edge）**只能在 Windows 宿主 worker 跑**。beat 每 60s 读 `schedules` 表决定采集帖子；另有固定 600s 周期任务 `stock.auto_sync_tick` 驱动全市场行情同步（不经 schedules 表，任务内部按交易时段自行判断是否跳过）；周三/周日20:00 crontab 直接复用 `summarize.run`（`ptype=weekly`）生成全部大V本周周总结。
 - **PgBouncer**：事务级连接池（asyncpg 需 `statement_cache_size=0`，已设）。
 - **前端 `frontend/`（React+Vite+TS+Ant Design+TanStack Query+ECharts）**：6 页面；Nginx 多阶段构建 + 同源反代 `/api`。
 
@@ -33,9 +33,11 @@
 - **忠实移植 + 对拍**：`sync_data.py`/`services/*` 是旧 `stock.py`/`db.py` 的移植，返回 dict 键与旧库一致；读接口刻意返回原生 dict（不套 Pydantic）以与旧 Flask 逐字节对齐。改选股/指标逻辑后务必保证预计算快路径与现算结果一致。
 - **缓存失效**：数据同步任务末尾 `cache.bump_dataver_sync()`（一次 INCR），读接口 key 内嵌 dataver。
 - **预计算**：`stock_indicator` 表由 `recompute_indicators` 任务在快照/回补后重算；选股优先读它（`_fresh_indicators()`），表不新鲜则回退现算。别让选股请求再触发全量历史循环。
+- **秒级行情 ≠ 日级指标**：个股详情页 `GET /api/stock/quote`（`hq.sinajs.cn` 单股查询，1s 短TTL缓存兜底防打爆上游）只用于前端合并展示"今天这根K线"的 close/high/low/volume，MA/MACD/KDJ 等指标仍是日级值不随之重算——别把这俩缓存机制混在一起，`quote` 不走 dataver 版本失效。
 - **浏览器任务隔离**：`scraper.py`/`kline.py` 不进 API 镜像；抓取/回补进 `QUEUE_BROWSER`，宿主 worker 消费。
 - **K线前复权**：新浪K线是不复权价，`kline.py` 回补时用 `sina.fetch_qfq_factors` + `adjust.compute_qfq` 转前复权再落库；`save_history_bars` 写入语义是整行覆盖 OHLC（不是只补空），因为复权价会随未来除权事件变化。改这块务必保证预计算指标表联动重算。
 - **跨路由存活的前端单例**：Live2D 挂载状态(`live2d.ts`)、菲比上下文(`pageContext.ts`)、选股页状态(`screenerState.ts`) 都用模块级单例（不进 React 树），因为要跨路由跳转存活；改动时手动同步 `useEffect`，别指望 Context/Provider 语义。
+- **抓取后按需重新生成当日总结**：`xueqiu.crawl_all()` 返回 `{user_id: (user_name, 新增条数)}`；`task_crawl` 只给"本次真有新帖"的大V派发 `task_summarize_daily_one(regen=True)`——`ensure_daily` 默认命中缓存不重算，没有新帖子的大V不用无脑重跑 LLM，有新帖子的大V也不会因为当天已生成过一次就看不到更新。
 
 ## 本机运行（docker compose，7 服务）
 
