@@ -14,14 +14,14 @@ def task_crawl(source: str = "手动", summarize: bool = True, job_id: int | Non
 
     from app.scrapers import xueqiu
     with job_run("crawl", source, invalidate_cache=True, job_id=job_id):
-        xueqiu.crawl_all()
-        if summarize:
-            # 采集后生成当日日总结（复用 LLM 队列任务，异步派发，不阻塞抓取任务收尾）
-            from app.repositories import sync_data as db
+        updated = xueqiu.crawl_all()
+        if summarize and updated:
+            # 只给"本次真的抓到新帖子"的大V重新生成当日总结，且强制 regen——否则当天已生成过一次
+            # 总结的大V，即使后续抓到了新帖子，ensure_daily 命中缓存也不会重新生成，页面看不出变化。
             today = date.today().isoformat()
-            print("… 派发今日总结任务 …")
-            for uid, uname in db.get_distinct_users():
-                task_summarize_daily_one.delay(uid, uname, today)
+            print(f"… 派发今日总结任务（{len(updated)} 位大V有新帖）…")
+            for uid, (uname, n) in updated.items():
+                task_summarize_daily_one.delay(uid, uname, today, regen=True)
             print("✅ 今日总结任务已派发")
 
 
@@ -37,12 +37,12 @@ def task_backfill(days: int = 60, delay: float = 0.5, source: str = "手动", jo
 
 # 在此声明以便 crawl 派发；真正实现见 tasks/summarize.py，避免循环导入用延迟引用
 @celery_app.task(name="summarize.daily_one", queue="llm")
-def task_summarize_daily_one(user_id: str, user_name: str, date_str: str) -> None:
+def task_summarize_daily_one(user_id: str, user_name: str, date_str: str, regen: bool = False) -> None:
     from datetime import datetime
 
     from app.services import summaries_build
     from app.workers.runner import job_run as _jr
-    with _jr("summarize", "自动(采集后)"):
+    with _jr("summarize", "自动(采集后)", invalidate_cache=True):
         d = datetime.strptime(date_str, "%Y-%m-%d").date()
-        content = summaries_build.ensure_daily(user_id, user_name, d)
+        content = summaries_build.ensure_daily(user_id, user_name, d, regen=regen)
         print(f"  {user_name} {date_str}: {'✅' if content else '无帖子跳过'}")

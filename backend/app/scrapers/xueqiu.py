@@ -297,17 +297,21 @@ def crawl_user(ctx, user: str, since=None, until=None) -> tuple[str, str, int, i
     return user_id, user_name, new_count, blocked, stopped_by_block
 
 
-def crawl_all(since=None, until=None) -> None:
+def crawl_all(since=None, until=None) -> dict[str, tuple[str, int]]:
+    """返回 {user_id: (user_name, 本次新增条数)}，仅含新增>0的大V——供调用方决定
+    "谁需要重新生成当天总结"，避免没有新帖子也无脑重跑一遍 LLM。
+    """
     from playwright.sync_api import sync_playwright
 
     users = db.get_enabled_xueqiu_users()
     if not users:
         print("⚠️  xueqiu_users 表里没有启用的大V，无可抓取对象。")
-        return
+        return {}
     if since or until:
         print(f"📅 只抓时间段：{since or '最早'} ~ {until or '至今'}")
     print("🚀 启动浏览器，开始采集…")
     total_blocked = 0
+    updated: dict[str, tuple[str, int]] = {}
     with sync_playwright() as p:
         ctx = open_context(p)
         try:
@@ -318,6 +322,8 @@ def crawl_all(since=None, until=None) -> None:
                 try:
                     uid, uname, n, blocked, stopped = crawl_user(ctx, user, since, until)
                     total_blocked += blocked
+                    if n > 0 and uid:
+                        updated[uid] = (uname, n)
                     msg = f"✅ {uname or uid}（{uid}）：新增 {n} 条"
                     if blocked:
                         msg += f"；⚠️ 被 WAF 拦截 {blocked} 次"
@@ -333,6 +339,7 @@ def crawl_all(since=None, until=None) -> None:
                 pass
     if total_blocked:
         print(f"\n⚠️  本次共有 {total_blocked} 次请求被 WAF 拦截，过几分钟重跑可补齐。")
+    return updated
 
 
 def login() -> None:
