@@ -28,6 +28,7 @@ export interface PostItem {
   retweet_count: number;
   reply_count: number;
   fav_count: number;
+  images?: string[];
 }
 
 export interface PostsPage {

@@ -1,6 +1,23 @@
 """帖子相关的异步读仓储（对应旧 db.py 的读函数，返回 dict 键与原来完全一致）。"""
+import json
+
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
+
+
+def _parse_images(raw: str | None) -> list[str]:
+    try:
+        urls = json.loads(raw or "[]")
+    except (ValueError, TypeError):
+        return []
+    # 迁移自旧库的部分行把多个 URL 用逗号拼成了一个字符串再塞进数组（旧格式遗留），拆开兜底
+    out: list[str] = []
+    for u in urls:
+        if isinstance(u, str) and "," in u:
+            out.extend(u.split(","))
+        else:
+            out.append(u)
+    return out
 
 
 async def get_distinct_users(session: AsyncSession) -> list[dict]:
@@ -95,10 +112,15 @@ async def get_posts(
     rows = (await session.execute(text(
         f"""
         SELECT id, user_name, date, created_at, title, text, url,
-               like_count, retweet_count, reply_count, fav_count
+               like_count, retweet_count, reply_count, fav_count, images
         FROM posts {where}
         ORDER BY created_at DESC
         LIMIT :limit OFFSET :offset
         """
     ), {**params, "limit": limit, "offset": offset})).mappings().all()
-    return {"total": total, "items": [dict(r) for r in rows]}
+    items = []
+    for r in rows:
+        d = dict(r)
+        d["images"] = _parse_images(d.get("images"))
+        items.append(d)
+    return {"total": total, "items": items}
