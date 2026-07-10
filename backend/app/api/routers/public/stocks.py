@@ -12,6 +12,22 @@ from app.services.external import sina
 router = APIRouter(prefix="/api")
 
 
+@router.get("/stock/quote")
+async def api_stock_quote(code: str = Query(default=""), c: CacheService = Depends(cache)):
+    """个股实时行情（秒级轮询专用）：不走 dataver 版本失效，用 1s 短TTL 兜底防打爆上游。"""
+    code = code.strip()
+    if not code:
+        return JSONResponse({"error": "缺少股票代码"}, status_code=400)
+    key = f"natapp:quote:{code}"
+    hit = await c.get_json(key)
+    if hit is not None:
+        return hit
+    quote = await run_in_threadpool(sina.fetch_realtime_quote, code)
+    result = quote or {"error": "暂无行情"}
+    await c.set_json(key, result, settings.cache_ttl_quote)
+    return result
+
+
 @router.get("/stock/kline")
 async def api_stock_kline(code: str = Query(default=""), c: CacheService = Depends(cache)):
     code = code.strip()

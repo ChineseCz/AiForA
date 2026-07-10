@@ -1,10 +1,10 @@
-import { ArrowLeftOutlined } from "@ant-design/icons";
-import { Button, Card, Col, Descriptions, Empty, Grid, List, Row, Space, Spin, Tag, Typography } from "antd";
+import { ArrowLeftOutlined, MobileOutlined } from "@ant-design/icons";
+import { Button, Card, Col, Descriptions, Empty, Grid, List, Row, Space, Spin, Tag, Tooltip, Typography } from "antd";
 import ReactECharts from "echarts-for-react";
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { Link, useParams } from "react-router-dom";
 
-import { useFundamentals, useKline, useNews } from "@/api/hooks";
+import { useFundamentals, useKline, useNews, useQuote } from "@/api/hooks";
 import type { KlineBar } from "@/api/types";
 import { usePageContext } from "@/pageContext";
 import { useThemeMode } from "@/theme";
@@ -184,6 +184,7 @@ export default function StockDetail() {
   const { data: kline, isLoading } = useKline(code);
   const { data: fund } = useFundamentals(code);
   const { data: news } = useNews(code);
+  const { data: quote } = useQuote(code);
   const { mode } = useThemeMode();
   const screens = useBreakpoint();
   const isMobile = !screens.md;
@@ -194,7 +195,25 @@ export default function StockDetail() {
   // 当前可见区间 [start,end]（百分比），双指缩放手势需要它算新窗口；随 datazoom 事件更新。
   const rangeRef = useRef({ start: 55, end: 100 });
 
-  const bars = kline?.bars ?? [];
+  // 秒级行情只覆盖"今天这根K线"的 close/high/low/volume，让价格看起来实时跳动；
+  // MA5/MA10/MA20、MACD、KDJ 等指标仍是后端按最近一次快照算好的日级值，不随秒级价格重算——
+  // 这些指标本质是收盘价的日线计算，盘中用最新价重算意义不大，还会造成"信号一会儿出现一会儿消失"的抖动。
+  // 只有当 quote.trade_date 与K线最后一天完全一致时才合并；今天还没做过第一次快照同步（没有"今天"这根
+  // K线）时不合并——不在前端凑一根后端没算过指标的假K线出来。
+  const bars = useMemo(() => {
+    const raw = kline?.bars ?? [];
+    if (!quote || quote.error || !raw.length) return raw;
+    const last = raw[raw.length - 1];
+    if (last.trade_date !== quote.trade_date) return raw;
+    const merged = {
+      ...last,
+      close: quote.close,
+      high: Math.max(last.high, quote.high),
+      low: Math.min(last.low, quote.low),
+      volume: quote.volume ?? last.volume,
+    };
+    return [...raw.slice(0, -1), merged];
+  }, [kline, quote]);
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
   const activeIdx = hoverIdx != null && bars[hoverIdx] ? hoverIdx : bars.length - 1;
   const active = bars[activeIdx];

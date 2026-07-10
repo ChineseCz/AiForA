@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "./client";
 import type {
   Condition, Fundamentals, FieldMeta, GroupItem, JobStatus, KlineView, NewsItem,
-  Overview, PostsPage, ScheduleCfg, ScreenResp, SectorItem, SummaryResp, UserItem,
+  Overview, PostsPage, Quote, ScheduleCfg, ScreenResp, SectorItem, SummaryResp, UserItem,
 } from "./types";
 
 const get = async <T>(url: string, params?: object): Promise<T> =>
@@ -50,6 +50,17 @@ export const useFundamentals = (code: string) =>
 
 export const useNews = (code: string) =>
   useQuery({ queryKey: ["news", code], queryFn: () => get<{ items: NewsItem[] }>("/api/stock/news", { code }), enabled: !!code });
+
+// 秒级轮询实时价格（仅用于合并展示到最后一根K线，不影响 MA/MACD/KDJ 等日级指标）。
+// refetchIntervalInBackground 默认 false：切到后台标签页/锁屏后自动停止轮询，省流量电量。
+export const useQuote = (code: string) =>
+  useQuery({
+    queryKey: ["quote", code],
+    queryFn: () => get<Quote>("/api/stock/quote", { code }),
+    enabled: !!code,
+    refetchInterval: 1000,
+    staleTime: 0,
+  });
 
 export const useGroups = () =>
   useQuery({ queryKey: ["groups"], queryFn: () => get<{ groups: GroupItem[] }>("/api/groups") });

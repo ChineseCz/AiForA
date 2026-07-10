@@ -109,6 +109,45 @@ def fetch_qfq_factors(code: str) -> list[dict]:
     return out
 
 
+_SINA_QUOTE_URL = "https://hq.sinajs.cn/list="
+
+
+def fetch_realtime_quote(code: str) -> dict | None:
+    """单只股票的实时行情（秒级轮询用，走 hq.sinajs.cn，几十毫秒级响应）。
+
+    字段顺序见新浪该接口约定：名称,今开,昨收,最新价,最高,最低,... 第31/32项是日期/时间。
+    失败或该代码当天没有行情（未开盘/停牌无数据）返回 None，调用方原样吞掉不抛错。
+    """
+    symbol = sina_symbol(code)
+    try:
+        r = requests.get(
+            f"{_SINA_QUOTE_URL}{symbol}", timeout=5,
+            headers={"Referer": "https://finance.sina.com.cn"},
+        )
+        r.encoding = "gbk"
+        body = r.text
+    except Exception as e:  # noqa: BLE001
+        print(f"⚠️ 实时行情拉取失败 {code}：{e}")
+        return None
+    m = re.search(r'"([^"]*)"', body)
+    if not m:
+        return None
+    parts = m.group(1).split(",")
+    if len(parts) < 6 or not parts[0]:
+        return None
+    try:
+        return {
+            "code": code, "name": parts[0],
+            "open": float(parts[1]), "pre_close": float(parts[2]),
+            "close": float(parts[3]), "high": float(parts[4]), "low": float(parts[5]),
+            "volume": float(parts[8]) if len(parts) > 8 else None,
+            "trade_date": parts[30] if len(parts) > 30 else "",
+            "time": parts[31] if len(parts) > 31 else "",
+        }
+    except (ValueError, IndexError):
+        return None
+
+
 _SINA_NEWS_URL = "https://vip.stock.finance.sina.com.cn/corp/view/vCB_AllNewsStock.php"
 _NEWS_ITEM_RE = re.compile(
     r"(\d{4}-\d{2}-\d{2})&nbsp;(\d{2}:\d{2})&nbsp;&nbsp;<a target='_blank' href='([^']+)'>([^<]+)</a>"

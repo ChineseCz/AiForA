@@ -120,6 +120,20 @@ export interface KlineView {
   error: string;
 }
 
+export interface Quote {
+  code: string;
+  name: string;
+  open: number;
+  pre_close: number;
+  close: number;
+  high: number;
+  low: number;
+  volume: number | null;
+  trade_date: string;
+  time: string;
+  error?: string;
+}
+
 export interface Fundamentals {
   code: string;
   name: string;

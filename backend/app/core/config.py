@@ -58,6 +58,7 @@ class Settings(BaseSettings):
     cache_ttl_fundamentals: int = 300
     cache_ttl_sectors: int = 3600
     cache_ttl_news: int = 900
+    cache_ttl_quote: int = 1  # 秒级轮询：短TTL，多用户同时看同一只股票也只打一次上游
 
     # ===== CORS（Phase 4 前端用）=====
     cors_origins: list[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]
