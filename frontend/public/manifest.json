@@ -1,0 +1,17 @@
+{
+  "name": "雪球大V看板 · A股选股",
+  "short_name": "雪球看板",
+  "description": "雪球大V帖子AI总结 & A股行情/财务/板块选股",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0d47a1",
+  "theme_color": "#1668dc",
+  "orientation": "portrait-primary",
+  "lang": "zh-CN",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
