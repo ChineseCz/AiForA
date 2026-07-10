@@ -24,6 +24,18 @@ const SIGNALS = [
 const UP = "#e64545";   // A股惯例：红涨绿跌
 const DOWN = "#2ba471";
 
+// 新浪"新闻"资讯里一部分链接来自"新浪看点"域名，是给其 App 用的深链接跳转页——
+// 部分手机系统浏览器（尤其国产定制ROM）打不开对应App时会短暂显示内容后跳转到404。
+// 这不是我们能控制的（链接本身来自新浪），只能提示用户。
+const DEEPLINK_NEWS_HOSTS = ["cj.sina.cn", "t.cj.sina.cn"];
+function isDeepLinkNews(url: string): boolean {
+  try {
+    return DEEPLINK_NEWS_HOSTS.includes(new URL(url).hostname);
+  } catch {
+    return false;
+  }
+}
+
 // 同一根K线可能同时命中多个买点/卖点信号。用固定像素 symbolOffset 把它们错开，
 // 而不是按价格百分比偏移——后者在 dataZoom 缩放时 Y 轴范围会跟着变化，偏移量在屏幕上
 // 忽大忽小，多个信号还会在同一根K线上重合到一起。
@@ -451,6 +463,11 @@ export default function StockDetail() {
                     <a href={n.url} target="_blank" rel="noreferrer">
                       <Typography.Text type="secondary">{n.date}</Typography.Text> {n.title}
                     </a>
+                    {isDeepLinkNews(n.url) && (
+                      <Tooltip title="该链接来自新浪资讯App跳转页，部分手机浏览器可能打不开或短暂显示后404">
+                        <MobileOutlined style={{ marginLeft: 6, color: "#faad14" }} />
+                      </Tooltip>
+                    )}
                   </List.Item>
                 )} />
             ) : <Empty description="暂无新闻" />}
