@@ -1,14 +1,105 @@
 * { box-sizing: border-box; }
 html, body, #root { height: 100%; margin: 0; }
+
+:root {
+  --bg-page: #f5f6f8;
+  --bg-elevated: #fafafa;
+  --border-soft: #f0f0f0;
+  --border-strong: #e5e7eb;
+  --text-primary: #333;
+  --text-secondary: #888;
+  --link-h3: #1668dc;
+}
+[data-theme="dark"] {
+  --bg-page: #101418;
+  --bg-elevated: #1c1f24;
+  --border-soft: #2a2e33;
+  --border-strong: #33373d;
+  --text-primary: #e6e6e6;
+  --text-secondary: #9aa3ad;
+  --link-h3: #4b9eff;
+}
+
 body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
-  background: #f5f6f8;
+  background: var(--bg-page);
 }
 .markdown-body { line-height: 1.7; }
-.markdown-body table { border-collapse: collapse; width: 100%; margin: 12px 0; }
-.markdown-body th, .markdown-body td { border: 1px solid #e5e7eb; padding: 6px 10px; text-align: left; }
+.markdown-body .table-scroll { overflow-x: auto; margin: 12px 0; }
+.markdown-body table { border-collapse: collapse; width: 100%; margin: 0; }
+.markdown-body th, .markdown-body td { border: 1px solid var(--border-strong); padding: 6px 10px; text-align: left; vertical-align: top; }
+.markdown-body td { font-size: 13px; line-height: 1.6; }
+.markdown-body th:first-child, .markdown-body td:first-child { min-width: 90px; }
+.markdown-body th:last-child, .markdown-body td:last-child { min-width: 340px; }
+/* 中间列（方向、代码等）内容都很短，强制不换行——否则列被压窄到极限时，
+   "看多"这种两个字会被拆成竖排单字，而不是一行放两个字 */
+.markdown-body th:not(:first-child):not(:last-child),
+.markdown-body td:not(:first-child):not(:last-child) { white-space: nowrap; }
 .markdown-body img { max-width: 100%; border-radius: 6px; margin: 8px 0; }
 .markdown-body h2 { font-size: 18px; margin-top: 18px; }
-.markdown-body h3 { font-size: 15px; margin-top: 14px; color: #1668dc; }
+.markdown-body h3 { font-size: 15px; margin-top: 14px; color: var(--link-h3); }
 .up { color: #cf1322; }
 .down { color: #389e0d; }
+
+.app-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 12px;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+.app-header-title { flex: 1; margin: 0 4px; }
+
+.stock-infobar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 28px;
+  padding: 10px 14px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+}
+.stock-infobar .cell { font-size: 13px; }
+.stock-infobar .label { color: var(--text-secondary); margin-right: 6px; }
+.stock-infobar .value { color: var(--text-primary); font-weight: 600; }
+
+@media (max-width: 480px) {
+  .stock-infobar { gap: 4px 14px; padding: 8px 10px; }
+  .stock-infobar .cell { font-size: 12px; }
+  .app-header { padding: 0 8px; }
+}
+
+/* 帖子流信息流卡片，仿雪球动态列表；桌面/手机通用，图片在宽屏下大一点 */
+.post-card {
+  padding: 12px 4px;
+  border-bottom: 1px solid var(--border-soft);
+}
+.post-card:last-child { border-bottom: none; }
+.post-card-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.post-avatar {
+  width: 36px; height: 36px; border-radius: 50%; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--link-h3); color: #fff; font-size: 15px; font-weight: 600;
+}
+.post-head-text { min-width: 0; }
+.post-user { font-weight: 600; color: var(--text-primary); font-size: 14px; }
+.post-date { color: var(--text-secondary); font-size: 12px; }
+.post-title { font-weight: 600; color: var(--text-primary); margin-bottom: 4px; }
+.post-text { color: var(--text-primary); white-space: pre-wrap; line-height: 1.6; font-size: 14px; }
+.post-images { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.post-images img {
+  width: 92px; height: 92px; object-fit: cover; border-radius: 6px;
+  border: 1px solid var(--border-soft);
+}
+.post-footer {
+  display: flex; align-items: center; gap: 18px; margin-top: 10px;
+  color: var(--text-secondary); font-size: 13px;
+}
+.post-action { display: inline-flex; align-items: center; gap: 4px; color: inherit; }
+.post-action-link { margin-left: auto; color: var(--link-h3); }
+
+@media (min-width: 768px) {
+  .post-images img { width: 160px; height: 160px; }
+}

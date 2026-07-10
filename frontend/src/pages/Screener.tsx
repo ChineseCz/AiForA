@@ -3,13 +3,15 @@ import {
   Button, Card, Checkbox, Empty, Input, InputNumber, Select, Space, Table, Tag, Typography, message,
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { errMsg } from "@/api/client";
 import { useScreen, useScreenFields, useSectors, useUsers } from "@/api/hooks";
 import type { ScreenBody } from "@/api/hooks";
 import type { Condition, StockRow } from "@/api/types";
+import { usePageContext } from "@/pageContext";
+import { screenerState } from "./screenerState";
 import { fmtNum, fmtPct, fmtYi, pctClass } from "@/util";
 
 const PRESETS = [
@@ -26,18 +28,39 @@ export default function Screener() {
   const { data: users } = useUsers();
   const screen = useScreen();
 
-  const [strategies, setStrategies] = useState<string[]>([]);
-  const [conds, setConds] = useState<Condition[]>([]);
-  const [nameQuery, setNameQuery] = useState("");
-  const [mentionOn, setMentionOn] = useState(false);
-  const [mentionDays, setMentionDays] = useState(7);
-  const [mentionUser, setMentionUser] = useState<string>("");
-  const [sectorOn, setSectorOn] = useState(false);
-  const [sectorMode, setSectorMode] = useState("manual");
-  const [sectorNames, setSectorNames] = useState<string[]>([]);
+  // 初始值取自 screenerState 这个模块级单例——从 /stock/:code 返回时能接得上上次的筛选和结果，
+  // 不用每次都重新勾一遍条件、重新点一次筛选。
+  const [strategies, setStrategies] = useState<string[]>(screenerState.strategies);
+  const [conds, setConds] = useState<Condition[]>(screenerState.conds);
+  const [nameQuery, setNameQuery] = useState(screenerState.nameQuery);
+  const [mentionOn, setMentionOn] = useState(screenerState.mentionOn);
+  const [mentionDays, setMentionDays] = useState(screenerState.mentionDays);
+  const [mentionUser, setMentionUser] = useState<string>(screenerState.mentionUser);
+  const [mentionBullishOnly, setMentionBullishOnly] = useState(screenerState.mentionBullishOnly);
+  const [sectorOn, setSectorOn] = useState(screenerState.sectorOn);
+  const [sectorMode, setSectorMode] = useState(screenerState.sectorMode);
+  const [sectorNames, setSectorNames] = useState<string[]>(screenerState.sectorNames);
 
-  const [rows, setRows] = useState<StockRow[]>([]);
-  const [tradeDate, setTradeDate] = useState<string | null>(null);
+  const [rows, setRows] = useState<StockRow[]>(screenerState.rows);
+  const [tradeDate, setTradeDate] = useState<string | null>(screenerState.tradeDate);
+
+  usePageContext(
+    `用户在"选股"页。已选策略：${strategies.length ? strategies.join("、") : "无"}；` +
+    `${mentionOn ? `只看大V提及（${mentionDays}天内${mentionBullishOnly ? "，只看多" : ""}）；` : ""}` +
+    `${sectorOn ? `只看板块（${sectorMode === "bullish" ? "大V看多的板块" : sectorNames.join("、") || "未选"}）；` : ""}` +
+    (rows.length
+      ? `筛出 ${rows.length} 只（行情日 ${tradeDate}），前几只：${rows.slice(0, 8).map((r) => r.name || r.code).join("、")}。`
+      : "还没有筛选结果。"),
+  );
+
+  // 组件还活着的每一次变化都同步写回单例，下次重新 mount 时就能读到最新的
+  useEffect(() => {
+    Object.assign(screenerState, {
+      strategies, conds, nameQuery, mentionOn, mentionDays, mentionUser, mentionBullishOnly,
+      sectorOn, sectorMode, sectorNames, rows, tradeDate,
+    });
+  }, [strategies, conds, nameQuery, mentionOn, mentionDays, mentionUser, mentionBullishOnly,
+    sectorOn, sectorMode, sectorNames, rows, tradeDate]);
 
   const addCond = () => setConds([...conds, { field: "change_pct", op: ">", value: 0 }]);
   const setCond = (i: number, patch: Partial<Condition>) =>
@@ -46,7 +69,9 @@ export default function Screener() {
 
   const run = () => {
     const body: ScreenBody = { strategies, conditions: conds, name_query: nameQuery, limit: 300 };
-    if (mentionOn) body.mentioned = { enabled: true, days: mentionDays, user_id: mentionUser };
+    if (mentionOn) {
+      body.mentioned = { enabled: true, days: mentionDays, user_id: mentionUser, bullish_only: mentionBullishOnly };
+    }
     if (sectorOn) body.sector = { enabled: true, mode: sectorMode, names: sectorNames, days: mentionDays, user_id: mentionUser };
     screen.mutate(body, {
       onSuccess: (d) => { setRows(d.items); setTradeDate(d.trade_date); },
@@ -73,7 +98,7 @@ export default function Screener() {
     <Space direction="vertical" size={16} style={{ width: "100%" }}>
       <Typography.Title level={4} style={{ margin: 0 }}>选股</Typography.Title>
 
-      <Card title="预设策略（可多选，取交集）" size="small">
+      <Card title="预设策略（可多选，取交集；不选也可以，靠下面的条件/提及/板块筛选）" size="small">
         <Checkbox.Group
           options={PRESETS} value={strategies}
           onChange={(v) => setStrategies(v as string[])}
@@ -86,7 +111,7 @@ export default function Screener() {
           <Input placeholder="股票名称/代码/缩写，如 茅台 / 600519 / GZMT" allowClear
             value={nameQuery} onChange={(e) => setNameQuery(e.target.value)} style={{ maxWidth: 360 }} />
           {conds.map((c, i) => (
-            <Space key={i}>
+            <Space key={i} wrap>
               <Select style={{ width: 140 }} value={c.field} onChange={(v) => setCond(i, { field: v })}
                 options={fields?.map((f) => ({ value: f.field, label: f.label }))} />
               <Select style={{ width: 80 }} value={c.op} onChange={(v) => setCond(i, { op: v })}
@@ -103,6 +128,9 @@ export default function Screener() {
             <span>天内提及</span>
             <Select allowClear placeholder="全部大V" style={{ width: 160 }} value={mentionUser || undefined}
               onChange={(v) => setMentionUser(v || "")} options={users?.map((u) => ({ value: u.id, label: u.name }))} />
+            <Checkbox checked={mentionBullishOnly} onChange={(e) => setMentionBullishOnly(e.target.checked)}>
+              只看大V看多
+            </Checkbox>
           </Space>
 
           <Space wrap>
