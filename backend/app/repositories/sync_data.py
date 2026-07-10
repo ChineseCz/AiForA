@@ -290,6 +290,27 @@ def get_top_posts(user_id: str, start_date: str, end_date: str, limit: int) -> l
         return [dict(r) for r in rows]
 
 
+def get_recent_daily_summaries(user_ids: list[str], days: int) -> list[str]:
+    """最近 N 天的"日总结"markdown 正文（period_key 是 ISO 日期，字符串比较即可），供选股"只看看多"解析。"""
+    from datetime import date, timedelta
+    if not user_ids:
+        return []
+    cutoff = (date.today() - timedelta(days=days)).isoformat()
+    params: dict = {"cutoff": cutoff}
+    ph = []
+    for i, uid in enumerate(user_ids):
+        ph.append(f":u{i}")
+        params[f"u{i}"] = uid
+    with sync_session() as s:
+        rows = s.execute(text(
+            f"""
+            SELECT content FROM summaries
+            WHERE period_type = 'daily' AND period_key >= :cutoff AND user_id IN ({', '.join(ph)})
+            """
+        ), params).all()
+        return [r[0] for r in rows if r[0]]
+
+
 def get_summary(user_id: str, period_type: str, period_key: str) -> str | None:
     with sync_session() as s:
         row = s.execute(text(
@@ -342,7 +363,12 @@ def save_snapshot(trade_date: str, rows: list[dict]) -> int:
 
 
 def save_history_bars(rows: list[dict]) -> int:
-    """INSERT OR IGNORE + 只补空 open 的合并语义：冲突时仅当已有 open 为 NULL 才写入 open，其它字段不动。"""
+    """冲突时整行覆盖 OHLC/volume（不再是"只补空 open"）。
+
+    改成整行覆盖是必要的：现在 kline.py 回补前会用复权因子调整 open/high/low/close，同一天
+    的调整结果会随着后续新的除权事件而变化（前复权本质上是"越早的历史越会被未来的分红改写"），
+    重新回补同一时间窗口必须能真正覆盖旧值，而不是只在 open 为空时才补一次就再也不动。
+    """
     now = int(time.time())
     payload = [{
         "trade_date": r.get("trade_date"), "code": r.get("code"), "name": r.get("name"),
@@ -357,8 +383,9 @@ def save_history_bars(rows: list[dict]) -> int:
             INSERT INTO stock_daily
             (trade_date, code, name, close, high, low, open, volume, fetched_at)
             VALUES (:trade_date, :code, :name, :close, :high, :low, :open, :volume, :fetched_at)
-            ON CONFLICT (trade_date, code) DO UPDATE SET open = EXCLUDED.open
-            WHERE stock_daily.open IS NULL
+            ON CONFLICT (trade_date, code) DO UPDATE SET
+                close = EXCLUDED.close, high = EXCLUDED.high, low = EXCLUDED.low,
+                open = EXCLUDED.open, volume = EXCLUDED.volume, fetched_at = EXCLUDED.fetched_at
             """
         ), payload)
     return len(payload)

@@ -10,7 +10,8 @@ from datetime import date
 
 from app.core.config import settings
 from app.repositories import sync_data as db
-from app.services.external.sina import sina_symbol
+from app.services.adjust import compute_qfq
+from app.services.external.sina import fetch_qfq_factors, sina_symbol
 
 _SINA_HIST_URL = "https://quotes.sina.cn/cn/api/json_v2.php/CN_MarketDataService.getKLineData"
 
@@ -86,6 +87,15 @@ def backfill_history(days: int = 60, delay: float = 0.5) -> tuple[int, int]:
                             "volume": _to_float(it.get("volume")),
                         })
                     if bars:
+                        # 新浪K线接口本身给的是不复权价，除权除息当天会有断崖式跳空——
+                        # 拿这只股票的复权因子表（纯 requests，不用走上面这套浏览器反爬）转成前复权再存。
+                        # 因子表拉不到（没有除权记录/接口偶发失败）就原样存，不阻塞整个回补流程。
+                        try:
+                            factors = fetch_qfq_factors(code)
+                        except Exception as e:  # noqa: BLE001
+                            print(f"⚠️ 复权因子拉取异常 {code}：{e}")
+                            factors = []
+                        bars = compute_qfq(bars, factors)
                         db.save_history_bars(bars)
                     ok += 1
                     consec_fail = 0

@@ -74,6 +74,41 @@ def fetch_board_list(param: str, kind: str) -> list[dict]:
             rows.append({"board_code": board_code, "name": parts[1], "kind": kind})
     return rows
 
+_SINA_QFQ_URL = "https://finance.sina.com.cn/realstock/company"
+
+
+def fetch_qfq_factors(code: str) -> list[dict]:
+    """前复权调整因子表：[{"d": "2026-05-25", "f": 1.0}, ...]，按日期倒序，只列出发生过除权
+    除息的那些日期（稀疏表）。纯 requests，不用过 kline.py 那套反爬的浏览器流程。
+    失败/未上市/没有除权记录一律返回空列表，调用方按"没有因子=不用调整"处理，不抛异常。
+    """
+    url = f"{_SINA_QFQ_URL}/{sina_symbol(code)}/qfq.js"
+    try:
+        r = requests.get(url, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
+        r.raise_for_status()
+        body = r.text
+    except Exception as e:  # noqa: BLE001
+        print(f"⚠️ 复权因子拉取失败 {code}：{e}")
+        return []
+    comment_at = body.find("/*")
+    if comment_at >= 0:
+        body = body[:comment_at]
+    start, end = body.find("{"), body.rfind("}")
+    if start < 0 or end < start:
+        return []
+    try:
+        parsed = json.loads(body[start:end + 1])
+    except ValueError:
+        return []
+    out = []
+    for item in parsed.get("data") or []:
+        try:
+            out.append({"d": item["d"], "f": float(item["f"])})
+        except (KeyError, TypeError, ValueError):
+            continue
+    return out
+
+
 _SINA_NEWS_URL = "https://vip.stock.finance.sina.com.cn/corp/view/vCB_AllNewsStock.php"
 _NEWS_ITEM_RE = re.compile(
     r"(\d{4}-\d{2}-\d{2})&nbsp;(\d{2}:\d{2})&nbsp;&nbsp;<a target='_blank' href='([^']+)'>([^<]+)</a>"
