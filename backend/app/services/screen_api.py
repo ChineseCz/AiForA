@@ -21,17 +21,23 @@ def screen(body: dict) -> tuple[dict, int]:
     except (TypeError, ValueError):
         limit = 200
 
+    mentioned = body.get("mentioned") or {}
+    sector = body.get("sector") or {}
+    no_strategy_filter_on = bool(mentioned.get("enabled")) or bool(sector.get("enabled"))
+
     try:
         if strategies:
             rows = screening.screen_combined_all(strategies, conditions, limit)
         elif conditions:
             where_sql, params = screening.build_where(conditions)
             rows = db.screen_stocks(trade_date, where_sql, params, limit)
-        elif name_query:
+        elif name_query or no_strategy_filter_on:
+            # 没选预设策略/条件，但要靠"大V提及"或"板块"来筛——用全市场最新行情做候选池，
+            # 交给下面的 match_mentions/match_sector 去缩小范围。
             rows = db.get_latest_rows()
         else:
             return {
-                "error": "请至少选择一个预设策略、填写筛选条件，或输入股票名称/代码搜索。",
+                "error": "请至少选择一个预设策略、填写筛选条件、输入股票名称/代码，或勾选大V提及/板块筛选。",
                 "items": [], "trade_date": trade_date,
             }, 400
     except (ValueError, screening.InsufficientHistoryError, screening.InsufficientFinanceError) as e:
@@ -40,7 +46,6 @@ def screen(body: dict) -> tuple[dict, int]:
     if name_query:
         rows = matching.match_name_query(rows, name_query)[:limit]
 
-    mentioned = body.get("mentioned") or {}
     if mentioned.get("enabled"):
         try:
             days = max(1, int(mentioned.get("days", 7) or 7))
@@ -48,8 +53,9 @@ def screen(body: dict) -> tuple[dict, int]:
             days = 7
         user_id = str(mentioned.get("user_id") or "")
         rows = matching.match_mentions(rows, days, user_id)
+        if mentioned.get("bullish_only"):
+            rows = matching.filter_bullish(rows, days, user_id)
 
-    sector = body.get("sector") or {}
     if sector.get("enabled"):
         names = [n for n in (sector.get("names") or []) if n]
         if sector.get("mode") == "bullish":
@@ -61,7 +67,7 @@ def screen(body: dict) -> tuple[dict, int]:
             names = matching.derive_bullish_sectors(days, user_id)
         rows = matching.match_sector(rows, names) if names else []
 
-    return {"trade_date": trade_date, "items": rows, "error": ""}, 200
+    return {"trade_date": trade_date, "items": rows[:limit], "error": ""}, 200
 
 
 def preset(body: dict) -> tuple[dict, int]:

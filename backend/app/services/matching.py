@@ -8,6 +8,8 @@ from app.services.external import sina
 # 雪球标记格式，如 $贵州茅台(SH600519)$
 TICKER_RE = re.compile(r"\$[^$()]+\((?:SZ|SH|BJ)?(\d{6})\)\$")
 
+_STOCK_TABLE_HEADING = "提到的标的"
+
 
 def pinyin_abbr(text: str) -> str:
     """中文转拼音首字母缩写，如 "贵州茅台" -> "GZMT"。"""
@@ -49,6 +51,63 @@ def match_mentions(candidates: list[dict], days: int, user_id: str) -> list[dict
         if code in coded_mentions or (name and name in combined_text):
             out.append(row)
     return out
+
+
+def _split_row(line: str) -> list[str]:
+    return [c.strip() for c in line.strip().strip("|").split("|")]
+
+
+def parse_bullish_names(md: str) -> set[str]:
+    """从 AI 总结里的"提到的标的"表格挑出方向=看多的标的名称。
+
+    按表头文字定位"名称"/"方向"列，不认列序号——旧总结是4列(名称/代码/方向/理由)，
+    新总结是3列(名称/方向/理由)，位置不一样，AI偶尔还会在方向文字里夹带别的字。
+    """
+    if not md or _STOCK_TABLE_HEADING not in md:
+        return set()
+    lines = md.splitlines()
+    names: set[str] = set()
+    i, n = 0, len(lines)
+    while i < n:
+        if _STOCK_TABLE_HEADING not in lines[i]:
+            i += 1
+            continue
+        i += 1
+        while i < n and not lines[i].strip().startswith("|"):
+            if lines[i].strip().startswith("#"):
+                break
+            i += 1
+        if i >= n or not lines[i].strip().startswith("|"):
+            continue
+        header = _split_row(lines[i])
+        i += 1
+        if i < n and set(lines[i].strip()) <= set("-:| "):
+            i += 1
+        name_idx = header.index("名称") if "名称" in header else -1
+        dir_idx = next((k for k, c in enumerate(header) if "方向" in c), -1)
+        while i < n and lines[i].strip().startswith("|"):
+            cells = _split_row(lines[i])
+            if name_idx >= 0 and dir_idx >= 0 and len(cells) > max(name_idx, dir_idx):
+                if "看多" in cells[dir_idx]:
+                    nm = cells[name_idx].strip()
+                    if nm and nm not in ("无", "-"):
+                        names.add(nm)
+            i += 1
+    return names
+
+
+def filter_bullish(candidates: list[dict], days: int, user_id: str) -> list[dict]:
+    """在已经命中"提及"的候选里，只保留 AI 总结判定为"看多"的标的（按名称匹配"提到的标的"表格）。"""
+    if not candidates:
+        return []
+    user_ids = [user_id] if user_id else [uid for uid, _ in db.get_distinct_users()]
+    summaries = db.get_recent_daily_summaries(user_ids, days)
+    bullish_names: set[str] = set()
+    for md in summaries:
+        bullish_names |= parse_bullish_names(md)
+    if not bullish_names:
+        return []
+    return [row for row in candidates if (row.get("name") or "") in bullish_names]
 
 
 def get_stock_mentions(code: str, name: str, days: int = 90, limit: int = 20) -> list[dict]:

@@ -21,7 +21,9 @@ def task_summarize(ptype: str, start_str: str = "", end_str: str = "",
     from app.repositories import sync_data as db
     from app.services import summaries_build
 
-    with job_run("summarize", source, job_id=job_id):
+    # invalidate_cache=True：否则 /api/summary 的 Redis 缓存 key（内嵌 dataver）不会失效，
+    # regen 已经把新内容写进 DB，读接口却继续命中旧缓存直到 TTL 自然过期，页面上看不出任何变化。
+    with job_run("summarize", source, invalidate_cache=True, job_id=job_id):
         today = date.today()
         start = datetime.strptime(start_str, "%Y-%m-%d").date() if start_str else today
         end = datetime.strptime(end_str, "%Y-%m-%d").date() if end_str else start

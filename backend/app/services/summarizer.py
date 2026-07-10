@@ -1,6 +1,7 @@
 """AI 总结（LLM 队列 worker 用）：从旧 summarizer.py 忠实移植。配置读 settings，缓存写 sync_data。"""
 import base64
 import json
+import re
 
 import requests
 from openai import OpenAI
@@ -19,13 +20,23 @@ SYSTEM_PROMPT = (
     "1. 只整理'作者说了什么'，不替读者做买卖决策，不输出你自己的投资建议。\n"
     "2. 不编造帖子中没有的信息；不确定就标注'（不确定/未明说）'。\n"
     "3. 区分'作者的事实陈述'和'作者的主观判断'。\n"
-    "4. 输出简洁的中文 Markdown，按要求的结构组织。"
+    "4. 输出简洁的中文 Markdown，按要求的结构组织。\n"
+    "5. '提到的标的'表格里的'方向'列只能填「看多」「看空」「中性」或「观察」四者之一。"
+    "表头就写'方向'两个字，禁止在表头后面加括号列出可选值或任何说明文字。"
 )
 
 ASK_SYSTEM_PROMPT = (
     "你是一名中文财经助理，会看到一份关于某位雪球用户观点的AI总结，以及用户针对这份总结提出的问题。"
     "严格只依据总结内容作答，不要引入总结之外的信息或你自己的投资建议；"
     "如果总结里没有能回答问题的信息，直接说明总结中未提及，不要编造。"
+)
+
+FEIBI_SYSTEM_PROMPT = (
+    "你是「菲比」，这个雪球大V看板系统的二次元管理员助手，只在管理后台里陪站长聊天、答疑。"
+    "性格：元气、亲切、偶尔卖萌，但说正事的时候要靠谱、不废话，不装可爱到影响信息传达。"
+    "你了解这个系统本身的功能（雪球帖子抓取、AI总结、A股选股、板块/大V提及筛选），可以简单介绍或答疑，"
+    "但不做任何投资建议、不对具体股票下判断——涉及到那些就提醒站长自己判断。"
+    "回答用中文，简洁自然，不要每句话都加语气词堆砌，可以偶尔用一两个可爱的语气词或表情，不要过量。"
 )
 
 
@@ -50,6 +61,26 @@ def call_llm(user_content: str, system_prompt: str = SYSTEM_PROMPT) -> str:
 def ask_about_summary(summary_md: str, question: str) -> str:
     prompt = f"【总结内容】\n{summary_md}\n\n【用户问题】\n{question}"
     return call_llm(prompt, system_prompt=ASK_SYSTEM_PROMPT)
+
+
+def ask_feibi(history: list[dict], question: str, page_context: str = "") -> str:
+    """管理后台的"菲比"小助手：多轮对话，history 是 [{"role": "user"|"assistant", "content": str}, ...]
+    （只保留最近若干轮，由调用方截断，这里不做长度限制）。
+    page_context 是前端页面自己拼的一小段"用户当前在看什么"，当成一条独立的 system 消息插在
+    对话历史前面——不混进用户问题本身，让模型清楚这是"背景信息"而不是用户在问的东西。
+    """
+    client = get_client()
+    messages = [{"role": "system", "content": FEIBI_SYSTEM_PROMPT}]
+    if page_context:
+        messages.append({
+            "role": "system",
+            "content": f"【背景：用户当前所在页面】\n{page_context}\n"
+                        "这只是背景信息，不是用户的问题；只在回答确实相关时才结合它，不要主动复述。",
+        })
+    messages.extend(history)
+    messages.append({"role": "user", "content": question})
+    resp = client.chat.completions.create(model=settings.relay_model, messages=messages)
+    return (resp.choices[0].message.content or "").strip()
 
 
 def _image_to_data_url(url: str) -> str | None:
@@ -143,10 +174,18 @@ def _images_appendix(posts: list[dict]) -> str:
 
 _STOCK_TABLE = (
     "### 提到的标的\n"
-    "| 名称 | 代码 | 方向(看多/看空/中性/观察) | 作者理由 |\n"
-    "|---|---|---|---|\n"
+    "| 名称 | 方向 | 作者理由 |\n"
+    "|---|---|---|\n"
     "（按帖子内容填写；如未提到任何标的，写一行：无）\n"
 )
+
+# 模型不总是老实听话——即便 prompt 里明确说了"表头别加括号"，还是会自作聪明地把
+# 「看多/看空/中性/观察」这种取值说明写回"方向"表头里。光靠提示词治不住，生成完再兜底清理一次。
+_DIRECTION_HEADER_RE = re.compile(r"方向\s*[（(][^）)]{1,40}[）)]")
+
+
+def _strip_direction_header_note(md: str) -> str:
+    return _DIRECTION_HEADER_RE.sub("方向", md)
 
 
 def summarize_daily(user_name: str, date_str: str, posts: list[dict]) -> str:
@@ -168,7 +207,7 @@ def summarize_daily(user_name: str, date_str: str, posts: list[dict]) -> str:
 
 {body}
 """
-    return call_llm(prompt) + _images_appendix(posts)
+    return _strip_direction_header_note(call_llm(prompt)) + _images_appendix(posts)
 
 
 def reduce_period(user_name, period_label, period_key, parts, sub_unit) -> str:
@@ -193,7 +232,7 @@ def reduce_period(user_name, period_label, period_key, parts, sub_unit) -> str:
 
 {joined}
 """
-    return call_llm(prompt)
+    return _strip_direction_header_note(call_llm(prompt))
 
 
 def summarize_highlights(user_name: str, period_label: str, posts: list[dict]) -> str:
@@ -213,4 +252,4 @@ def summarize_highlights(user_name: str, period_label: str, posts: list[dict]) -
 
 {body}
 """
-    return call_llm(prompt) + _images_appendix(posts)
+    return _strip_direction_header_note(call_llm(prompt)) + _images_appendix(posts)
