@@ -20,12 +20,12 @@
 | `core/` | config(pydantic-settings) / db(异步引擎) / sync_db(同步引擎) / cache(Redis+dataver) / security(JWT+bcrypt) / ratelimit(slowapi) / markdown / bootstrap(引导管理员) |
 | `models/` | 12 张表的 ORM（8 张镜像旧库 + xueqiu_users/schedules/job_runs/admins/stock_indicator） |
 | `repositories/` | `posts/summaries/sectors/groups` 异步读；`sync_data.py` 同步读写(旧 db.py 的忠实移植，供选股/worker)；`jobs.py`(job_runs)；`admins.py` |
-| `services/` | `indicators`(纯指标) / `screening`(选股，含预计算快路径) / `matching`(提及/板块) / `views`(K线/基本面) / `screen_api`(选股编排) / `overview` / `summarizer`(LLM) / `summaries_build`(分层归并) / `ingest`(快照/财务/板块同步) / `indicator_precompute`(预计算) / `external/{sina,eastmoney}` |
+| `services/` | `indicators`(纯指标) / `screening`(选股，含预计算快路径) / `matching`(提及/板块/大V看多判定) / `views`(K线/基本面) / `screen_api`(选股编排) / `overview` / `summarizer`(LLM，含总结+菲比问答) / `summaries_build`(分层归并) / `ingest`(快照/财务/板块同步) / `indicator_precompute`(预计算) / `adjust`(K线前复权) / `external/{sina,eastmoney}` |
 | `api/routers/public/` | 匿名只读：users/overview/posts/summary*/screen*/stock*/groups(读)/health |
 | `api/routers/admin/` | 管理员(JWT 守卫)：auth(登录) / jobs(触发+状态) / config(schedule+分组写) |
 | `workers/` | `celery_app` / `queues`(QUEUE_DEFAULT/BROWSER/LLM) / `runner`(job_run 上下文) / `tasks/{stock,browser,summarize,beat}` |
 | `scrapers/` | `xueqiu`(抓取) / `kline`(回补) —— playwright 延迟导入，仅宿主 browser worker 执行 |
-| `scripts/` | `migrate_sqlite_to_pg` / `verify_migration` / `parity_check` / `create_admin` / `backup.sh` |
+| `scripts/` | `migrate_sqlite_to_pg` / `verify_migration` / `parity_check` / `create_admin` / `backup.sh` / `adjust_existing_kline`(一次性历史K线前复权迁移) |
 
 ## 关键设计决策（改动前必读）
 
@@ -34,6 +34,8 @@
 - **缓存失效**：数据同步任务末尾 `cache.bump_dataver_sync()`（一次 INCR），读接口 key 内嵌 dataver。
 - **预计算**：`stock_indicator` 表由 `recompute_indicators` 任务在快照/回补后重算；选股优先读它（`_fresh_indicators()`），表不新鲜则回退现算。别让选股请求再触发全量历史循环。
 - **浏览器任务隔离**：`scraper.py`/`kline.py` 不进 API 镜像；抓取/回补进 `QUEUE_BROWSER`，宿主 worker 消费。
+- **K线前复权**：新浪K线是不复权价，`kline.py` 回补时用 `sina.fetch_qfq_factors` + `adjust.compute_qfq` 转前复权再落库；`save_history_bars` 写入语义是整行覆盖 OHLC（不是只补空），因为复权价会随未来除权事件变化。改这块务必保证预计算指标表联动重算。
+- **跨路由存活的前端单例**：Live2D 挂载状态(`live2d.ts`)、菲比上下文(`pageContext.ts`)、选股页状态(`screenerState.ts`) 都用模块级单例（不进 React 树），因为要跨路由跳转存活；改动时手动同步 `useEffect`，别指望 Context/Provider 语义。
 
 ## 本机运行（docker compose，7 服务）
 
@@ -57,6 +59,8 @@ docker compose up -d
 - **docker.io 拉基础镜像偶发超时** → 重试即可。
 - **外部数据源**：新浪 push2 host 被墙（改用 vip.stock/quotes.sina）；新浪板块/新闻接口 GBK 编码需 `decode('gbk')`；东财财务带 Referer 头稳定。批量全市场/全板块循环必须 per-item try/except。
 - **中转站视觉模型**：直接传远程图URL会超时 → 本机下载转 base64 data URL 再传。
+- **oh-my-live2d 纹理泄漏**：切换模型只摘舞台不释放 WebGL 纹理，连续切换约5次后必定失败 → 切换前手动调用旧模型 `.destroy()`；React StrictMode 下 effect 双调用会挂载两份模型 → 用模块级单例加载，不放进组件 effect 里重复初始化。
+- **echarts 触屏手势**：内置 tooltip 自动触发和 pinch 缩放（固定10%步长）体验差 → 关闭自动触发，手动 `dispatchAction` + 长按阈值判断；pinch 改自算真实位移幅度。
 
 ## 数据源与限制（不变的业务事实）
 
@@ -69,3 +73,4 @@ docker compose up -d
 - `backend/README.md` —— 运行手册 + 各阶段实现说明
 - `doc/服务化重构技术方案与Phase1交付报告.md` —— 方案设计
 - `doc/服务化重构分阶段结项总结.md` —— 五阶段结项总结
+- `doc/Phase6产品化与体验优化交付报告.md` —— 结项后：K线前复权、AI总结/选股联动、Live2D助手「菲比」、移动端与暗色模式、K线图表交互重做（**当前未提交，未容器化验证**）
