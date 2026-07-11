@@ -1,13 +1,19 @@
-import { Card, Col, Empty, List, Row, Select, Spin, Statistic, Typography } from "antd";
+import { Card, Col, Empty, List, Row, Segmented, Select, Space, Spin, Statistic, Tag, Typography } from "antd";
 import ReactECharts from "echarts-for-react";
 import { useState } from "react";
+import { Link } from "react-router-dom";
 
 import { useOverview, useUsers } from "@/api/hooks";
+import type { BullishHeatBoard, BullishHeatItem } from "@/api/types";
 import { usePageContext } from "@/pageContext";
 import { useThemeMode } from "@/theme";
+import { fmtNum, fmtPct, pctClass } from "@/util";
 
 export default function Dashboard() {
   const [user, setUser] = useState<string | undefined>(undefined);
+  const [heatTab, setHeatTab] = useState<"stock" | "industry" | "concept">("stock");
+  const HEAT_PAGE_SIZE = 5;
+  const [heatPage, setHeatPage] = useState(1);
   const { data: users } = useUsers();
   const { data, isLoading } = useOverview(user);
   const { mode } = useThemeMode();
@@ -84,6 +90,92 @@ export default function Dashboard() {
         <Col xs={12} sm={12} md={6}><Card><Statistic title="活跃天数" value={data?.active_days ?? 0} /></Card></Col>
         <Col xs={24} sm={12} md={6}><Card><Statistic title="时间跨度" value={`${data?.first ?? "-"} ~ ${data?.last ?? "-"}`} valueStyle={{ fontSize: 14 }} /></Card></Col>
       </Row>
+
+      <Card
+        title="看多热度榜（近7天）"
+        style={{ marginTop: 16 }}
+        extra={
+          <Segmented
+            size="small"
+            value={heatTab}
+            onChange={(v) => { setHeatTab(v as typeof heatTab); setHeatPage(1); }}
+            options={[
+              { label: "个股", value: "stock" },
+              { label: "行业", value: "industry" },
+              { label: "概念", value: "concept" },
+            ]}
+          />
+        }
+      >
+        {heatTab === "stock" && (
+          (data?.bullish_heat?.length ? (
+            <List<BullishHeatItem>
+              key="stock"
+              dataSource={data.bullish_heat}
+              pagination={{
+                pageSize: HEAT_PAGE_SIZE, size: "small", hideOnSinglePage: true,
+                current: heatPage, onChange: setHeatPage,
+              }}
+              renderItem={(it, i) => (
+                <List.Item>
+                  <List.Item.Meta
+                    title={
+                      <Space>
+                        <span style={{ color: "#888" }}>{(heatPage - 1) * HEAT_PAGE_SIZE + i + 1}</span>
+                        <Link to={`/stock/${it.code}`}>{it.name}</Link>
+                        <span className={pctClass(it.change_pct)}>{fmtNum(it.close)} {fmtPct(it.change_pct)}</span>
+                        <Tag color="volcano">{it.bullish_count} 位大V看多</Tag>
+                      </Space>
+                    }
+                    description={<Space size={[4, 4]} wrap>{it.bullish_users.map((u) => <Tag key={u}>{u}</Tag>)}</Space>}
+                  />
+                </List.Item>
+              )}
+            />
+          ) : <Empty description={isLoading ? "加载中" : "近7天暂无大V看多判定"} />)
+        )}
+        {(heatTab === "industry" || heatTab === "concept") && (() => {
+          const boards = (data?.bullish_heat_boards ?? []).filter((b) =>
+            heatTab === "industry" ? b.kind === "industry" : b.kind === "concept"
+          );
+          return boards.length ? (
+            <List<BullishHeatBoard>
+              key={heatTab}
+              dataSource={boards}
+              pagination={{
+                pageSize: HEAT_PAGE_SIZE, size: "small", hideOnSinglePage: true,
+                current: heatPage, onChange: setHeatPage,
+              }}
+              renderItem={(it, i) => (
+                <List.Item>
+                  <List.Item.Meta
+                    title={
+                      <Space>
+                        <span style={{ color: "#888" }}>{(heatPage - 1) * HEAT_PAGE_SIZE + i + 1}</span>
+                        <span>{it.sector}</span>
+                        <Tag color="volcano">{it.bullish_stock_count} 只股票被看多</Tag>
+                        <Tag>{it.bullish_user_count} 位大V</Tag>
+                      </Space>
+                    }
+                    description={
+                      <Space direction="vertical" size={2} style={{ width: "100%" }}>
+                        <Space size={[4, 4]} wrap>
+                          {it.bullish_stocks.map((s) => (
+                            <Tag key={s.code}><Link to={`/stock/${s.code}`}>{s.name}</Link></Tag>
+                          ))}
+                        </Space>
+                        <Space size={[4, 4]} wrap>
+                          {it.bullish_users.map((u) => <Tag key={u}>{u}</Tag>)}
+                        </Space>
+                      </Space>
+                    }
+                  />
+                </List.Item>
+              )}
+            />
+          ) : <Empty description={isLoading ? "加载中" : "近7天暂无数据"} />;
+        })()}
+      </Card>
 
       <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
         <Col xs={24} md={12}>
