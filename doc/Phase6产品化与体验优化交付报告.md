@@ -5,7 +5,7 @@
 | 文档类型 | 阶段交付报告（在 Phase 1–5 服务化重构结项之后的产品化迭代） |
 | 版本 | v1.0 |
 | 周期 | 2026-07-09 ~ 2026-07-10（结项后至本次同步） |
-| 状态 | 代码已完成，**尚未提交/未容器化验证**（见第 6 节） |
+| 状态 | 已提交并容器化部署验证（详见 `doc/Phase7实时行情与板块数据增强交付报告.md`） |
 | 范围 | K线前复权、AI总结与选股联动、帖子流改版、Live2D 助手「菲比」、移动端与暗色模式、K线图表交互重做 |
 | 关联代码 | `backend/app/services/{adjust,summarizer,matching,screen_api}.py`、`frontend/src/{App,main,theme,live2d,pageContext}.ts(x)`、`frontend/src/pages/*` |
 

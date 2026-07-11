@@ -7,9 +7,9 @@
 ## 架构与技术栈
 
 - **后端 `backend/`（FastAPI）**：异步 SQLAlchemy 2.0(asyncpg) 轻量读 + 同步引擎(psycopg)跑重计算(选股/K线，`run_in_threadpool`)。
-- **PostgreSQL**：主库（migration 见 `backend/alembic/`，0001 建 11 表，0002 admins，0003 预计算指标表）。
+- **PostgreSQL**：主库（migration 见 `backend/alembic/`，0001 建 11 表，0002 admins，0003 预计算指标表，0004 schedules 加两个开关字段）。
 - **Redis**：读缓存（dataver 版本号失效）+ Celery broker + slowapi 限流存储。
-- **Celery**：10 任务 / 3 队列 —— `default`/`llm` 容器化 worker；`browser`（雪球抓取 + K线回补，依赖真实 Edge）**只能在 Windows 宿主 worker 跑**。beat 每 60s 读 `schedules` 表决定采集帖子；另有固定 600s 周期任务 `stock.auto_sync_tick` 驱动全市场行情同步（不经 schedules 表，任务内部按交易时段自行判断是否跳过）；周三/周日20:00 crontab 直接复用 `summarize.run`（`ptype=weekly`）生成全部大V本周周总结。
+- **Celery**：12 任务 / 3 队列 —— `default`/`llm` 容器化 worker；`browser`（雪球抓取 + K线回补 + 雪球板块同步，均依赖真实 Edge 登录态）**只能在 Windows 宿主 worker 跑**。beat 每 60s 读 `schedules` 表决定采集帖子；固定 600s 周期任务 `stock.auto_sync_tick` 驱动全市场行情同步（读 `schedules.stock_auto_sync_enabled` 开关 + 交易时段判断）；周三/周日20:00 crontab 触发门槛任务 `summarize.weekly_tick`（读 `schedules.weekly_summary_enabled` 开关），通过才派发 `summarize.run(ptype=weekly)` 生成全部大V本周周总结。
 - **PgBouncer**：事务级连接池（asyncpg 需 `statement_cache_size=0`，已设）。
 - **前端 `frontend/`（React+Vite+TS+Ant Design+TanStack Query+ECharts）**：6 页面；Nginx 多阶段构建 + 同源反代 `/api`。
 
@@ -38,6 +38,7 @@
 - **K线前复权**：新浪K线是不复权价，`kline.py` 回补时用 `sina.fetch_qfq_factors` + `adjust.compute_qfq` 转前复权再落库；`save_history_bars` 写入语义是整行覆盖 OHLC（不是只补空），因为复权价会随未来除权事件变化。改这块务必保证预计算指标表联动重算。
 - **跨路由存活的前端单例**：Live2D 挂载状态(`live2d.ts`)、菲比上下文(`pageContext.ts`)、选股页状态(`screenerState.ts`) 都用模块级单例（不进 React 树），因为要跨路由跳转存活；改动时手动同步 `useEffect`，别指望 Context/Provider 语义。
 - **抓取后按需重新生成当日总结**：`xueqiu.crawl_all()` 返回 `{user_id: (user_name, 新增条数)}`；`task_crawl` 只给"本次真有新帖"的大V派发 `task_summarize_daily_one(regen=True)`——`ensure_daily` 默认命中缓存不重算，没有新帖子的大V不用无脑重跑 LLM，有新帖子的大V也不会因为当天已生成过一次就看不到更新。
+- **beat_schedule 开关只能做在任务体内部**：Celery beat 的周期配置是进程启动时的静态字典，没有运行时暂停/恢复的机制；开关统一做成"任务函数第一件事读 `schedules` 表对应字段，不满足就 `return`"（范例见 `tasks/beat.py::scheduler_tick`）。周总结的开关不能直接加在 `summarize.run` 里（它也被管理后台手动触发复用），改成单独的门槛任务 `summarize.weekly_tick` 读开关后再派发。
 
 ## 本机运行（docker compose，7 服务）
 
@@ -63,11 +64,13 @@ docker compose up -d
 - **中转站视觉模型**：直接传远程图URL会超时 → 本机下载转 base64 data URL 再传。
 - **oh-my-live2d 纹理泄漏**：切换模型只摘舞台不释放 WebGL 纹理，连续切换约5次后必定失败 → 切换前手动调用旧模型 `.destroy()`；React StrictMode 下 effect 双调用会挂载两份模型 → 用模块级单例加载，不放进组件 effect 里重复初始化。
 - **echarts 触屏手势**：内置 tooltip 自动触发和 pinch 缩放（固定10%步长）体验差 → 关闭自动触发，手动 `dispatchAction` + 长按阈值判断；pinch 改自算真实位移幅度。
+- **雪球板块接口无匿名访问**：`stock.xueqiu.com/v5/stock/screener/industries.json` 纯 requests 直接 400，必须在已登录的浏览器页面内用 `page.evaluate` fetch（带 cookie）；成分股页面是纯前端渲染，没有独立JSON接口，只能读DOM表格+点"90"+循环点"下一页"直到按钮 `disabled`。雪球代码带交易所前缀（`SH600745`）要转成纯6位数字才能对上 `stock_daily.code` 格式。
 
 ## 数据源与限制（不变的业务事实）
 
 - 雪球帖子：Playwright + 真实 Edge，登录态存 `data/edge_profile`（宿主，不入库不入镜像）。
-- A股快照：新浪 `Market_Center.getHQNodeData`；历史K线：`quotes.sina.cn`（纯 requests 约250只后 456 永久拒绝，故用真实浏览器页面内 fetch）；财务：东财 `datacenter-web`；板块：新浪 `newFLJK`（GBK）+ getHQNodeData 取成分股。
+- A股快照：新浪 `Market_Center.getHQNodeData`；历史K线：`quotes.sina.cn`（纯 requests 约250只后 456 永久拒绝，故用真实浏览器页面内 fetch）；财务：东财 `datacenter-web`。
+- 板块三来源共用同一张 `sector_catalog`（按 `name` 唯一约束去重，撞名保留先入库的那条）：①新浪行业 `newFLJK class_dp`（GBK）；②新浪概念走 `getHQNodes` 节点树"A股/热门概念"子树（`chgn_` 前缀，700+个，含AI应用等新概念；旧 `gn_` 那套已弃用，同步时 `replace_concept_catalog` **整体替换**而非追加）；③雪球134个申万行业（`xueqiu.sync_xueqiu_sectors`，`xq_` 前缀，需登录态+真实浏览器抓DOM表格，覆盖半导体/软件开发等新浪没有的细分行业，无"概念"维度）。成分股统一走 getHQNodeData（雪球来源除外，只能预抓，`get_sector_members` 对 `xq_` 无缓存直接返回空）。
 - 选股预设策略：ma_cross/ma_cross2/golden_cross（均线/MACD/KDJ 金叉，依赖历史K线回补）、fund_ok（财务，依赖财报同步）。
 
 ## 文档
@@ -75,4 +78,5 @@ docker compose up -d
 - `backend/README.md` —— 运行手册 + 各阶段实现说明
 - `doc/服务化重构技术方案与Phase1交付报告.md` —— 方案设计
 - `doc/服务化重构分阶段结项总结.md` —— 五阶段结项总结
-- `doc/Phase6产品化与体验优化交付报告.md` —— 结项后：K线前复权、AI总结/选股联动、Live2D助手「菲比」、移动端与暗色模式、K线图表交互重做（**当前未提交，未容器化验证**）
+- `doc/Phase6产品化与体验优化交付报告.md` —— 结项后：K线前复权、AI总结/选股联动、Live2D助手「菲比」、移动端与暗色模式、K线图表交互重做（已提交部署）
+- `doc/Phase7实时行情与板块数据增强交付报告.md` —— 秒级个股行情、全市场10分钟同步、周总结定时、定时任务开关、雪球板块/热门概念数据源、选股结果板块与大V看好列（后半部分已提交待部署）
