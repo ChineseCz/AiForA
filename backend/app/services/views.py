@@ -5,8 +5,7 @@ from app.services import indicators, matching
 
 def get_kline_view(code: str) -> dict:
     """日线K线 + MA/MACD/KDJ + 逐日买卖点信号，供前端画6幅图。"""
-    latest_by_code = {r["code"]: r for r in db.get_latest_rows()}
-    name = (latest_by_code.get(code) or {}).get("name") or code
+    name = (db.get_latest_row_by_code(code) or {}).get("name") or code
 
     bars = db.get_history_for_code(code)
     if len(bars) < 23:
@@ -39,8 +38,7 @@ def get_kline_view(code: str) -> dict:
 
 def get_fundamentals_view(code: str, mention_days: int = 90) -> dict:
     """估值快照 + 最新财报 + 所属板块 + 大V提及帖子。"""
-    latest_by_code = {r["code"]: r for r in db.get_latest_rows()}
-    quote = latest_by_code.get(code) or {}
+    quote = db.get_latest_row_by_code(code) or {}
     name = quote.get("name") or code
     return {
         "code": code,
@@ -59,9 +57,10 @@ def get_fundamentals_view(code: str, mention_days: int = 90) -> dict:
 
 def group_members_view(group_id: int) -> list[dict]:
     """组内股票 + 最新行情快照，供渲染同款结果表格。"""
-    latest_by_code = {r["code"]: r for r in db.get_latest_rows()}
+    members = db.get_group_members(group_id)
+    latest_by_code = {r["code"]: r for r in db.get_latest_rows_by_codes([m["code"] for m in members])}
     rows = []
-    for m in db.get_group_members(group_id):
+    for m in members:
         row = dict(latest_by_code.get(m["code"]) or {})
         row["code"] = m["code"]
         row["name"] = row.get("name") or m["name"] or m["code"]

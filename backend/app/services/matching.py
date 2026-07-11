@@ -136,7 +136,7 @@ def derive_bullish_sectors(days: int, user_ids: list[str]) -> list[str]:
         bullish_names |= parse_bullish_names(md)
     if not bullish_names:
         return []
-    code_by_name = {r["name"]: r["code"] for r in db.get_latest_rows() if r.get("name")}
+    code_by_name = {r["name"]: r["code"] for r in db.get_latest_rows_by_names(sorted(bullish_names)) if r.get("name")}
     codes = [code_by_name[n] for n in bullish_names if n in code_by_name]
     if not codes:
         return []
@@ -166,11 +166,21 @@ def get_sector_members(sector: str) -> list[str]:
 
 
 def match_sector(candidates: list[dict], sector_names: list[str]) -> list[dict]:
+    """一次批量查缓存命中的板块，缺失的（未同步/已过期）再逐个走懒加载现拉。
+
+    "看多板块"模式常常一次给出上百个板块/概念名（derive_bullish_sectors 的结果），逐个调用
+    get_sector_members 会变成 N 次×2条查询的往返；先用 get_sector_members_cached_batch 一次
+    查询拿到绝大多数已缓存的，只有真正缺失的少数板块名才走原来的单个懒加载路径。
+    """
     if not candidates or not sector_names:
         return []
+    cached = db.get_sector_members_cached_batch(sector_names)
     codes: set[str] = set()
+    for names in cached.values():
+        codes.update(names)
     for name in sector_names:
-        codes.update(get_sector_members(name))
+        if name not in cached:
+            codes.update(get_sector_members(name))
     return [row for row in candidates if (row.get("code") or "") in codes]
 
 

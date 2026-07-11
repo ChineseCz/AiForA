@@ -12,13 +12,17 @@ from app.core.sync_db import sync_session
 
 
 def get_distinct_users() -> list[tuple[str, str]]:
+    """每个大V取最新一条帖子的 user_name（同一 user_id 昵称可能改过）。
+
+    原实现是逐行相关子查询（每行都要重新扫一遍该用户的全部帖子取MAX(created_at)），
+    在 posts 表几千行时要跑几秒；DISTINCT ON 一次排序即可取到同样的"每用户最新一行"。
+    """
     with sync_session() as s:
         rows = s.execute(text(
             """
-            SELECT user_id, user_name
-            FROM posts p
-            WHERE created_at = (SELECT MAX(created_at) FROM posts WHERE user_id = p.user_id)
-            GROUP BY user_id, user_name
+            SELECT DISTINCT ON (user_id) user_id, user_name
+            FROM posts
+            ORDER BY user_id, created_at DESC
             """
         )).all()
         return [(r[0], r[1]) for r in rows]
@@ -34,6 +38,52 @@ def get_latest_rows() -> list[dict]:
         rows = s.execute(text(
             "SELECT * FROM stock_daily WHERE trade_date = (SELECT MAX(trade_date) FROM stock_daily)"
         )).mappings().all()
+        return [dict(r) for r in rows]
+
+
+def get_latest_row_by_code(code: str) -> dict | None:
+    """单只股票的最新快照，命中 (trade_date, code) 复合主键走索引扫描。
+
+    个股详情页只需要一只股票的行情，别用 get_latest_rows() 拉全表5000+行再在 Python 里按 code 过滤。
+    """
+    with sync_session() as s:
+        row = s.execute(text(
+            """
+            SELECT * FROM stock_daily
+            WHERE code = :code AND trade_date = (SELECT MAX(trade_date) FROM stock_daily)
+            """
+        ), {"code": code}).mappings().first()
+        return dict(row) if row else None
+
+
+def get_latest_rows_by_codes(codes: list[str]) -> list[dict]:
+    """一批股票代码的最新快照，命中 idx_stock_daily_code。供只需要几只股票的场景（分组成员）用。"""
+    if not codes:
+        return []
+    with sync_session() as s:
+        rows = s.execute(text(
+            """
+            SELECT * FROM stock_daily
+            WHERE code = ANY(:codes) AND trade_date = (SELECT MAX(trade_date) FROM stock_daily)
+            """
+        ), {"codes": codes}).mappings().all()
+        return [dict(r) for r in rows]
+
+
+def get_latest_rows_by_names(names: list[str]) -> list[dict]:
+    """一批股票名称的最新快照。供"从AI总结里解析出的股票名"反查代码/行情的场景用，
+    避免为了查几个名字拉全市场5000+行整表（trade_date 上有索引，先用它把候选行数收窄到当天全市场，
+    再在这批里按 name 过滤——仍比 Python 侧整表遍历快，且不用把整表 5000+ 行都反序列化成 dict）。
+    """
+    if not names:
+        return []
+    with sync_session() as s:
+        rows = s.execute(text(
+            """
+            SELECT * FROM stock_daily
+            WHERE name = ANY(:names) AND trade_date = (SELECT MAX(trade_date) FROM stock_daily)
+            """
+        ), {"names": names}).mappings().all()
         return [dict(r) for r in rows]
 
 
@@ -155,6 +205,37 @@ def get_sector_members_cached(sector: str, max_age_days: int = 7) -> list[str] |
         return [c[0] for c in codes]
 
 
+def get_sector_members_cached_batch(sectors: list[str], max_age_days: int = 7) -> dict[str, list[str]]:
+    """get_sector_members_cached 的批量版：一次查询取多个板块里"缓存仍新鲜"的成分股。
+
+    未出现在返回字典里的 sector 名，等价于单只版本返回 None（无缓存或已过期），调用方需
+    对这些名字走懒加载现拉路径。供 match_sector 一次筛选多个板块名时用，避免每个板块名
+    单独开两条查询（原来 N 个板块名 = 2N 次数据库往返）。
+    """
+    if not sectors:
+        return {}
+    with sync_session() as s:
+        rows = s.execute(text(
+            """
+            SELECT sector, code, updated_at
+            FROM stock_sector
+            WHERE sector = ANY(:sectors)
+            """
+        ), {"sectors": sectors}).all()
+    cutoff = int(time.time()) - max_age_days * 86400
+    by_sector: dict[str, list[tuple[str, int]]] = {}
+    for sector, code, updated_at in rows:
+        by_sector.setdefault(sector, []).append((code, updated_at or 0))
+    out: dict[str, list[str]] = {}
+    for sector, items in by_sector.items():
+        # 与单只版本一致：取该板块下最新一次写入的时间判断新鲜度（save_sector_members 同批写入的
+        # updated_at 本应相同，这里取 max 兼容历史脏数据/曾经的部分失败重试）。
+        if max(u for _, u in items) < cutoff:
+            continue
+        out[sector] = [c for c, _ in items]
+    return out
+
+
 def save_sector_members(sector: str, board_code: str, codes: list[str]) -> int:
     now = int(time.time())
     with sync_session() as s:
@@ -230,6 +311,34 @@ def get_sectors_by_codes(codes: list[str]) -> dict[str, list[dict]]:
     for r in rows:
         out.setdefault(r["code"], []).append({"sector": r["sector"], "board_code": r["board_code"], "kind": r["kind"]})
     return out
+
+
+def get_sector_rank(trade_date: str) -> list[dict]:
+    """按板块聚合最新交易日涨跌情况：成分股数/上涨家数/下跌家数/平均涨幅/总市值加权涨幅。
+
+    供板块行情聚合页用；join stock_sector（成分关系）× sector_catalog（kind）× stock_daily（当日快照）。
+    市值加权涨幅的分子分母都用 FILTER 限定在"涨跌幅和总市值均非空"的同一批成分股上，避免权重口径不一致。
+    """
+    with sync_session() as s:
+        rows = s.execute(text(
+            """
+            SELECT ss.sector, sc.board_code, sc.kind,
+                   COUNT(*) AS member_count,
+                   COUNT(*) FILTER (WHERE sd.change_pct > 0) AS up_count,
+                   COUNT(*) FILTER (WHERE sd.change_pct < 0) AS down_count,
+                   AVG(sd.change_pct) AS avg_change_pct,
+                   SUM(sd.change_pct * sd.total_mv)
+                       FILTER (WHERE sd.change_pct IS NOT NULL AND sd.total_mv IS NOT NULL)
+                   / NULLIF(SUM(sd.total_mv)
+                       FILTER (WHERE sd.change_pct IS NOT NULL AND sd.total_mv IS NOT NULL), 0) AS mv_weighted_change_pct
+            FROM stock_sector ss
+            JOIN sector_catalog sc ON sc.name = ss.sector
+            JOIN stock_daily sd ON sd.code = ss.code AND sd.trade_date = :trade_date
+            GROUP BY ss.sector, sc.board_code, sc.kind
+            ORDER BY avg_change_pct DESC NULLS LAST
+            """
+        ), {"trade_date": trade_date}).mappings().all()
+        return [dict(r) for r in rows]
 
 
 def get_group_members(group_id: int) -> list[dict]:

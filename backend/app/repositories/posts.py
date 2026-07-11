@@ -21,13 +21,16 @@ def _parse_images(raw: str | None) -> list[str]:
 
 
 async def get_distinct_users(session: AsyncSession) -> list[dict]:
-    """库里已有的 (user_id, user_name)，取每人最新昵称。返回 [{'id','name'}]（供 /api/users）。"""
+    """库里已有的 (user_id, user_name)，取每人最新昵称。返回 [{'id','name'}]（供 /api/users）。
+
+    DISTINCT ON 一次排序取「每用户最新一行」，避免相关子查询逐行重扫 posts（同款修复见
+    sync_data.py::get_distinct_users，那份是给选股用的同步版本，这里是异步版本，各自维护）。
+    """
     rows = (await session.execute(text(
         """
-        SELECT user_id, user_name
-        FROM posts p
-        WHERE created_at = (SELECT MAX(created_at) FROM posts WHERE user_id = p.user_id)
-        GROUP BY user_id, user_name
+        SELECT DISTINCT ON (user_id) user_id, user_name
+        FROM posts
+        ORDER BY user_id, created_at DESC
         """
     ))).mappings().all()
     return [{"id": r["user_id"], "name": r["user_name"]} for r in rows]
