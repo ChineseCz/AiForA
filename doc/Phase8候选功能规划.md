@@ -17,7 +17,7 @@
 
 ---
 
-## 1. 板块行情聚合页 ⭐ 最推荐先做
+## 1. 板块行情聚合页 ⭐ 最推荐先做（已实现，待验证/部署）
 
 **动机**：Phase 7 把板块数据补全了（新浪行业 + 700+热门概念 + 雪球134申万行业），但板块目前只是选股表格里的"标签"。做一个板块涨跌榜，让三来源数据立刻产生用户可见的价值。
 
@@ -31,7 +31,18 @@
 
 **工作量**：后端 1 个聚合函数 + 1 个路由，前端 1 个页面。小。
 
-## 2. 看多热度榜（概览页）
+**实现记录**（本次会话完成，未部署验证）：
+- 后端：`repositories/sync_data.py::get_sector_rank`（一条 SQL，`stock_sector` join `sector_catalog` join 最新 `stock_daily`，`GROUP BY sector` 算 member_count/up_count/down_count/avg_change_pct/市值加权涨幅）；`services/sector_rank.py::get_rank` 薄封装（同 `screen_api` 的 `(payload, status)` 模式）；路由 `api/routers/public/sectors.py::GET /api/sectors/rank`，已注册进 `main.py` 路由元组，复用 `cache_ttl_sectors`（未新增专用 TTL）。
+- 前端：新页面 `pages/SectorRank.tsx`（路由 `/sectors`，导航栏新增"板块行情"），按 `kind` 用 Segmented 分「行业/概念」两个视图（未按 board_code 前缀再细分来源，行业视图里雪球 xq_/新浪 hangye_ 是混在一起排的——如果后续发现有必要按来源区分可以再加一层 Segmented）；点板块名不是进独立详情页，而是把 `screenerState.sectorNames` 设成该板块 + 带 `autoRun` state 跳转到 `/screener`，复用 Screener 现成的表格列（含涨跌幅/大V看好），省了重新做一套成分股表格。
+- `Screener.tsx` 相应加了个 `useEffect` 读 `location.state.autoRun`，进页面自动跑一次筛选并清掉 state（避免用户手动刷新时重复触发）。
+- **已验证**：容器已重建（`docker compose up -d --build`），`GET /api/sectors/rank` 用真实数据 curl 验证过，返回结果符合预期（如"激光概念"板块 36 只成分股、up_count 21/down_count 14、avg_change_pct/mv_weighted_change_pct 均在合理区间）；前端 `/sectors` 路由与 nginx `/api` 反代均返回 200。尚未做人工浏览器点击走查。
+
+## 2. 看多热度榜（概览页）（已实现，待部署验证）
+
+**实现记录**：
+- 后端：`services/overview.py::get_bullish_heat(days=7, limit=20)`（同步函数，调 `matching.get_bullish_users_map` 按大V数量倒排取前20，用 `db.get_latest_rows()` 补代码/现价/涨跌幅，行情表里找不到名称的丢弃）；路由 `api/routers/public/overview.py` 用 `run_in_threadpool` 调用后合并进 `/api/overview` 响应的 `bullish_heat` 字段，不新增端点/缓存key——沿用现有 `cache_ttl_overview`（300s）+ dataver（`summarize` 任务末尾已 `invalidate_cache=True`，热度榜数据只在总结重新生成后变化，语义对得上）。
+- 前端：`types.ts` 加 `BullishHeatItem` + `Overview.bullish_heat`；`Dashboard.tsx` 新增"看多热度榜（近7天）"卡片，排名+标的名（链到个股详情页）+ 现价/涨跌幅 + 看多大V数 + 大V昵称列表。
+- **未验证**：容器未重建，`bullish_heat` 字段没有拿真实数据核对过。
 
 **动机**：`matching.get_bullish_users_map()` 已经算出"标的名称→看多的大V列表"，目前只喂给选股表格。反过来聚合就是"最近 7 天被最多大V看多的标的 Top N"，放概览页当核心入口。
 
