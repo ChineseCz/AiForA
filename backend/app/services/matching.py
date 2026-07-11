@@ -139,12 +139,17 @@ def derive_bullish_sectors(days: int, user_id: str) -> list[str]:
 
 
 def get_sector_members(sector: str) -> list[str]:
-    """先查缓存，没有/过期则实时拉取并回写缓存（懒加载，与旧实现一致）。"""
+    """先查缓存，没有/过期则实时拉取并回写缓存（懒加载，与旧实现一致）。
+
+    雪球来源的板块（board_code 带 xq_ 前缀）没有可容器化的成分股接口——需要真实浏览器登录态，
+    只能由宿主 browser 队列的 sync_xueqiu_sectors 任务批量预抓；这里读不到缓存就直接返回空，
+    不去现拉（现算路径只对新浪来源有效）。
+    """
     codes = db.get_sector_members_cached(sector)
     if codes is not None:
         return codes
     board_code = db.get_board_code(sector)
-    if not board_code:
+    if not board_code or board_code.startswith("xq_"):
         return []
     codes = sina.fetch_board_members(board_code)
     db.save_sector_members(sector, board_code, codes)

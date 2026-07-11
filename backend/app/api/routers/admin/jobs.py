@@ -184,3 +184,14 @@ async def sync_sector_members(session: AsyncSession = Depends(db_session)):
 @router.get("/stock/sync-sector-members/status")
 async def sync_sector_members_status(session: AsyncSession = Depends(db_session)):
     return await jobs.get_latest_state(session, "sector_members_sync")
+
+
+@router.post("/stock/sync-xueqiu-sectors")
+async def sync_xueqiu_sectors(session: AsyncSession = Depends(db_session)):
+    from app.workers.tasks.browser import task_sync_xueqiu_sectors
+    return await _trigger(session, "sync_xueqiu_sectors", task_sync_xueqiu_sectors, source="手动")
+
+
+@router.get("/stock/sync-xueqiu-sectors/status")
+async def sync_xueqiu_sectors_status(session: AsyncSession = Depends(db_session)):
+    return await jobs.get_latest_state(session, "sync_xueqiu_sectors")

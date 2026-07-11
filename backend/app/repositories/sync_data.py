@@ -172,6 +172,32 @@ def save_sector_members(sector: str, board_code: str, codes: list[str]) -> int:
         return len(payload)
 
 
+def save_xueqiu_sectors(items: list[dict]) -> tuple[int, int]:
+    """写入雪球板块抓取结果：先落 sector_catalog（供 save_sector_catalog 处理撞名跳过），
+    再对每个真正落地的行业落 stock_sector 成分股（沿用 save_sector_members 的整体替换语义）。
+    items 形如 [{"board_code": "xq_S2701", "name": "半导体", "kind": "industry", "codes": [...]}, ...]。
+    返回 (落地的行业数, 成分股关系总数)。
+    """
+    saved_names = save_sector_catalog([
+        {"board_code": it["board_code"], "name": it["name"], "kind": it["kind"]} for it in items
+    ])
+    if not saved_names:
+        return 0, 0
+    with sync_session() as s:
+        landed = {row[0] for row in s.execute(text(
+            "SELECT name FROM sector_catalog WHERE board_code = ANY(:codes)"
+        ), {"codes": [it["board_code"] for it in items]}).all()}
+    n_sectors = 0
+    n_codes = 0
+    for it in items:
+        if it["name"] not in landed:
+            continue  # 撞名被跳过，不写成分股（避免覆盖已有同名板块的成分股关系）
+        n = save_sector_members(it["name"], it["board_code"], it.get("codes") or [])
+        n_sectors += 1
+        n_codes += n
+    return n_sectors, n_codes
+
+
 def get_sectors_by_code(code: str) -> list[dict]:
     with sync_session() as s:
         rows = s.execute(text(
@@ -416,12 +442,23 @@ def save_finance(rows: list[dict]) -> int:
 
 
 def save_sector_catalog(rows: list[dict]) -> int:
+    """`name` 有唯一约束（选股页按板块名而非 board_code 筛选）；不同来源撞名时保留已有的那条，
+    跳过新来源的同名行——目前已知雪球行业与新浪行业有5个重名（教育/体育/渔业/林业/综合）。
+    """
     now = int(time.time())
     payload = [{"board_code": r["board_code"], "name": r["name"], "kind": r["kind"], "updated_at": now}
                for r in rows if r.get("board_code") and r.get("name")]
     if not payload:
         return 0
     with sync_session() as s:
+        existing = {
+            row[0] for row in s.execute(text(
+                "SELECT name FROM sector_catalog WHERE board_code != ANY(:codes)"
+            ), {"codes": [p["board_code"] for p in payload]}).all()
+        }
+        payload = [p for p in payload if p["name"] not in existing]
+        if not payload:
+            return 0
         s.execute(text(
             """
             INSERT INTO sector_catalog (board_code, name, kind, updated_at)

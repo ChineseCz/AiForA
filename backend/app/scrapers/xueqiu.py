@@ -342,6 +342,127 @@ def crawl_all(since=None, until=None) -> dict[str, tuple[str, int]]:
     return updated
 
 
+def _xq_code_to_plain(code: str) -> str:
+    """雪球代码带交易所前缀（SH600745/SZ000001/BJ430047）→ 项目统一用的纯6位数字（与 stock_daily.code 对齐）。"""
+    return re.sub(r"^(SH|SZ|BJ)", "", code.strip().upper())
+
+
+def fetch_industries(page) -> list[dict]:
+    """134个申万行业名录（一/二/三级混合），需登录态，走已打开的页面内 fetch。"""
+    js = """async () => {
+        try {
+            const r = await fetch('https://stock.xueqiu.com/v5/stock/screener/industries.json?category=cn',
+                {credentials: 'include'});
+            return await r.text();
+        } catch (e) { return ''; }
+    }"""
+    raw = page.evaluate(js)
+    try:
+        data = json.loads(raw)
+    except (ValueError, TypeError):
+        return []
+    return [
+        {"board_code": f"xq_{it['encode']}", "name": it["name"], "kind": "industry"}
+        for it in data.get("data", {}).get("industries", []) if it.get("encode") and it.get("name")
+    ]
+
+
+_XQ_CODE_RE = re.compile(r"^(?:SH|SZ|BJ)\d{6}$")
+
+
+def scrape_industry_members(page, ind_code: str, ind_name: str, max_pages: int = 40) -> list[str]:
+    """打开某个申万行业详情页，切到每页90条，翻页读表格里的股票代码直到"下一页"变禁用。
+
+    雪球该页面没有独立的成分股JSON接口（DOM渲染），只能像抓帖子一样过真实浏览器读页面内容。
+    """
+    from urllib.parse import quote
+
+    url = f"{HOME}/hq/detail?market=CN&first_name=0&second_name=2&indCode={ind_code}&indName={quote(ind_name)}"
+    page.goto(url, wait_until="networkidle")
+    if not _wait_waf(page, f"行业 {ind_name}"):
+        return []
+    page.wait_for_timeout(1500)
+
+    def read_codes() -> list[str]:
+        raw = page.eval_on_selector_all(
+            "*",
+            """els => {
+                const re = /^(SH|SZ|BJ)\\d{6}$/;
+                const out = [];
+                for (const e of els) {
+                    if (e.children.length === 0 && re.test((e.innerText||'').trim())) out.push(e.innerText.trim());
+                }
+                return [...new Set(out)];
+            }""",
+        )
+        return [c for c in raw if _XQ_CODE_RE.match(c)]
+
+    try:
+        page.click("text=90", timeout=3000)
+        page.wait_for_timeout(1200)
+    except Exception:
+        pass  # 成分股不足一页时可能没有"90"选项，用默认页大小也行
+
+    seen: set[str] = set(read_codes())
+    for _ in range(max_pages):
+        btn = page.locator("text=下一页").first
+        try:
+            if "disabled" in (btn.get_attribute("outerHTML") or ""):
+                break
+            btn.click(timeout=3000)
+        except Exception:
+            break
+        page.wait_for_timeout(1200)
+        new_codes = set(read_codes()) - seen
+        if not new_codes:
+            break
+        seen |= new_codes
+    return [_xq_code_to_plain(c) for c in seen]
+
+
+def sync_xueqiu_sectors() -> list[dict]:
+    """全量同步雪球134个申万行业 + 各自成分股（宿主 browser 队列专用，需登录态）。
+
+    返回 [{"board_code": "xq_S2701", "name": "半导体", "kind": "industry", "codes": [...]}, ...]；
+    单个行业抓取失败跳过并继续（per-item 容错）。调用方负责写库，本函数只管抓取。
+    """
+    from playwright.sync_api import sync_playwright
+
+    result: list[dict] = []
+    with sync_playwright() as p:
+        ctx = open_context(p)
+        try:
+            page = ctx.new_page()
+            page.set_default_timeout(30000)
+            page.goto(HOME + "/hq/industry", wait_until="domcontentloaded")
+            _wait_waf(page, "行业板块")
+            page.wait_for_timeout(1500)
+
+            industries = fetch_industries(page)
+            if not industries:
+                print("⚠️ 雪球行业名录拉取失败（可能登录态失效，需重新 login）")
+                return []
+            print(f"📋 雪球行业名录：{len(industries)} 个，开始逐个抓成分股…")
+
+            for i, ind in enumerate(industries, 1):
+                ind_code = ind["board_code"].removeprefix("xq_")
+                try:
+                    codes = scrape_industry_members(page, ind_code, ind["name"])
+                    result.append({**ind, "codes": codes})
+                    print(f"  [{i}/{len(industries)}] {ind['name']}：{len(codes)} 只")
+                except Exception as e:  # noqa: BLE001
+                    print(f"  ⚠️ [{i}/{len(industries)}] {ind['name']} 抓取失败，跳过：{e}")
+                _human_wait(page)
+        finally:
+            try:
+                ctx.close()
+            except Exception:
+                pass
+    total_codes = sum(len(it.get("codes", [])) for it in result)
+    print(f"✅ 雪球板块同步完成：{len(result)} 个行业，共 {total_codes} 条成分股关系")
+    return result
+
+
 def login() -> None:
     from playwright.sync_api import sync_playwright
 

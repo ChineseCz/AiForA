@@ -35,6 +35,21 @@ def task_backfill(days: int = 60, delay: float = 0.5, source: str = "手动", jo
     task_recompute_indicators.delay(source="自动(回补后)")
 
 
+@celery_app.task(name="browser.sync_xueqiu_sectors", queue=QUEUE_BROWSER)
+def task_sync_xueqiu_sectors(source: str = "手动", job_id: int | None = None) -> None:
+    """雪球板块（申万行业分类，含半导体/软件开发等新浪没有的细分行业）全量同步。
+
+    需要登录态 + 真实浏览器（雪球板块接口拒绝匿名请求，成分股表格也是纯前端渲染），
+    只能走宿主 browser 队列，不能像新浪板块那样容器化。耗时较长（134个行业逐个翻页）。
+    """
+    from app.repositories import sync_data as db
+    from app.scrapers import xueqiu
+    with job_run("sync_xueqiu_sectors", source, invalidate_cache=True, job_id=job_id):
+        items = xueqiu.sync_xueqiu_sectors()
+        n_sectors, n_codes = db.save_xueqiu_sectors(items)
+        print(f"✅ 已落库 {n_sectors} 个雪球行业，共 {n_codes} 条成分股关系")
+
+
 # 在此声明以便 crawl 派发；真正实现见 tasks/summarize.py，避免循环导入用延迟引用
 @celery_app.task(name="summarize.daily_one", queue="llm")
 def task_summarize_daily_one(user_id: str, user_name: str, date_str: str, regen: bool = False) -> None:

@@ -184,6 +184,8 @@ export default function Admin({ login }: { login?: boolean }) {
             triggerPath="/api/stock/sync-sector-members" statusPath="/api/stock/sync-sector-members/status" />
           <JobPanel title="历史K线回补（宿主队列）" desc="均线类策略依赖，需宿主 worker" kind="stock_backfill"
             triggerPath="/api/stock/backfill" statusPath="/api/stock/backfill/status" body={{ days: 60 }} />
+          <JobPanel title="雪球板块同步（宿主队列）" desc="申万134个行业（含半导体/软件开发等），需宿主 worker，耗时较长" kind="sync_xueqiu_sectors"
+            triggerPath="/api/stock/sync-xueqiu-sectors" statusPath="/api/stock/sync-xueqiu-sectors/status" />
         </Col>
         <Col xs={24} md={12}>
           <Typography.Title level={5}>采集与总结</Typography.Title>
