@@ -503,10 +503,14 @@ def get_enabled_xueqiu_users() -> list[str]:
 def get_schedule() -> dict:
     with sync_session() as s:
         row = s.execute(text(
-            'SELECT enabled, start, "end", interval FROM schedules ORDER BY id LIMIT 1'
+            'SELECT enabled, start, "end", interval, stock_auto_sync_enabled, weekly_summary_enabled '
+            "FROM schedules ORDER BY id LIMIT 1"
         )).mappings().first()
         if not row:
-            return {"enabled": False, "start": "08:00", "end": "22:00", "interval": 30}
+            return {
+                "enabled": False, "start": "08:00", "end": "22:00", "interval": 30,
+                "stock_auto_sync_enabled": True, "weekly_summary_enabled": True,
+            }
         return dict(row)
 
 
@@ -519,17 +523,24 @@ def save_schedule(cfg: dict) -> dict:
             "start": str(cfg.get("start", "08:00")),
             "end": str(cfg.get("end", "22:00")),
             "interval": max(5, int(cfg.get("interval", 30) or 30)),
+            "stock_auto_sync_enabled": bool(cfg.get("stock_auto_sync_enabled", True)),
+            "weekly_summary_enabled": bool(cfg.get("weekly_summary_enabled", True)),
             "now": now,
         }
         if existing:
             params["id"] = existing[0]
             s.execute(text(
                 'UPDATE schedules SET enabled=:enabled, start=:start, "end"=:end, '
-                "interval=:interval, updated_at=:now WHERE id=:id"
+                "interval=:interval, stock_auto_sync_enabled=:stock_auto_sync_enabled, "
+                "weekly_summary_enabled=:weekly_summary_enabled, updated_at=:now WHERE id=:id"
             ), params)
         else:
             s.execute(text(
-                'INSERT INTO schedules (enabled, start, "end", interval, updated_at) '
-                "VALUES (:enabled, :start, :end, :interval, :now)"
+                'INSERT INTO schedules (enabled, start, "end", interval, '
+                "stock_auto_sync_enabled, weekly_summary_enabled, updated_at) "
+                "VALUES (:enabled, :start, :end, :interval, "
+                ":stock_auto_sync_enabled, :weekly_summary_enabled, :now)"
             ), params)
-    return {k: params[k] for k in ("enabled", "start", "end", "interval")}
+    return {k: params[k] for k in (
+        "enabled", "start", "end", "interval", "stock_auto_sync_enabled", "weekly_summary_enabled",
+    )}

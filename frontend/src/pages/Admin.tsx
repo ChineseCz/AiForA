@@ -82,20 +82,30 @@ function JobPanel({ title, desc, kind, triggerPath, statusPath, body }: {
   );
 }
 
-// ---- 定时采集配置 ----
+// ---- 定时任务配置 ----
 function SchedulePanel() {
   const { data } = useSchedule();
   const save = useSaveSchedule();
   const [form] = Form.useForm();
   useEffect(() => { if (data) form.setFieldsValue(data); }, [data, form]);
   return (
-    <Card size="small" title="定时采集">
-      <Form form={form} layout="inline" onFinish={(v) =>
+    <Card size="small" title="定时任务">
+      <Form form={form} onFinish={(v) =>
         save.mutate(v, { onSuccess: () => message.success("已保存"), onError: (e) => message.error(errMsg(e)) })}>
-        <Form.Item name="enabled" label="启用" valuePropName="checked"><Switch /></Form.Item>
-        <Form.Item name="start" label="从"><Input style={{ width: 90 }} placeholder="08:00" /></Form.Item>
-        <Form.Item name="end" label="到"><Input style={{ width: 90 }} placeholder="22:00" /></Form.Item>
-        <Form.Item name="interval" label="间隔(分)"><InputNumber min={5} /></Form.Item>
+        <Space wrap style={{ marginBottom: 4 }}>
+          <Form.Item name="enabled" label="定时采集" valuePropName="checked" style={{ marginBottom: 0 }}><Switch /></Form.Item>
+          <Form.Item name="start" label="从" style={{ marginBottom: 0 }}><Input style={{ width: 90 }} placeholder="08:00" /></Form.Item>
+          <Form.Item name="end" label="到" style={{ marginBottom: 0 }}><Input style={{ width: 90 }} placeholder="22:00" /></Form.Item>
+          <Form.Item name="interval" label="间隔(分)" style={{ marginBottom: 0 }}><InputNumber min={5} /></Form.Item>
+        </Space>
+        <Space wrap style={{ marginBottom: 8, display: "block" }}>
+          <Form.Item name="stock_auto_sync_enabled" label="全市场行情10分钟同步" valuePropName="checked" style={{ marginBottom: 0, display: "inline-block", marginRight: 24 }}>
+            <Switch />
+          </Form.Item>
+          <Form.Item name="weekly_summary_enabled" label="周三/周日周总结" valuePropName="checked" style={{ marginBottom: 0, display: "inline-block" }}>
+            <Switch />
+          </Form.Item>
+        </Space>
         <Button type="primary" htmlType="submit" loading={save.isPending}>保存</Button>
       </Form>
     </Card>

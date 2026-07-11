@@ -172,4 +172,6 @@ export interface ScheduleCfg {
   start: string;
   end: string;
   interval: number;
+  stock_auto_sync_enabled: boolean;
+  weekly_summary_enabled: boolean;
 }

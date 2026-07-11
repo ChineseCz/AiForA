@@ -26,15 +26,14 @@ celery_app.conf.update(
     # beat：每分钟一次 tick，读 schedules 表决定是否派发采集（取代旧内置 20s 轮询线程）
     beat_schedule={
         "scheduler-tick": {"task": "beat.tick", "schedule": 60.0},
-        # 全市场行情：固定每10分钟一次（不经 schedules 表配置，任务内部按交易时段自行判断是否跳过）
+        # 全市场行情：固定每10分钟一次，任务内部读 schedules.stock_auto_sync_enabled 决定是否跳过。
         "stock-auto-sync": {"task": "stock.auto_sync_tick", "schedule": 600.0},
-        # 周总结：每周三、周日 20:00（day_of_week: 0=周日）生成全部大V本周周总结。
-        # 直接复用手动触发用的 summarize.run 任务（不新建任务函数），user_id 留空 = 全部大V，
-        # start/end 留空 = 以当天为锚点（period_anchors 会算出本周周一）。
+        # 周总结：每周三、周日 20:00（day_of_week: 0=周日）门槛检查，通过后派发 summarize.run
+        # 生成全部大V本周周总结。指向门槛任务 summarize.weekly_tick 而不是直接指向 summarize.run，
+        # 因为后者也被管理后台"生成 AI 总结"手动触发复用，开关只能挡定时这一条路径。
         "weekly-summary": {
-            "task": "summarize.run",
+            "task": "summarize.weekly_tick",
             "schedule": crontab(hour=20, minute=0, day_of_week="0,3"),
-            "kwargs": {"ptype": "weekly", "source": "定时(周总结)"},
         },
     },
 )

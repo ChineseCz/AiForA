@@ -33,13 +33,17 @@ def _in_trading_hours(now) -> bool:
 def task_auto_sync_tick() -> None:
     """全市场行情定时同步（每10分钟一次，见 celery_app.py 的 beat_schedule）。
 
+    beat_schedule 的周期是进程启动时固定的静态配置，没法运行时开关；开关做在任务体内部，
+    仿照 tasks/beat.py::scheduler_tick 读 schedules 表的模式——不满足就直接 return。
     只在交易时段内派发；若上一轮 stock_sync 或其触发的 recompute_indicators（全表重算）
     还没跑完就跳过本轮——避免行情接口偶发变慢时任务在队列里越堆越多。
     """
     from datetime import datetime
 
-    from app.repositories import jobs
+    from app.repositories import jobs, sync_data as db
 
+    if not db.get_schedule().get("stock_auto_sync_enabled", True):
+        return
     now = datetime.now()
     if not _in_trading_hours(now):
         return

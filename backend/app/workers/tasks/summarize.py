@@ -1,6 +1,6 @@
 """AI 总结任务（QUEUE_LLM）：从旧 web.py _run_summarize 移植区间生成逻辑。"""
 from app.workers.celery_app import celery_app
-from app.workers.queues import QUEUE_LLM
+from app.workers.queues import QUEUE_DEFAULT, QUEUE_LLM
 from app.workers.runner import job_run
 
 
@@ -50,3 +50,18 @@ def task_summarize(ptype: str, start_str: str = "", end_str: str = "",
                     print(f"  ✅ {keyfn(a)}")
             print(f"  {uname}：生成 {done} 份")
         print("🎉 总结完成")
+
+
+@celery_app.task(name="summarize.weekly_tick", queue=QUEUE_DEFAULT)
+def task_weekly_summary_tick() -> None:
+    """周三/周日 20:00 的门槛任务（见 celery_app.py 的 beat_schedule crontab）。
+
+    summarize.run 本身也被管理后台"生成 AI 总结"手动触发复用，不能直接在它里面加开关判断
+    （会连手动触发也一起挡住）；开关判断放在这个专门的定时门槛任务里，仿照
+    tasks/beat.py::scheduler_tick 读 schedules 表的模式，满足才派发 summarize.run。
+    """
+    from app.repositories import sync_data as db
+
+    if not db.get_schedule().get("weekly_summary_enabled", True):
+        return
+    task_summarize.delay(ptype="weekly", source="定时(周总结)")
