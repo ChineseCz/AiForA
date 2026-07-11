@@ -14,8 +14,30 @@ _SINA_COUNT_URL = "http://vip.stock.finance.sina.com.cn/quotes_service/api/json_
 _SINA_DATA_URL = "http://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/Market_Center.getHQNodeData"
 _SINA_PAGE_SIZE = 80
 
-# 板块分类接口（GBK 编码）
+# 板块分类接口（GBK 编码，旧概念分类，覆盖面窄且多年未更新——已弃用，仅行业分类 class_dp 还在用）
 _SINA_CLASS_URL = "http://vip.stock.finance.sina.com.cn/q/view/newFLJK.php"
+
+# 板块节点树接口（UTF-8 编码），"A股/热门概念" 子树是新浪现在维护的概念板块（chgn_ 前缀，
+# 700+个，含 AI应用/具身智能等新概念），比 newFLJK class 的 gn_ 那套（多年未更新）覆盖广得多。
+_SINA_NODES_URL = "http://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/Market_Center.getHQNodes"
+
+
+def fetch_hot_concepts() -> list[dict]:
+    """新浪"热门概念"板块名录（chgn_ 前缀），返回 [{"board_code": ..., "name": ..., "kind": "concept"}, ...]。
+    成分股走同一套 getHQNodeData 分页接口，用 fetch_board_members(board_code) 即可拉取。
+    """
+    r = requests.get(_SINA_NODES_URL, timeout=10)
+    data = json.loads(r.content.decode("utf-8"))
+    a_share = next((c for c in data[1] if c[0] == "A股"), None)
+    if not a_share:
+        return []
+    hot = next((c for c in a_share[1] if c[0] == "热门概念"), None)
+    if not hot:
+        return []
+    return [
+        {"board_code": code, "name": name, "kind": "concept"}
+        for name, _, code in hot[1] if code and name
+    ]
 
 
 def _to_float(v):

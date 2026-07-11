@@ -441,6 +441,36 @@ def save_finance(rows: list[dict]) -> int:
     return len(payload)
 
 
+def replace_concept_catalog(rows: list[dict]) -> int:
+    """新浪"热门概念"（chgn_ 前缀）整体替换旧的 gn_ 概念板块（多年未更新，覆盖面窄，缺
+    AI应用/具身智能等新概念）：先删掉全部旧概念板块名录及其成分股关系，再整批插入新的。
+
+    用整体替换而非追加，是为了绕开 save_sector_catalog 的撞名跳过逻辑——新旧概念板块
+    经常同名但覆盖范围不同（如新旧都有"5G"类概念），追加会导致新数据被当撞名吞掉。
+    """
+    now = int(time.time())
+    with sync_session() as s:
+        old_names = [row[0] for row in s.execute(text(
+            "SELECT name FROM sector_catalog WHERE kind = 'concept'"
+        )).all()]
+        if old_names:
+            s.execute(text("DELETE FROM stock_sector WHERE sector = ANY(:names)"), {"names": old_names})
+            s.execute(text("DELETE FROM sector_catalog WHERE kind = 'concept'"))
+        # 概念删完后，剩下的都是行业名（雪球申万/新浪行业）——新概念名若与行业名撞车（如"电网设备"
+        # 同时是雪球行业名），跳过，保留行业那条（name 全局唯一约束，与 save_sector_catalog 同策略）。
+        remaining_names = {row[0] for row in s.execute(text("SELECT name FROM sector_catalog")).all()}
+        payload = [{"board_code": r["board_code"], "name": r["name"], "updated_at": now}
+                   for r in rows if r.get("board_code") and r.get("name") and r["name"] not in remaining_names]
+        if payload:
+            s.execute(text(
+                """
+                INSERT INTO sector_catalog (board_code, name, kind, updated_at)
+                VALUES (:board_code, :name, 'concept', :updated_at)
+                """
+            ), payload)
+    return len(payload)
+
+
 def save_sector_catalog(rows: list[dict]) -> int:
     """`name` 有唯一约束（选股页按板块名而非 board_code 筛选）；不同来源撞名时保留已有的那条，
     跳过新来源的同名行——目前已知雪球行业与新浪行业有5个重名（教育/体育/渔业/林业/综合）。

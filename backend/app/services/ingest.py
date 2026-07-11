@@ -28,10 +28,15 @@ def sync_finance_snapshot() -> int:
 
 
 def sync_sector_catalog() -> int:
-    rows = sina.fetch_board_list("class_dp", "industry") + sina.fetch_board_list("class", "concept")
-    n = db.save_sector_catalog(rows)
-    print(f"✅ 已同步 {n} 个板块（行业+概念）")
-    return n
+    """行业名录走 save_sector_catalog（追加式，与雪球申万行业共享撞名跳过逻辑）；
+    概念名录走 replace_concept_catalog（整体替换旧 gn_ 概念板块，见该函数说明）。
+    """
+    industry_rows = sina.fetch_board_list("class_dp", "industry")
+    n_industry = db.save_sector_catalog(industry_rows)
+    concept_rows = sina.fetch_hot_concepts()
+    n_concept = db.replace_concept_catalog(concept_rows)
+    print(f"✅ 已同步 {n_industry} 个行业板块 + {n_concept} 个概念板块")
+    return n_industry + n_concept
 
 
 def sync_all_sector_members() -> int:
