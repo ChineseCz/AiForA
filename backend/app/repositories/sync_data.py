@@ -212,6 +212,26 @@ def get_sectors_by_code(code: str) -> list[dict]:
         return [dict(r) for r in rows]
 
 
+def get_sectors_by_codes(codes: list[str]) -> dict[str, list[dict]]:
+    """批量版 get_sectors_by_code，供选股结果表格一次性附加"所属板块"列，避免逐行查询。"""
+    if not codes:
+        return {}
+    with sync_session() as s:
+        rows = s.execute(text(
+            """
+            SELECT s.code, s.sector, s.board_code, c.kind
+            FROM stock_sector s
+            LEFT JOIN sector_catalog c ON c.name = s.sector
+            WHERE s.code = ANY(:codes)
+            ORDER BY c.kind, s.sector
+            """
+        ), {"codes": codes}).mappings().all()
+    out: dict[str, list[dict]] = {}
+    for r in rows:
+        out.setdefault(r["code"], []).append({"sector": r["sector"], "board_code": r["board_code"], "kind": r["kind"]})
+    return out
+
+
 def get_group_members(group_id: int) -> list[dict]:
     with sync_session() as s:
         rows = s.execute(text(
@@ -335,6 +355,27 @@ def get_recent_daily_summaries(user_ids: list[str], days: int) -> list[str]:
             """
         ), params).all()
         return [r[0] for r in rows if r[0]]
+
+
+def get_recent_daily_summaries_by_user(user_ids: list[str], days: int) -> list[tuple[str, str]]:
+    """同 get_recent_daily_summaries，但带上 user_id——供"哪些大V看多这只股票"按人归属统计。"""
+    from datetime import date, timedelta
+    if not user_ids:
+        return []
+    cutoff = (date.today() - timedelta(days=days)).isoformat()
+    params: dict = {"cutoff": cutoff}
+    ph = []
+    for i, uid in enumerate(user_ids):
+        ph.append(f":u{i}")
+        params[f"u{i}"] = uid
+    with sync_session() as s:
+        rows = s.execute(text(
+            f"""
+            SELECT user_id, content FROM summaries
+            WHERE period_type = 'daily' AND period_key >= :cutoff AND user_id IN ({', '.join(ph)})
+            """
+        ), params).all()
+        return [(r[0], r[1]) for r in rows if r[1]]
 
 
 def get_summary(user_id: str, period_type: str, period_key: str) -> str | None:

@@ -8,7 +8,7 @@ export interface ScreenerState {
   nameQuery: string;
   mentionOn: boolean;
   mentionDays: number;
-  mentionUser: string;
+  mentionUsers: string[];
   mentionBullishOnly: boolean;
   sectorOn: boolean;
   sectorMode: string;
@@ -23,7 +23,7 @@ export const screenerState: ScreenerState = {
   nameQuery: "",
   mentionOn: false,
   mentionDays: 7,
-  mentionUser: "",
+  mentionUsers: [],
   mentionBullishOnly: false,
   sectorOn: false,
   sectorMode: "manual",

@@ -63,6 +63,11 @@ export interface StockRow {
   gross_margin?: number;
   report_date?: string;
   added_at?: number;
+  sectors?: string[];
+  concepts?: string[];
+  bullish_sectors?: string[];
+  bullish_concepts?: string[];
+  bullish_users?: string[];
   [k: string]: unknown;
 }
 

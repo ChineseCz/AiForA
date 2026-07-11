@@ -7,6 +7,15 @@ from app.repositories import sync_data as db
 from app.services import matching, screening
 
 
+def _parse_user_ids(cfg: dict) -> list[str]:
+    """兼容旧的单选 user_id（字符串）和新的多选 user_ids（数组），空 = 全部大V。"""
+    ids = cfg.get("user_ids")
+    if isinstance(ids, list) and ids:
+        return [str(u) for u in ids if u]
+    single = str(cfg.get("user_id") or "")
+    return [single] if single else []
+
+
 def screen(body: dict) -> tuple[dict, int]:
     trade_date = db.get_latest_trade_date()
     if not trade_date:
@@ -51,10 +60,10 @@ def screen(body: dict) -> tuple[dict, int]:
             days = max(1, int(mentioned.get("days", 7) or 7))
         except (TypeError, ValueError):
             days = 7
-        user_id = str(mentioned.get("user_id") or "")
-        rows = matching.match_mentions(rows, days, user_id)
+        user_ids = _parse_user_ids(mentioned)
+        rows = matching.match_mentions(rows, days, user_ids)
         if mentioned.get("bullish_only"):
-            rows = matching.filter_bullish(rows, days, user_id)
+            rows = matching.filter_bullish(rows, days, user_ids)
 
     if sector.get("enabled"):
         names = [n for n in (sector.get("names") or []) if n]
@@ -63,11 +72,14 @@ def screen(body: dict) -> tuple[dict, int]:
                 days = max(1, int(sector.get("days", 7) or 7))
             except (TypeError, ValueError):
                 days = 7
-            user_id = str(sector.get("user_id") or "")
-            names = matching.derive_bullish_sectors(days, user_id)
+            user_ids = _parse_user_ids(sector)
+            names = matching.derive_bullish_sectors(days, user_ids)
         rows = matching.match_sector(rows, names) if names else []
 
-    return {"trade_date": trade_date, "items": rows[:limit], "error": ""}, 200
+    rows = rows[:limit]
+    matching.attach_sectors(rows)
+    matching.attach_bullish_users(rows)
+    return {"trade_date": trade_date, "items": rows, "error": ""}, 200
 
 
 def preset(body: dict) -> tuple[dict, int]:
@@ -90,4 +102,6 @@ def preset(body: dict) -> tuple[dict, int]:
     except (screening.InsufficientHistoryError, screening.InsufficientFinanceError, ValueError) as e:
         return {"error": str(e), "items": [], "trade_date": trade_date}, 400
 
+    matching.attach_sectors(rows)
+    matching.attach_bullish_users(rows)
     return {"trade_date": trade_date, "items": rows, "error": ""}, 200

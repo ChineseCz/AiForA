@@ -70,8 +70,9 @@ export interface ScreenBody {
   conditions?: Condition[];
   name_query?: string;
   limit?: number;
-  mentioned?: { enabled: boolean; days: number; user_id: string; bullish_only?: boolean };
-  sector?: { enabled: boolean; mode: string; names: string[]; days: number; user_id: string };
+  // user_ids 为空数组 = 全部大V；非空则只看这几位。
+  mentioned?: { enabled: boolean; days: number; user_ids: string[]; bullish_only?: boolean };
+  sector?: { enabled: boolean; mode: string; names: string[]; days: number; user_ids: string[] };
 }
 export const useScreen = () =>
   useMutation({ mutationFn: (body: ScreenBody) => post<ScreenResp>("/api/screen", body) });
