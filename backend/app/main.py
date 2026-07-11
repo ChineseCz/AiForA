@@ -42,8 +42,8 @@ def create_app() -> FastAPI:
     )
 
     # 公开只读路由（匿名）
-    from app.api.routers.public import groups, health, meta, overview, posts, screen, stocks, summaries
-    for mod in (meta, overview, posts, summaries, screen, stocks, groups, health):
+    from app.api.routers.public import groups, health, meta, overview, posts, screen, sectors, stocks, summaries
+    for mod in (meta, overview, posts, summaries, screen, stocks, sectors, groups, health):
         app.include_router(mod.router, tags=["public"])
 
     # Prometheus 指标 /metrics（Phase 5 可观测性）

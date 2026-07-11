@@ -5,6 +5,24 @@ export interface UserItem {
   name: string;
 }
 
+export interface BullishHeatItem {
+  name: string;
+  code: string;
+  close: number | null;
+  change_pct: number | null;
+  bullish_count: number;
+  bullish_users: string[];
+}
+
+export interface BullishHeatBoard {
+  sector: string;
+  kind: "industry" | "concept";
+  bullish_stock_count: number;
+  bullish_stocks: { name: string; code: string }[];
+  bullish_user_count: number;
+  bullish_users: string[];
+}
+
 export interface Overview {
   total: number;
   user_count: number;
@@ -14,6 +32,8 @@ export interface Overview {
   monthly: { ym: string; n: number }[];
   daily: { date: string; n: number }[];
   latest: PostItem[];
+  bullish_heat: BullishHeatItem[];
+  bullish_heat_boards: BullishHeatBoard[];
 }
 
 export interface PostItem {
@@ -82,6 +102,23 @@ export interface SectorItem {
   name: string;
   kind: string;
   abbr?: string;
+}
+
+export interface SectorRankItem {
+  sector: string;
+  board_code: string;
+  kind: string;
+  member_count: number;
+  up_count: number;
+  down_count: number;
+  avg_change_pct: number | null;
+  mv_weighted_change_pct: number | null;
+}
+
+export interface SectorRankResp {
+  trade_date: string | null;
+  items: SectorRankItem[];
+  error: string;
 }
 
 export interface FieldMeta {

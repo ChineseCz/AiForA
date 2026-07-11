@@ -1,6 +1,6 @@
 import {
   BulbFilled, BulbOutlined, DashboardOutlined, FileTextOutlined, FundOutlined,
-  MenuOutlined, RadarChartOutlined, SettingOutlined,
+  MenuOutlined, PieChartOutlined, RadarChartOutlined, SettingOutlined,
 } from "@ant-design/icons";
 import { Button, Drawer, Grid, Layout, Menu, theme, Typography } from "antd";
 import { useState } from "react";
@@ -12,6 +12,7 @@ import Admin from "./pages/Admin";
 import Dashboard from "./pages/Dashboard";
 import Posts from "./pages/Posts";
 import Screener from "./pages/Screener";
+import SectorRank from "./pages/SectorRank";
 import StockDetail from "./pages/StockDetail";
 import Summary from "./pages/Summary";
 import { useThemeMode } from "./theme";
@@ -24,6 +25,7 @@ const NAV = [
   { key: "/posts", icon: <FileTextOutlined />, label: "帖子流" },
   { key: "/summary", icon: <FundOutlined />, label: "AI 总结" },
   { key: "/screener", icon: <RadarChartOutlined />, label: "选股" },
+  { key: "/sectors", icon: <PieChartOutlined />, label: "板块行情" },
   { key: "/admin", icon: <SettingOutlined />, label: "管理后台" },
 ];
 
@@ -94,6 +96,7 @@ export default function App() {
             <Route path="/posts" element={<Posts />} />
             <Route path="/summary" element={<Summary />} />
             <Route path="/screener" element={<Screener />} />
+            <Route path="/sectors" element={<SectorRank />} />
             <Route path="/stock/:code" element={<StockDetail />} />
             <Route path="/admin/login" element={<Admin login />} />
             <Route path="/admin" element={<RequireAdmin><Admin /></RequireAdmin>} />

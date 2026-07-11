@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "./client";
 import type {
   Condition, Fundamentals, FieldMeta, GroupItem, JobStatus, KlineView, NewsItem,
-  Overview, PostsPage, Quote, ScheduleCfg, ScreenResp, SectorItem, SummaryResp, UserItem,
+  Overview, PostsPage, Quote, ScheduleCfg, ScreenResp, SectorItem, SectorRankResp, SummaryResp, UserItem,
 } from "./types";
 
 const get = async <T>(url: string, params?: object): Promise<T> =>
@@ -61,6 +61,9 @@ export const useQuote = (code: string) =>
     refetchInterval: 1000,
     staleTime: 0,
   });
+
+export const useSectorRank = () =>
+  useQuery({ queryKey: ["sectors_rank"], queryFn: () => get<SectorRankResp>("/api/sectors/rank") });
 
 export const useGroups = () =>
   useQuery({ queryKey: ["groups"], queryFn: () => get<{ groups: GroupItem[] }>("/api/groups") });
