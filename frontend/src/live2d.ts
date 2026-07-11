@@ -101,6 +101,20 @@ export function ensureFeibiLive2d(): Promise<Oml2dInstance> {
               await o.loadNextModel();
             }),
           },
+          // 收回：菜单本身挂在舞台元素内部，会跟着 stageSlideOut 一起滑出去，之后点不到——
+          // 借用库自带的"休息条"（平时用于模型休眠提示）当召回入口，它是挂在 statusBar 独立
+          // 元素上的，不受舞台滑出影响，点一下就 slideIn 召回。
+          {
+            id: "rest", icon: "icon-rest", title: "收起菲比",
+            onClick: (o) => {
+              o.stageSlideOut();
+              o.statusBarOpen("菲比在这儿，点我召回～");
+              o.setStatusBarClickEvent(() => {
+                o.stageSlideIn();
+                o.statusBarClose();
+              });
+            },
+          },
         ],
       },
     };
