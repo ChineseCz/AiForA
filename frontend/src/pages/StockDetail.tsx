@@ -2,7 +2,7 @@ import { ArrowLeftOutlined, MobileOutlined } from "@ant-design/icons";
 import { Button, Card, Col, Descriptions, Empty, Grid, List, Row, Space, Spin, Tag, Tooltip, Typography } from "antd";
 import ReactECharts from "echarts-for-react";
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { Link, useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 
 import { useFundamentals, useKline, useNews, useQuote } from "@/api/hooks";
 import type { KlineBar } from "@/api/types";
@@ -193,6 +193,11 @@ function SubIndicatorLabels({ bar, left }: { bar: KlineBar; left: number }) {
 
 export default function StockDetail() {
   const { code = "" } = useParams();
+  const location = useLocation();
+  const navigate = useNavigate();
+  // location.key === "default" 表示这是直接进入的（没有站内上一页可回，如刷新/外部链接直达）
+  const canGoBack = location.key !== "default";
+  const goBack = () => (canGoBack ? navigate(-1) : navigate("/screener"));
   const { data: kline, isLoading } = useKline(code);
   const { data: fund } = useFundamentals(code);
   const { data: news } = useNews(code);
@@ -386,7 +391,7 @@ export default function StockDetail() {
   return (
     <Space direction="vertical" size={16} style={{ width: "100%" }}>
       <Space wrap>
-        <Link to="/screener"><Button icon={<ArrowLeftOutlined />}>返回</Button></Link>
+        <Button icon={<ArrowLeftOutlined />} onClick={goBack}>返回</Button>
         <Typography.Title level={4} style={{ margin: 0 }}>
           {kline?.name || code} <Typography.Text type="secondary">{code}</Typography.Text>
         </Typography.Title>

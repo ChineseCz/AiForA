@@ -4,11 +4,9 @@ import {
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 
 const TAG_COLLAPSE_LIMIT = 6;
-// 大V最近看好的板块/概念用红框描出来，跟"大V看好"列的 volcano 色呼应，其余保持原色底不填充。
-const BULLISH_TAG_STYLE = { border: "1px solid #ff4d4f" };
 
 function CollapsibleTags({ items, bullish, color }: { items?: string[]; bullish?: string[]; color?: string }) {
   const [expanded, setExpanded] = useState(false);
@@ -19,7 +17,7 @@ function CollapsibleTags({ items, bullish, color }: { items?: string[]; bullish?
   return (
     <Space size={[4, 4]} wrap>
       {shown.map((s) => (
-        <Tag key={s} color={color} style={bullishSet.has(s) ? BULLISH_TAG_STYLE : undefined}>{s}</Tag>
+        <Tag key={s} color={bullishSet.has(s) ? "purple" : color}>{s}</Tag>
       ))}
       {hiddenCount > 0 && (
         <Tag style={{ cursor: "pointer" }} onClick={() => setExpanded(true)}>+{hiddenCount}</Tag>
@@ -69,10 +67,13 @@ export default function Screener() {
   const [rows, setRows] = useState<StockRow[]>(screenerState.rows);
   const [tradeDate, setTradeDate] = useState<string | null>(screenerState.tradeDate);
 
+  const loc = useLocation();
+  const nav = useNavigate();
+
   usePageContext(
     `用户在"选股"页。已选策略：${strategies.length ? strategies.join("、") : "无"}；` +
     `${mentionOn ? `只看大V提及（${mentionDays}天内${mentionBullishOnly ? "，只看多" : ""}，${mentionUsers.length ? mentionUsers.length + "位大V" : "全部大V"}）；` : ""}` +
-    `${sectorOn ? `只看板块（${sectorMode === "bullish" ? "大V看多的板块" : sectorNames.join("、") || "未选"}）；` : ""}` +
+    `${sectorOn ? `只看板块/概念（${sectorMode === "bullish" ? "大V看多的板块/概念" : sectorNames.join("、") || "未选"}）；` : ""}` +
     (rows.length
       ? `筛出 ${rows.length} 只（行情日 ${tradeDate}），前几只：${rows.slice(0, 8).map((r) => r.name || r.code).join("、")}。`
       : "还没有筛选结果。"),
@@ -104,6 +105,15 @@ export default function Screener() {
     });
   };
 
+  // 从板块行情页点板块名跳转过来（带 autoRun state）时，自动跑一次筛选，不用用户再点一次按钮。
+  useEffect(() => {
+    if ((loc.state as { autoRun?: boolean } | null)?.autoRun) {
+      run();
+      nav(loc.pathname, { replace: true, state: null });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const columns: ColumnsType<StockRow> = [
     { title: "名称", dataIndex: "name", fixed: "left", width: 110,
       render: (n: string, r) => <Link to={`/stock/${r.code}`}>{n || r.code}</Link> },
@@ -111,7 +121,7 @@ export default function Screener() {
     { title: "所属板块", dataIndex: "sectors", width: 200,
       render: (secs: string[] | undefined, r) => <CollapsibleTags items={secs} bullish={r.bullish_sectors} /> },
     { title: "概念题材", dataIndex: "concepts", width: 200,
-      render: (cs: string[] | undefined, r) => <CollapsibleTags items={cs} bullish={r.bullish_concepts} color="purple" /> },
+      render: (cs: string[] | undefined, r) => <CollapsibleTags items={cs} bullish={r.bullish_concepts} /> },
     { title: "最新价", dataIndex: "close", width: 90, render: (v) => fmtNum(v) },
     { title: "涨跌幅", dataIndex: "change_pct", width: 90,
       render: (v) => <span className={pctClass(v)}>{fmtPct(v)}</span>,
@@ -168,11 +178,11 @@ export default function Screener() {
           </Space>
 
           <Space wrap>
-            <Checkbox checked={sectorOn} onChange={(e) => setSectorOn(e.target.checked)}>只看板块</Checkbox>
+            <Checkbox checked={sectorOn} onChange={(e) => setSectorOn(e.target.checked)}>只看板块/概念</Checkbox>
             <Select style={{ width: 160 }} value={sectorMode} onChange={setSectorMode}
-              options={[{ value: "manual", label: "手动选择" }, { value: "bullish", label: "大V看多的板块" }]} />
+              options={[{ value: "manual", label: "手动选择" }, { value: "bullish", label: "大V看多的板块/概念" }]} />
             {sectorMode === "manual" && (
-              <Select mode="multiple" allowClear placeholder="选择板块" style={{ minWidth: 280 }}
+              <Select mode="multiple" allowClear placeholder="选择行业/概念" style={{ minWidth: 280 }}
                 value={sectorNames} onChange={setSectorNames} showSearch optionFilterProp="label"
                 options={sectors?.map((s) => ({ value: s.name, label: `${s.name}${s.abbr ? " " + s.abbr : ""}` }))} />
             )}

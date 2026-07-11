@@ -52,21 +52,25 @@ body {
 }
 .app-header-title { flex: 1; margin: 0 4px; }
 
+/* 用 grid 固定列数而不是 flex-wrap：flex-wrap 换行位置取决于每格内容宽度，hover 切换K线时
+   涨跌幅等数值文本长度变化（如 +3.95% 变 -12.34%）会改变换行点，导致行数、整体高度跳动。
+   grid 固定列数后行数恒定，内容变化只在格内截断，不影响整体高度。 */
 .stock-infobar {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(9, auto);
   gap: 4px 28px;
   padding: 10px 14px;
   background: var(--bg-elevated);
   border: 1px solid var(--border-soft);
   border-radius: 8px;
+  overflow-x: auto;
 }
-.stock-infobar .cell { font-size: 13px; }
+.stock-infobar .cell { font-size: 13px; white-space: nowrap; }
 .stock-infobar .label { color: var(--text-secondary); margin-right: 6px; }
 .stock-infobar .value { color: var(--text-primary); font-weight: 600; }
 
 @media (max-width: 480px) {
-  .stock-infobar { gap: 4px 14px; padding: 8px 10px; }
+  .stock-infobar { grid-template-columns: repeat(3, 1fr); gap: 4px 14px; padding: 8px 10px; overflow-x: visible; }
   .stock-infobar .cell { font-size: 12px; }
   .app-header { padding: 0 8px; }
 }
