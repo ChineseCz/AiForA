@@ -1,7 +1,7 @@
 import { CalendarOutlined, FileTextOutlined, FireOutlined, TeamOutlined } from "@ant-design/icons";
 import {
   Card, Col, Empty, InputNumber, List, Row, Segmented, Select,
-  Space, Spin, Statistic, Tag, Tooltip, Typography,
+  Space, Spin, Tag, Tooltip, Typography,
 } from "antd";
 import ReactECharts from "echarts-for-react";
 import { useMemo, useState } from "react";
@@ -103,7 +103,6 @@ function StockHeatList({
             <div style={{ display: "flex", alignItems: "flex-start", gap: 10, width: "100%" }}>
               <div style={{ paddingTop: 2 }}><RankBadge rank={rank} /></div>
               <div style={{ flex: 1, minWidth: 0 }}>
-                {/* 股票名 + 价格 + 看多人数 */}
                 <Space wrap size={[6, 4]} style={{ marginBottom: 4 }}>
                   <Link to={`/stock/${it.code}`} style={{ fontWeight: 600, fontSize: 14 }}>{it.name}</Link>
                   {it.close != null && (
@@ -115,9 +114,7 @@ function StockHeatList({
                     🔥 {it.bullish_count} 位大V
                   </Tag>
                 </Space>
-                {/* 热度条 */}
                 <HeatBar value={it.bullish_count} max={maxCount} />
-                {/* 大V Tag（可点击跳转总结） */}
                 <Space size={[4, 4]} wrap style={{ marginTop: 6 }}>
                   {it.bullish_users.map((u) => (
                     <UserTag key={u} name={u} nameToId={nameToId} />
@@ -155,7 +152,6 @@ function BoardHeatList({
       sectorOn: true,
       sectorMode: "manual",
       sectorNames: [sectorName],
-      // 重置无关的筛选，避免带入上次的条件干扰
       strategies: [],
       conds: [],
       nameQuery: "",
@@ -177,7 +173,6 @@ function BoardHeatList({
             <div style={{ display: "flex", alignItems: "flex-start", gap: 10, width: "100%" }}>
               <div style={{ paddingTop: 2 }}><RankBadge rank={rank} /></div>
               <div style={{ flex: 1, minWidth: 0 }}>
-                {/* 板块名（点击 → 选股预填该板块）+ 统计 Tag */}
                 <Space wrap size={[6, 4]} style={{ marginBottom: 4 }}>
                   <Tooltip title="点击筛选该板块">
                     <Typography.Text
@@ -191,9 +186,7 @@ function BoardHeatList({
                   <Tag color="volcano" style={{ marginInlineEnd: 0 }}>🔥 {it.bullish_stock_count} 只股票</Tag>
                   <Tag>{it.bullish_user_count} 位大V</Tag>
                 </Space>
-                {/* 热度条 */}
                 <HeatBar value={it.bullish_stock_count} max={maxCount} color="#722ed1" />
-                {/* 个股 Tag（点击 → 个股详情） */}
                 <Space size={[4, 4]} wrap style={{ marginTop: 6 }}>
                   {it.bullish_stocks.map((s) => (
                     <Tag key={s.code} color="default">
@@ -201,7 +194,6 @@ function BoardHeatList({
                     </Tag>
                   ))}
                 </Space>
-                {/* 大V Tag（可点击跳转总结） */}
                 <Space size={[4, 4]} wrap style={{ marginTop: 4 }}>
                   {it.bullish_users.map((u) => (
                     <UserTag key={u} name={u} nameToId={nameToId} />
@@ -230,7 +222,7 @@ const DAY_OPTIONS = [
 export default function Dashboard() {
   const [user, setUser] = useState<string | undefined>(undefined);
   const [heatTab, setHeatTab] = useState<"stock" | "industry" | "concept">("stock");
-  const [dayPreset, setDayPreset] = useState<number>(7);          // 0 = 自定义
+  const [dayPreset, setDayPreset] = useState<number>(7);
   const [customDays, setCustomDays] = useState<number>(14);
   const activeDays = dayPreset === 0 ? customDays : dayPreset;
 
@@ -241,7 +233,6 @@ export default function Dashboard() {
   const dark = mode === "dark";
   const userName = users?.find((u) => u.id === user)?.name;
 
-  /** 大V 名称 → user_id 映射，用于点击姓名跳转 AI 总结 */
   const nameToId = useMemo<Map<string, string>>(() => {
     const m = new Map<string, string>();
     users?.forEach((u) => m.set(u.name, u.id));
@@ -260,7 +251,6 @@ export default function Dashboard() {
 
   const axisTextColor = dark ? "#9aa3ad" : "#666";
 
-  // ── 月度柱状图 ──
   const monthlyOpt = {
     tooltip: { trigger: "axis" },
     grid: { left: 40, right: 16, top: 20, bottom: 40 },
@@ -276,7 +266,6 @@ export default function Dashboard() {
     series: [{ type: "bar", data: data?.monthly.map((m) => m.n) ?? [], itemStyle: { color: "#1668dc" } }],
   };
 
-  // ── 日历热力图（PC 端） ──
   const days_data = data?.daily ?? [];
   const maxN = Math.max(1, ...days_data.map((d) => d.n));
   const years = Array.from(new Set(days_data.map((d) => d.date.slice(0, 4)))).sort();
@@ -311,14 +300,11 @@ export default function Dashboard() {
     }],
   };
 
-  // ── 移动端：近12周条形图 ──
   const last12weeks = useMemo(() => {
     const map = new Map<string, number>();
     days_data.forEach((d) => {
-      // 取"年-周"分组
       const dt = new Date(d.date);
       const year = dt.getFullYear();
-      // ISO 周数近似（取一年第几周）
       const start = new Date(year, 0, 1);
       const week = Math.ceil(((dt.getTime() - start.getTime()) / 86400000 + start.getDay() + 1) / 7);
       const key = `${year}-W${String(week).padStart(2, "0")}`;
@@ -347,18 +333,11 @@ export default function Dashboard() {
     }],
   };
 
-  const isMobile = useIsMobile();
-
   return (
     <Spin spinning={isLoading}>
-<<<<<<< HEAD
       {/* 顶部标题 + 大V 筛选 */}
-      <Row justify="space-between" align="middle" style={{ marginBottom: 16 }}>
-        <Typography.Title level={3} style={{ margin: 0 }}>看板</Typography.Title>
-=======
       <Row justify="space-between" align="middle" style={{ marginBottom: 16, gap: 8 }}>
         <Typography.Title level={isMobile ? 4 : 3} style={{ margin: 0 }}>看板</Typography.Title>
->>>>>>> feature/mobile-ui-polish
         <Select
           allowClear placeholder="全部大V" style={{ width: isMobile ? 140 : 200 }} value={user}
           onChange={setUser}
@@ -366,17 +345,7 @@ export default function Dashboard() {
         />
       </Row>
 
-<<<<<<< HEAD
-      {/* 统计卡片 */}
-      <Row gutter={[16, 16]}>
-        <Col xs={12} sm={12} md={6}><Card><Statistic title="帖子总数" value={data?.total ?? 0} /></Card></Col>
-        <Col xs={12} sm={12} md={6}><Card><Statistic title="大V数" value={data?.user_count ?? 0} /></Card></Col>
-        <Col xs={12} sm={12} md={6}><Card><Statistic title="活跃天数" value={data?.active_days ?? 0} /></Card></Col>
-        <Col xs={24} sm={12} md={6}>
-          <Card><Statistic title="时间跨度" value={`${data?.first ?? "-"} ~ ${data?.last ?? "-"}`} valueStyle={{ fontSize: 14 }} /></Card>
-        </Col>
-      </Row>
-=======
+      {/* 统计条 */}
       <Card styles={{ body: { padding: 0 } }}>
         <div className="stat-strip">
           <div className="stat-strip-item">
@@ -409,23 +378,19 @@ export default function Dashboard() {
           </div>
         </div>
       </Card>
->>>>>>> feature/mobile-ui-polish
 
       {/* 热度榜 */}
       <Card
-<<<<<<< HEAD
-        style={{ marginTop: 16 }}
+        style={{ marginTop: isMobile ? 8 : 16 }}
         title={
           <Space wrap size={[8, 8]}>
             <span>🔥 看多热度榜</span>
-            {/* 时间段选择 */}
             <Segmented
               size="small"
               value={dayPreset}
               onChange={(v) => setDayPreset(v as number)}
               options={DAY_OPTIONS}
             />
-            {/* 自定义天数输入 */}
             {dayPreset === 0 && (
               <Space size={4}>
                 <span style={{ fontSize: 12, color: "#888" }}>近</span>
@@ -439,10 +404,6 @@ export default function Dashboard() {
             )}
           </Space>
         }
-=======
-        title={isMobile ? "看多热度榜" : "看多热度榜（近7天）"}
-        style={{ marginTop: isMobile ? 8 : 16 }}
->>>>>>> feature/mobile-ui-polish
         extra={
           <Segmented
             size="small"
@@ -457,7 +418,6 @@ export default function Dashboard() {
         }
       >
         {heatTab === "stock" && (
-<<<<<<< HEAD
           <StockHeatList
             items={data?.bullish_heat ?? []}
             isLoading={isLoading}
@@ -485,15 +445,13 @@ export default function Dashboard() {
         )}
       </Card>
 
-      {/* 图表区：热力图 + 月度柱状图 */}
-      <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
+      {/* 图表区 */}
+      <Row gutter={[isMobile ? 8 : 16, isMobile ? 8 : 16]} style={{ marginTop: isMobile ? 8 : 16 }}>
         <Col xs={24} md={12}>
           <Card title="发帖热力（按天）">
             {isMobile ? (
-              /* 移动端：近12周条形图，无需横向滚动 */
               <ReactECharts option={weekBarOpt} style={{ height: 180 }} />
             ) : (
-              /* PC端：保留完整年度日历热力图，加横向滚动兜底 */
               <div style={{ overflowX: "auto" }}>
                 <div style={{ minWidth: 580 }}>
                   <ReactECharts option={heatOpt} style={{ height: 160 }} />
@@ -504,92 +462,12 @@ export default function Dashboard() {
         </Col>
         <Col xs={24} md={12}>
           <Card title="月度发帖量">
-            <ReactECharts option={monthlyOpt} style={{ height: isMobile ? 180 : 160 }} />
+            <ReactECharts option={monthlyOpt} style={{ height: isMobile ? 180 : 220 }} />
           </Card>
         </Col>
       </Row>
 
       {/* 最新动态 */}
-      <Card title="最新动态" style={{ marginTop: 16 }}>
-=======
-          (data?.bullish_heat?.length ? (
-            <List<BullishHeatItem>
-              key="stock"
-              dataSource={data.bullish_heat}
-              pagination={{
-                pageSize: HEAT_PAGE_SIZE, size: "small", hideOnSinglePage: true,
-                current: heatPage, onChange: setHeatPage,
-              }}
-              renderItem={(it, i) => (
-                <List.Item style={isMobile ? { padding: "8px 0" } : undefined}>
-                  <List.Item.Meta
-                    title={
-                      <Space size={isMobile ? 4 : 8} wrap>
-                        <span style={{ color: "#888" }}>{(heatPage - 1) * HEAT_PAGE_SIZE + i + 1}</span>
-                        <Link to={`/stock/${it.code}`}>{it.name}</Link>
-                        <span className={pctClass(it.change_pct)}>{fmtNum(it.close)} {fmtPct(it.change_pct)}</span>
-                        <Tag color="volcano">{it.bullish_count} 位大V看多</Tag>
-                      </Space>
-                    }
-                    description={<Space size={[4, 4]} wrap>{it.bullish_users.map((u) => <Tag key={u}>{u}</Tag>)}</Space>}
-                  />
-                </List.Item>
-              )}
-            />
-          ) : <Empty description={isLoading ? "加载中" : "近7天暂无大V看多判定"} />)
-        )}
-        {(heatTab === "industry" || heatTab === "concept") && (() => {
-          const boards = (data?.bullish_heat_boards ?? []).filter((b) =>
-            heatTab === "industry" ? b.kind === "industry" : b.kind === "concept"
-          );
-          return boards.length ? (
-            <List<BullishHeatBoard>
-              key={heatTab}
-              dataSource={boards}
-              pagination={{
-                pageSize: HEAT_PAGE_SIZE, size: "small", hideOnSinglePage: true,
-                current: heatPage, onChange: setHeatPage,
-              }}
-              renderItem={(it, i) => (
-                <List.Item style={isMobile ? { padding: "8px 0" } : undefined}>
-                  <List.Item.Meta
-                    title={
-                      <Space size={isMobile ? 4 : 8} wrap>
-                        <span style={{ color: "#888" }}>{(heatPage - 1) * HEAT_PAGE_SIZE + i + 1}</span>
-                        <span>{it.sector}</span>
-                        <Tag color="volcano">{it.bullish_stock_count} 只股票被看多</Tag>
-                        <Tag>{it.bullish_user_count} 位大V</Tag>
-                      </Space>
-                    }
-                    description={
-                      <Space direction="vertical" size={2} style={{ width: "100%" }}>
-                        <Space size={[4, 4]} wrap>
-                          {it.bullish_stocks.map((s) => (
-                            <Tag key={s.code}><Link to={`/stock/${s.code}`}>{s.name}</Link></Tag>
-                          ))}
-                        </Space>
-                        <Space size={[4, 4]} wrap>
-                          {it.bullish_users.map((u) => <Tag key={u}>{u}</Tag>)}
-                        </Space>
-                      </Space>
-                    }
-                  />
-                </List.Item>
-              )}
-            />
-          ) : <Empty description={isLoading ? "加载中" : "近7天暂无数据"} />;
-        })()}
-      </Card>
-
-      <Row gutter={[isMobile ? 8 : 16, isMobile ? 8 : 16]} style={{ marginTop: isMobile ? 8 : 16 }}>
-        <Col xs={24} md={12}>
-          <Card title="发帖热力（按天）"><ReactECharts option={heatOpt} style={{ height: isMobile ? 180 : 220 }} /></Card>
-        </Col>
-        <Col xs={24} md={12}>
-          <Card title="月度发帖量"><ReactECharts option={monthlyOpt} style={{ height: isMobile ? 180 : 220 }} /></Card>
-        </Col>
-      </Row>
-
       <Card title="最新动态" style={{ marginTop: isMobile ? 8 : 16 }}>
         {data?.latest?.length ? (
           <List
