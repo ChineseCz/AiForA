@@ -591,7 +591,6 @@ export default function Dashboard() {
       </Row>
 
       <Card title="最新动态" style={{ marginTop: isMobile ? 8 : 16 }}>
->>>>>>> feature/mobile-ui-polish
         {data?.latest?.length ? (
           <List
             dataSource={data.latest}
@@ -602,22 +601,14 @@ export default function Dashboard() {
               >
                 <List.Item.Meta
                   title={
-<<<<<<< HEAD
                     <Space wrap size={[4, 2]}>
                       <span style={{ fontWeight: 600 }}>{p.user_name}</span>
                       <span style={{ color: "#888", fontSize: 12 }}>{p.date}</span>
                       {p.title && <span>{p.title}</span>}
+                      {isMobile && <a href={p.url} target="_blank" rel="noreferrer">原帖</a>}
                     </Space>
                   }
-                  description={<div style={{ maxHeight: 40, overflow: "hidden", fontSize: 13, color: "#666" }}>{p.text}</div>}
-=======
-                    <>
-                      {p.user_name} · <span style={{ color: "#888" }}>{p.date}</span> {p.title}
-                      {isMobile && <a href={p.url} target="_blank" rel="noreferrer" style={{ marginLeft: 8 }}>原帖</a>}
-                    </>
-                  }
-                  description={<div style={{ maxHeight: 44, overflow: "hidden" }}>{p.text}</div>}
->>>>>>> feature/mobile-ui-polish
+                  description={<div style={{ maxHeight: 44, overflow: "hidden", fontSize: 13, color: "#666" }}>{p.text}</div>}
                 />
               </List.Item>
             )}
