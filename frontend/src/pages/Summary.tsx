@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { errMsg } from "@/api/client";
 import { useAsk, useSummary, useSummaryKeys, useUsers } from "@/api/hooks";
 import MarkdownContent from "@/components/MarkdownContent";
+import { useIsMobile } from "@/hooks/useIsMobile";
 import { usePageContext } from "@/pageContext";
 
 const TABS = [
@@ -13,6 +14,7 @@ const TABS = [
 
 export default function Summary() {
   const { token } = theme.useToken();
+  const isMobile = useIsMobile();
   const { data: users } = useUsers();
   const [user, setUser] = useState<string>("");
   const [type, setType] = useState("daily");
@@ -48,16 +50,16 @@ export default function Summary() {
 
   return (
     <Card
-      title={<Typography.Title level={4} style={{ margin: 0 }}>AI 总结</Typography.Title>}
+      title={<Typography.Title level={isMobile ? 5 : 4} style={{ margin: 0 }}>AI 总结</Typography.Title>}
       extra={
-        <Select style={{ width: 200 }} value={user || undefined} placeholder="选择大V"
+        <Select style={{ width: isMobile ? 130 : 200 }} value={user || undefined} placeholder="选择大V"
           onChange={setUser} options={users?.map((u) => ({ value: u.id, label: u.name }))} />
       }
     >
-      <Tabs activeKey={type} onChange={setType} items={TABS.map((t) => ({ ...t, children: null }))} />
+      <Tabs activeKey={type} onChange={setType} size={isMobile ? "small" : "middle"} items={TABS.map((t) => ({ ...t, children: null }))} />
       <Collapse
         size="small"
-        style={{ marginBottom: 16 }}
+        style={{ marginBottom: isMobile ? 8 : 16 }}
         activeKey={listOpen ? ["dates"] : []}
         onChange={(k) => setListOpen((k as string[]).includes("dates"))}
         items={[{
@@ -86,7 +88,7 @@ export default function Summary() {
         <Empty description="点击上方展开选择日期查看总结；若为空，请在管理后台生成" />
       )}
 
-      <Card type="inner" title="向 AI 提问（基于当前总结）" style={{ marginTop: 16 }}>
+      <Card type="inner" title={isMobile ? "AI 问答" : "向 AI 提问（基于当前总结）"} style={{ marginTop: isMobile ? 8 : 16 }}>
         <Space.Compact style={{ width: "100%" }}>
           <Input
             placeholder="例如：这段时间提到最多的是哪几只股票？"

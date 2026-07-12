@@ -1,16 +1,15 @@
 import { ArrowLeftOutlined, MobileOutlined } from "@ant-design/icons";
-import { Button, Card, Col, Descriptions, Empty, Grid, List, Row, Space, Spin, Tag, Tooltip, Typography } from "antd";
+import { Button, Card, Col, Descriptions, Empty, List, Row, Space, Spin, Tag, Tooltip, Typography } from "antd";
 import ReactECharts from "echarts-for-react";
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 
 import { useFundamentals, useKline, useNews, useQuote } from "@/api/hooks";
 import type { KlineBar } from "@/api/types";
+import { useIsMobile } from "@/hooks/useIsMobile";
 import { usePageContext } from "@/pageContext";
 import { useThemeMode } from "@/theme";
 import { fmtNum, fmtYi } from "@/util";
-
-const { useBreakpoint } = Grid;
 
 // 买卖点信号：3 买(朝上、置于K线下方) + 2 卖(朝下、置于K线上方)，各一色，带图例
 const SIGNALS = [
@@ -203,8 +202,7 @@ export default function StockDetail() {
   const { data: news } = useNews(code);
   const { data: quote } = useQuote(code);
   const { mode } = useThemeMode();
-  const screens = useBreakpoint();
-  const isMobile = !screens.md;
+  const isMobile = useIsMobile();
   const chartRef = useRef<ReactECharts>(null);
   // echarts-for-react 的图表实例是异步初始化的（getEchartsInstance 在 mount 那一刻同步读
   // 大概率还是 undefined）；用它自带的 onChartReady 拿到真正就绪的时机，而不是猜时机。
@@ -389,10 +387,10 @@ export default function StockDetail() {
   );
 
   return (
-    <Space direction="vertical" size={16} style={{ width: "100%" }}>
+    <Space direction="vertical" size={isMobile ? 12 : 16} style={{ width: "100%" }}>
       <Space wrap>
-        <Button icon={<ArrowLeftOutlined />} onClick={goBack}>返回</Button>
-        <Typography.Title level={4} style={{ margin: 0 }}>
+        <Button icon={<ArrowLeftOutlined />} onClick={goBack} size={isMobile ? "small" : "middle"}>返回</Button>
+        <Typography.Title level={isMobile ? 5 : 4} style={{ margin: 0 }}>
           {kline?.name || code} <Typography.Text type="secondary">{code}</Typography.Text>
         </Typography.Title>
       </Space>
@@ -418,7 +416,7 @@ export default function StockDetail() {
         </Spin>
       </Card>
 
-      <Row gutter={16}>
+      <Row gutter={[isMobile ? 8 : 16, isMobile ? 8 : 16]}>
         <Col xs={24} sm={24} md={8}>
           <Card title="估值与财务" size="small">
             <Descriptions column={1} size="small">

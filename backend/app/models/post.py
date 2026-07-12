@@ -23,6 +23,7 @@ class Post(Base):
     raw_json: Mapped[str | None] = mapped_column(Text)
     images: Mapped[str | None] = mapped_column(Text)                   # JSON 数组：配图URL列表
     image_desc: Mapped[str | None] = mapped_column(Text)               # 视觉模型描述缓存
+    brief: Mapped[str | None] = mapped_column(Text)                    # AI一句话总结（长帖抓取时自动生成）
     fetched_at: Mapped[int | None] = mapped_column(BigInteger)
 
     __table_args__ = (Index("idx_posts_user_date", "user_id", "date"),)

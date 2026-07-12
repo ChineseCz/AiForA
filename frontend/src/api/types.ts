@@ -49,6 +49,7 @@ export interface PostItem {
   reply_count: number;
   fav_count: number;
   images?: string[];
+  brief?: string | null;
 }
 
 export interface PostsPage {

@@ -9,6 +9,7 @@ html, body, #root { height: 100%; margin: 0; }
   --text-primary: #333;
   --text-secondary: #888;
   --link-h3: #1668dc;
+  --tab-bar-height: 50px;
 }
 [data-theme="dark"] {
   --bg-page: #101418;
@@ -37,9 +38,146 @@ body {
 .markdown-body td:not(:first-child):not(:last-child) { white-space: nowrap; }
 .markdown-body img { max-width: 100%; border-radius: 6px; margin: 8px 0; }
 .markdown-body h2 { font-size: 18px; margin-top: 18px; }
-.markdown-body h3 { font-size: 15px; margin-top: 14px; color: var(--link-h3); }
+.markdown-body h3 {
+  font-size: 15px; margin-top: 14px; color: var(--link-h3);
+  padding-left: 8px; border-left: 3px solid var(--link-h3);
+}
+.markdown-body strong { color: var(--link-h3); font-weight: 700; }
+.markdown-body thead th { background: var(--bg-elevated); }
+.markdown-body .dir-bull { color: #cf1322; font-weight: 600; }
+.markdown-body .dir-bear { color: #389e0d; font-weight: 600; }
+.markdown-body .ticker-name { color: var(--link-h3); font-weight: 600; }
+
+/* 手机端"提到的标的"表格改成竖排卡片列表（见 MarkdownContent.tsx tableToCardList），
+   每条标的一张卡：首列做标题，其余列变成"表头：内容"，不用横向滚动就能看全 */
+.md-table-cards { display: flex; flex-direction: column; gap: 8px; margin: 12px 0; }
+.md-table-card {
+  padding: 10px 12px;
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  background: var(--bg-elevated);
+}
+.md-table-card-title { font-weight: 600; font-size: 14px; color: var(--text-primary); margin-bottom: 6px; }
+.md-table-card-row { display: flex; gap: 8px; font-size: 13px; line-height: 1.6; padding: 2px 0; }
+.md-table-card-label { flex-shrink: 0; color: var(--text-secondary); }
+.md-table-card-value { color: var(--text-primary); }
+.md-table-card-value.dir-bull { color: #cf1322; font-weight: 600; }
+.md-table-card-value.dir-bear { color: #389e0d; font-weight: 600; }
+
+/* "提到的标的"表格/卡片超过阈值时，多出的行/卡片先隐藏，配一个展开/收起按钮（见 MarkdownContent.tsx） */
+.md-row-hidden { display: none; }
+.md-collapse-toggle {
+  display: block;
+  width: 100%;
+  margin: 4px 0 12px;
+  padding: 6px 0;
+  border: 1px dashed var(--border-strong);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--link-h3);
+  font-size: 13px;
+  cursor: pointer;
+}
+.md-collapse-toggle:hover { background: var(--bg-elevated); }
+
+/* 桌面端"提到的标的"表格/卡片视图切换（见 MarkdownContent.tsx buildViewToggle）：
+   两种视图都常驻 DOM，只用 display 切换显隐，避免切换时重新解析表格。 */
+.md-view-hidden { display: none; }
+.md-view-toggle { margin: 8px 0 4px; text-align: right; }
+.md-view-toggle-btn {
+  padding: 4px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--link-h3);
+  font-size: 12px;
+  cursor: pointer;
+}
+.md-view-toggle-btn:hover { background: var(--bg-elevated); }
+
 .up { color: #cf1322; }
 .down { color: #389e0d; }
+
+/* 看板顶部四项统计合并成一条：色块图标区分类别，桌面4列一行、手机2x2，靠竖分割线代替四个独立卡片 */
+.stat-strip {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+}
+.stat-strip-item {
+  display: flex; align-items: center; gap: 12px;
+  padding: 16px 20px;
+  border-right: 1px solid var(--border-soft);
+}
+.stat-strip-item:last-child { border-right: none; }
+.stat-strip-icon {
+  width: 36px; height: 36px; border-radius: 10px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center; font-size: 17px;
+}
+.stat-strip-value { font-size: 20px; font-weight: 600; color: var(--text-primary); line-height: 1.3; }
+.stat-strip-label { font-size: 12px; color: var(--text-secondary); }
+
+@media (max-width: 767px) {
+  /* 前3项（数字类）占一行3列，第4项（时间跨度，内容是一段较长的日期文本）单独占满整行，
+     避免跟数字类窄格子挤在一起时被拗断成两行 */
+  .stat-strip { grid-template-columns: repeat(3, 1fr); }
+  .stat-strip-item { padding: 12px; border-right: 1px solid var(--border-soft); border-bottom: 1px solid var(--border-soft); }
+  .stat-strip-item:nth-child(3) { border-right: none; }
+  .stat-strip-item:nth-child(4) { grid-column: 1 / -1; border-right: none; border-bottom: none; }
+  .stat-strip-icon { width: 30px; height: 30px; font-size: 14px; }
+  .stat-strip-value { font-size: 16px; white-space: nowrap; }
+}
+
+/* 选股页：预设策略从纯Checkbox列表换成可点选卡片，选中态用主色描边+底色，替代大厂常见的策略选择器样式 */
+.preset-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+.preset-card {
+  position: relative;
+  padding: 10px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.preset-card:hover { border-color: var(--link-h3); }
+.preset-card.active { border-color: var(--link-h3); background: color-mix(in srgb, var(--link-h3) 8%, transparent); }
+.preset-card-check { position: absolute; top: 8px; right: 8px; color: var(--link-h3); font-size: 14px; }
+.preset-card-title { font-weight: 600; font-size: 13px; color: var(--text-primary); margin-bottom: 2px; }
+.preset-card-desc { font-size: 12px; color: var(--text-secondary); line-height: 1.5; }
+
+@media (max-width: 480px) {
+  .preset-grid { grid-template-columns: 1fr; }
+}
+
+/* 帖子流筛选栏：从裸露的Space wrap换成带底色/边框的独立工具条，跟正文列表区分开 */
+.post-filter-bar {
+  display: flex; flex-wrap: wrap; gap: 8px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+}
+
+/* 筛选条件分区：每组前加一个带图标的小标题，打破一整块Space堆叠的单调感 */
+.filter-section-title {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 12px; font-weight: 600; color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+
+/* 登录页顶部品牌区：几何渐变圆 + 图标，克制的金融科技感，不用卡通插画 */
+.login-hero { text-align: center; margin-bottom: 20px; }
+.login-hero-icon {
+  width: 64px; height: 64px; margin: 0 auto;
+  border-radius: 18px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 28px; color: #fff;
+  background: linear-gradient(135deg, #1668dc, #4b9eff);
+  box-shadow: 0 8px 20px -6px rgba(22, 104, 220, 0.5);
+}
 
 .app-header {
   display: flex;
@@ -50,7 +188,11 @@ body {
   top: 0;
   z-index: 10;
 }
-.app-header-title { flex: 1; margin: 0 4px; }
+.app-header-title {
+  flex: 1; margin: 0 4px; min-width: 0;
+  overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+}
+.app-header > .ant-btn, .app-header > .ant-dropdown-trigger { flex-shrink: 0; }
 
 /* 用 grid 固定列数而不是 flex-wrap：flex-wrap 换行位置取决于每格内容宽度，hover 切换K线时
    涨跌幅等数值文本长度变化（如 +3.95% 变 -12.34%）会改变换行点，导致行数、整体高度跳动。
@@ -97,6 +239,13 @@ body {
   width: 92px; height: 92px; object-fit: cover; border-radius: 6px;
   border: 1px solid var(--border-soft);
 }
+/* 长帖默认折叠状态下，一句话总结旁只配一条小缩略图（不是完整尺寸配图墙） */
+.post-images-thumb img { width: 48px; height: 48px; }
+.post-expand-btn {
+  display: inline-flex; align-items: center; gap: 4px;
+  margin-top: 6px; padding: 2px 0; border: none; background: transparent;
+  color: var(--link-h3); font-size: 13px; cursor: pointer;
+}
 .post-footer {
   display: flex; align-items: center; gap: 18px; margin-top: 10px;
   color: var(--text-secondary); font-size: 13px;
@@ -106,4 +255,41 @@ body {
 
 @media (min-width: 768px) {
   .post-images img { width: 160px; height: 160px; }
+  .post-images-thumb img { width: 48px; height: 48px; }
+}
+
+/* 底部Tab栏（仅手机端渲染）：固定在视口底部，貼合安全区，仿微信/支付宝风格 */
+.bottom-tab-bar {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  z-index: 20;
+  display: flex;
+  height: var(--tab-bar-height);
+  padding-bottom: env(safe-area-inset-bottom);
+  background: var(--bg-elevated);
+  border-top: 1px solid var(--border-soft);
+}
+.bottom-tab-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+.bottom-tab-item .anticon { font-size: 18px; }
+.bottom-tab-item.active { color: var(--link-h3); }
+
+/* 信息密度风：手机端整体收紧留白，字号略小，贴近雪球/同花顺 App 的紧凑感 */
+@media (max-width: 767px) {
+  .ant-card-body { padding: 12px !important; }
+  .ant-card-head { padding: 0 12px; min-height: 40px; }
+  .ant-card-head-title { font-size: 14px; white-space: normal; }
+  .ant-statistic-title { font-size: 12px; }
+  .ant-statistic-content { font-size: 18px; }
+  .ant-list-item { padding: 8px 0; }
+  .ant-descriptions-item-label, .ant-descriptions-item-content { font-size: 13px; }
+  .ant-form-item { margin-bottom: 12px; }
 }

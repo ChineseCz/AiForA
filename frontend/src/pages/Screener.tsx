@@ -1,10 +1,14 @@
-import { DeleteOutlined, PlusOutlined } from "@ant-design/icons";
 import {
-  Button, Card, Checkbox, Empty, Input, InputNumber, Select, Space, Table, Tag, Typography, message,
+  CheckCircleFilled, DeleteOutlined, FilterOutlined, PieChartOutlined, PlusOutlined, TeamOutlined,
+} from "@ant-design/icons";
+import {
+  Button, Card, Checkbox, Empty, Input, InputNumber, List, Select, Space, Table, Tag, Typography, message,
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
+
+import { useIsMobile } from "@/hooks/useIsMobile";
 
 const TAG_COLLAPSE_LIMIT = 6;
 
@@ -37,15 +41,56 @@ import { usePageContext } from "@/pageContext";
 import { screenerState } from "./screenerState";
 import { fmtNum, fmtPct, fmtYi, pctClass } from "@/util";
 
+// 手机端把12列的横向滚动表格换成一只股票一张卡：头一行放名称/代码+最新价/涨跌幅，
+// 中间板块/概念题材标签换行展示，底部一个2列小表放换手率/市盈率/市净率/总市值/ROE，
+// 最后是大V看好标签——信息密度风格，不用横向滚动就能看全。
+function StockCard({ row }: { row: StockRow }) {
+  return (
+    <Card size="small" style={{ marginBottom: 8 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 6 }}>
+        <Space size={6}>
+          <Link to={`/stock/${row.code}`} style={{ fontWeight: 600, fontSize: 15 }}>{row.name || row.code}</Link>
+          <span style={{ color: "var(--text-secondary)", fontSize: 12 }}>{row.code}</span>
+        </Space>
+        <span className={pctClass(row.change_pct)} style={{ fontWeight: 600 }}>
+          {fmtNum(row.close)} {fmtPct(row.change_pct)}
+        </span>
+      </div>
+      {(row.sectors?.length || row.concepts?.length) ? (
+        <div style={{ marginBottom: 6 }}>
+          <CollapsibleTags items={row.sectors} bullish={row.bullish_sectors} />
+          {row.concepts?.length ? <CollapsibleTags items={row.concepts} bullish={row.bullish_concepts} color="cyan" /> : null}
+        </div>
+      ) : null}
+      <div style={{
+        display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "4px 8px",
+        fontSize: 12, color: "var(--text-secondary)", marginBottom: row.bullish_users?.length ? 6 : 0,
+      }}>
+        <span>换手 <span style={{ color: "var(--text-primary)" }}>{fmtNum(row.turnover_rate)}</span></span>
+        <span>PE <span style={{ color: "var(--text-primary)" }}>{fmtNum(row.pe_ttm)}</span></span>
+        <span>PB <span style={{ color: "var(--text-primary)" }}>{fmtNum(row.pb)}</span></span>
+        <span>市值 <span style={{ color: "var(--text-primary)" }}>{fmtYi(row.total_mv)}</span></span>
+        <span>ROE <span style={{ color: "var(--text-primary)" }}>{row.roe == null ? "-" : fmtNum(row.roe)}</span></span>
+      </div>
+      {row.bullish_users?.length ? (
+        <Space size={[4, 4]} wrap>
+          {row.bullish_users.map((u) => <Tag key={u} color="volcano">{u}</Tag>)}
+        </Space>
+      ) : null}
+    </Card>
+  );
+}
+
 const PRESETS = [
-  { value: "ma_cross", label: "严格买点：金叉+站上MA20+多头排列+5日涨幅>3%（主板）" },
-  { value: "ma_cross2", label: "宽松买点：金叉+5日涨幅>3%（剔除科创板）" },
-  { value: "golden_cross", label: "金叉买点：近4日MACD金叉≥1次 且 KDJ金叉≥1次" },
-  { value: "fund_ok", label: "基本面达标：净利润/EPS/ROE/营收/毛利率" },
+  { value: "ma_cross", title: "严格买点", desc: "金叉+站上MA20+多头排列+5日涨幅>3%（主板）" },
+  { value: "ma_cross2", title: "宽松买点", desc: "金叉+5日涨幅>3%（剔除科创板）" },
+  { value: "golden_cross", title: "金叉买点", desc: "近4日MACD金叉≥1次 且 KDJ金叉≥1次" },
+  { value: "fund_ok", title: "基本面达标", desc: "净利润/EPS/ROE/营收/毛利率" },
 ];
 const OPS = [">", ">=", "<", "<=", "==", "!="];
 
 export default function Screener() {
+  const isMobile = useIsMobile();
   const { data: fields } = useScreenFields();
   const { data: sectors } = useSectors();
   const { data: users } = useUsers();
@@ -138,57 +183,84 @@ export default function Screener() {
   ];
 
   return (
-    <Space direction="vertical" size={16} style={{ width: "100%" }}>
-      <Typography.Title level={4} style={{ margin: 0 }}>选股</Typography.Title>
+    <Space direction="vertical" size={isMobile ? 12 : 16} style={{ width: "100%" }}>
+      <Typography.Title level={isMobile ? 5 : 4} style={{ margin: 0 }}>选股</Typography.Title>
 
-      <Card title="预设策略（可多选，取交集；不选也可以，靠下面的条件/提及/板块筛选）" size="small">
-        <Checkbox.Group
-          options={PRESETS} value={strategies}
-          onChange={(v) => setStrategies(v as string[])}
-          style={{ display: "flex", flexDirection: "column", gap: 6 }}
-        />
+      <Card title={isMobile ? "预设策略" : "预设策略（可多选，取交集；不选也可以，靠下面的条件/提及/板块筛选）"} size="small">
+        <div className="preset-grid">
+          {PRESETS.map((p) => {
+            const active = strategies.includes(p.value);
+            return (
+              <div
+                key={p.value}
+                className={`preset-card${active ? " active" : ""}`}
+                onClick={() => setStrategies(
+                  active ? strategies.filter((s) => s !== p.value) : [...strategies, p.value],
+                )}
+              >
+                {active && <CheckCircleFilled className="preset-card-check" />}
+                <div className="preset-card-title">{p.title}</div>
+                <div className="preset-card-desc">{p.desc}</div>
+              </div>
+            );
+          })}
+        </div>
       </Card>
 
-      <Card title="筛选条件（与预设取交集）" size="small">
-        <Space direction="vertical" style={{ width: "100%" }}>
+      <Card title={isMobile ? "筛选条件" : "筛选条件（与预设取交集）"} size="small">
+        <Space direction="vertical" size={16} style={{ width: "100%" }}>
           <Input placeholder="股票名称/代码/缩写，如 茅台 / 600519 / GZMT" allowClear
             value={nameQuery} onChange={(e) => setNameQuery(e.target.value)} style={{ maxWidth: 360 }} />
-          {conds.map((c, i) => (
-            <Space key={i} wrap>
-              <Select style={{ width: 140 }} value={c.field} onChange={(v) => setCond(i, { field: v })}
-                options={fields?.map((f) => ({ value: f.field, label: f.label }))} />
-              <Select style={{ width: 80 }} value={c.op} onChange={(v) => setCond(i, { op: v })}
-                options={OPS.map((o) => ({ value: o, label: o }))} />
-              <InputNumber value={c.value} onChange={(v) => setCond(i, { value: Number(v) })} />
-              <Button icon={<DeleteOutlined />} type="text" danger onClick={() => delCond(i)} />
+
+          <div className="filter-section">
+            <div className="filter-section-title"><FilterOutlined /> 数值条件</div>
+            <Space direction="vertical" size={8} style={{ width: "100%" }}>
+              {conds.map((c, i) => (
+                <Space key={i} wrap>
+                  <Select style={{ width: 140 }} value={c.field} onChange={(v) => setCond(i, { field: v })}
+                    options={fields?.map((f) => ({ value: f.field, label: f.label }))} />
+                  <Select style={{ width: 80 }} value={c.op} onChange={(v) => setCond(i, { op: v })}
+                    options={OPS.map((o) => ({ value: o, label: o }))} />
+                  <InputNumber value={c.value} onChange={(v) => setCond(i, { value: Number(v) })} />
+                  <Button icon={<DeleteOutlined />} type="text" danger onClick={() => delCond(i)} />
+                </Space>
+              ))}
+              <Button icon={<PlusOutlined />} onClick={addCond} type="dashed">添加条件</Button>
             </Space>
-          ))}
-          <Button icon={<PlusOutlined />} onClick={addCond} type="dashed">添加条件</Button>
+          </div>
 
-          <Space wrap>
-            <Checkbox checked={mentionOn} onChange={(e) => setMentionOn(e.target.checked)}>只看大V最近</Checkbox>
-            <InputNumber min={1} value={mentionDays} onChange={(v) => setMentionDays(Number(v) || 7)} style={{ width: 70 }} />
-            <span>天内提及</span>
-            <Select mode="multiple" allowClear placeholder="全部大V（不选=全部）" style={{ minWidth: 220 }}
-              value={mentionUsers} onChange={setMentionUsers} showSearch optionFilterProp="label"
-              options={users?.map((u) => ({ value: u.id, label: u.name }))} />
-            <Checkbox checked={mentionBullishOnly} onChange={(e) => setMentionBullishOnly(e.target.checked)}>
-              只看大V看多
-            </Checkbox>
-          </Space>
+          <div className="filter-section">
+            <div className="filter-section-title"><TeamOutlined /> 大V提及</div>
+            <Space wrap>
+              <Checkbox checked={mentionOn} onChange={(e) => setMentionOn(e.target.checked)}>只看大V最近</Checkbox>
+              <InputNumber min={1} value={mentionDays} onChange={(v) => setMentionDays(Number(v) || 7)} style={{ width: 70 }} />
+              <span>天内提及</span>
+              <Select mode="multiple" allowClear placeholder="全部大V（不选=全部）" style={{ minWidth: 220 }}
+                value={mentionUsers} onChange={setMentionUsers} showSearch optionFilterProp="label"
+                options={users?.map((u) => ({ value: u.id, label: u.name }))} />
+              <Checkbox checked={mentionBullishOnly} onChange={(e) => setMentionBullishOnly(e.target.checked)}>
+                只看大V看多
+              </Checkbox>
+            </Space>
+          </div>
 
-          <Space wrap>
-            <Checkbox checked={sectorOn} onChange={(e) => setSectorOn(e.target.checked)}>只看板块/概念</Checkbox>
-            <Select style={{ width: 160 }} value={sectorMode} onChange={setSectorMode}
-              options={[{ value: "manual", label: "手动选择" }, { value: "bullish", label: "大V看多的板块/概念" }]} />
-            {sectorMode === "manual" && (
-              <Select mode="multiple" allowClear placeholder="选择行业/概念" style={{ minWidth: 280 }}
-                value={sectorNames} onChange={setSectorNames} showSearch optionFilterProp="label"
-                options={sectors?.map((s) => ({ value: s.name, label: `${s.name}${s.abbr ? " " + s.abbr : ""}` }))} />
-            )}
-          </Space>
+          <div className="filter-section">
+            <div className="filter-section-title"><PieChartOutlined /> 板块/概念</div>
+            <Space wrap>
+              <Checkbox checked={sectorOn} onChange={(e) => setSectorOn(e.target.checked)}>只看板块/概念</Checkbox>
+              <Select style={{ width: 160 }} value={sectorMode} onChange={setSectorMode}
+                options={[{ value: "manual", label: "手动选择" }, { value: "bullish", label: "大V看多的板块/概念" }]} />
+              {sectorMode === "manual" && (
+                <Select mode="multiple" allowClear placeholder="选择行业/概念" style={{ minWidth: 280 }}
+                  value={sectorNames} onChange={setSectorNames} showSearch optionFilterProp="label"
+                  options={sectors?.map((s) => ({ value: s.name, label: `${s.name}${s.abbr ? " " + s.abbr : ""}` }))} />
+              )}
+            </Space>
+          </div>
 
-          <Button type="primary" loading={screen.isPending} onClick={run}>开始筛选</Button>
+          <Button type="primary" size="large" loading={screen.isPending} onClick={run} block={isMobile}>
+            开始筛选
+          </Button>
         </Space>
       </Card>
 
@@ -197,8 +269,16 @@ export default function Screener() {
         extra={rows.length ? <Tag color="blue">{rows.length} 只</Tag> : null}
       >
         {rows.length ? (
-          <Table<StockRow> rowKey="code" size="small" columns={columns} dataSource={rows}
-            scroll={{ x: 1460 }} pagination={{ pageSize: 20, showSizeChanger: true }} />
+          isMobile ? (
+            <List<StockRow>
+              dataSource={rows}
+              pagination={{ pageSize: 20, size: "small" }}
+              renderItem={(row) => <StockCard row={row} />}
+            />
+          ) : (
+            <Table<StockRow> rowKey="code" size="small" columns={columns} dataSource={rows}
+              scroll={{ x: 1460 }} pagination={{ pageSize: 20, showSizeChanger: true }} />
+          )
         ) : <Empty description="设定条件后点击「开始筛选」" />}
       </Card>
     </Space>

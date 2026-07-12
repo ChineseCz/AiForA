@@ -1,10 +1,12 @@
-import { Card, Col, Empty, List, Row, Segmented, Select, Space, Spin, Statistic, Tag, Typography } from "antd";
+import { CalendarOutlined, FileTextOutlined, FireOutlined, TeamOutlined } from "@ant-design/icons";
+import { Card, Col, Empty, List, Row, Segmented, Select, Space, Spin, Tag, Typography } from "antd";
 import ReactECharts from "echarts-for-react";
 import { useState } from "react";
 import { Link } from "react-router-dom";
 
 import { useOverview, useUsers } from "@/api/hooks";
 import type { BullishHeatBoard, BullishHeatItem } from "@/api/types";
+import { useIsMobile } from "@/hooks/useIsMobile";
 import { usePageContext } from "@/pageContext";
 import { useThemeMode } from "@/theme";
 import { fmtNum, fmtPct, pctClass } from "@/util";
@@ -17,6 +19,7 @@ export default function Dashboard() {
   const { data: users } = useUsers();
   const { data, isLoading } = useOverview(user);
   const { mode } = useThemeMode();
+  const isMobile = useIsMobile();
   const dark = mode === "dark";
   const userName = users?.find((u) => u.id === user)?.name;
 
@@ -75,25 +78,51 @@ export default function Dashboard() {
 
   return (
     <Spin spinning={isLoading}>
-      <Row justify="space-between" align="middle" style={{ marginBottom: 16 }}>
-        <Typography.Title level={3} style={{ margin: 0 }}>看板</Typography.Title>
+      <Row justify="space-between" align="middle" style={{ marginBottom: 16, gap: 8 }}>
+        <Typography.Title level={isMobile ? 4 : 3} style={{ margin: 0 }}>看板</Typography.Title>
         <Select
-          allowClear placeholder="全部大V" style={{ width: 200 }} value={user}
+          allowClear placeholder="全部大V" style={{ width: isMobile ? 140 : 200 }} value={user}
           onChange={setUser}
           options={users?.map((u) => ({ value: u.id, label: u.name }))}
         />
       </Row>
 
-      <Row gutter={[16, 16]}>
-        <Col xs={12} sm={12} md={6}><Card><Statistic title="帖子总数" value={data?.total ?? 0} /></Card></Col>
-        <Col xs={12} sm={12} md={6}><Card><Statistic title="大V数" value={data?.user_count ?? 0} /></Card></Col>
-        <Col xs={12} sm={12} md={6}><Card><Statistic title="活跃天数" value={data?.active_days ?? 0} /></Card></Col>
-        <Col xs={24} sm={12} md={6}><Card><Statistic title="时间跨度" value={`${data?.first ?? "-"} ~ ${data?.last ?? "-"}`} valueStyle={{ fontSize: 14 }} /></Card></Col>
-      </Row>
+      <Card styles={{ body: { padding: 0 } }}>
+        <div className="stat-strip">
+          <div className="stat-strip-item">
+            <div className="stat-strip-icon" style={{ background: "#1668dc1a", color: "#1668dc" }}><FileTextOutlined /></div>
+            <div>
+              <div className="stat-strip-value">{data?.total ?? 0}</div>
+              <div className="stat-strip-label">帖子总数</div>
+            </div>
+          </div>
+          <div className="stat-strip-item">
+            <div className="stat-strip-icon" style={{ background: "#722ed11a", color: "#722ed1" }}><TeamOutlined /></div>
+            <div>
+              <div className="stat-strip-value">{data?.user_count ?? 0}</div>
+              <div className="stat-strip-label">大V数</div>
+            </div>
+          </div>
+          <div className="stat-strip-item">
+            <div className="stat-strip-icon" style={{ background: "#fa8c161a", color: "#fa8c16" }}><FireOutlined /></div>
+            <div>
+              <div className="stat-strip-value">{data?.active_days ?? 0}</div>
+              <div className="stat-strip-label">活跃天数</div>
+            </div>
+          </div>
+          <div className="stat-strip-item">
+            <div className="stat-strip-icon" style={{ background: "#13c2c21a", color: "#13c2c2" }}><CalendarOutlined /></div>
+            <div>
+              <div className="stat-strip-value" style={{ fontSize: 14 }}>{data?.first ?? "-"} ~ {data?.last ?? "-"}</div>
+              <div className="stat-strip-label">时间跨度</div>
+            </div>
+          </div>
+        </div>
+      </Card>
 
       <Card
-        title="看多热度榜（近7天）"
-        style={{ marginTop: 16 }}
+        title={isMobile ? "看多热度榜" : "看多热度榜（近7天）"}
+        style={{ marginTop: isMobile ? 8 : 16 }}
         extra={
           <Segmented
             size="small"
@@ -117,10 +146,10 @@ export default function Dashboard() {
                 current: heatPage, onChange: setHeatPage,
               }}
               renderItem={(it, i) => (
-                <List.Item>
+                <List.Item style={isMobile ? { padding: "8px 0" } : undefined}>
                   <List.Item.Meta
                     title={
-                      <Space>
+                      <Space size={isMobile ? 4 : 8} wrap>
                         <span style={{ color: "#888" }}>{(heatPage - 1) * HEAT_PAGE_SIZE + i + 1}</span>
                         <Link to={`/stock/${it.code}`}>{it.name}</Link>
                         <span className={pctClass(it.change_pct)}>{fmtNum(it.close)} {fmtPct(it.change_pct)}</span>
@@ -147,10 +176,10 @@ export default function Dashboard() {
                 current: heatPage, onChange: setHeatPage,
               }}
               renderItem={(it, i) => (
-                <List.Item>
+                <List.Item style={isMobile ? { padding: "8px 0" } : undefined}>
                   <List.Item.Meta
                     title={
-                      <Space>
+                      <Space size={isMobile ? 4 : 8} wrap>
                         <span style={{ color: "#888" }}>{(heatPage - 1) * HEAT_PAGE_SIZE + i + 1}</span>
                         <span>{it.sector}</span>
                         <Tag color="volcano">{it.bullish_stock_count} 只股票被看多</Tag>
@@ -177,23 +206,31 @@ export default function Dashboard() {
         })()}
       </Card>
 
-      <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
+      <Row gutter={[isMobile ? 8 : 16, isMobile ? 8 : 16]} style={{ marginTop: isMobile ? 8 : 16 }}>
         <Col xs={24} md={12}>
-          <Card title="发帖热力（按天）"><ReactECharts option={heatOpt} style={{ height: 220 }} /></Card>
+          <Card title="发帖热力（按天）"><ReactECharts option={heatOpt} style={{ height: isMobile ? 180 : 220 }} /></Card>
         </Col>
         <Col xs={24} md={12}>
-          <Card title="月度发帖量"><ReactECharts option={monthlyOpt} style={{ height: 220 }} /></Card>
+          <Card title="月度发帖量"><ReactECharts option={monthlyOpt} style={{ height: isMobile ? 180 : 220 }} /></Card>
         </Col>
       </Row>
 
-      <Card title="最新动态" style={{ marginTop: 16 }}>
+      <Card title="最新动态" style={{ marginTop: isMobile ? 8 : 16 }}>
         {data?.latest?.length ? (
           <List
             dataSource={data.latest}
             renderItem={(p) => (
-              <List.Item extra={<a href={p.url} target="_blank" rel="noreferrer">原帖</a>}>
+              <List.Item
+                style={isMobile ? { padding: "8px 0" } : undefined}
+                extra={!isMobile && <a href={p.url} target="_blank" rel="noreferrer">原帖</a>}
+              >
                 <List.Item.Meta
-                  title={<>{p.user_name} · <span style={{ color: "#888" }}>{p.date}</span> {p.title}</>}
+                  title={
+                    <>
+                      {p.user_name} · <span style={{ color: "#888" }}>{p.date}</span> {p.title}
+                      {isMobile && <a href={p.url} target="_blank" rel="noreferrer" style={{ marginLeft: 8 }}>原帖</a>}
+                    </>
+                  }
                   description={<div style={{ maxHeight: 44, overflow: "hidden" }}>{p.text}</div>}
                 />
               </List.Item>
