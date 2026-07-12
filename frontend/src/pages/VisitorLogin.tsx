@@ -1,4 +1,5 @@
-import { Button, Card, Form, Input, Row, Tabs, message } from "antd";
+import { LineChartOutlined } from "@ant-design/icons";
+import { Button, Card, Form, Input, Row, Tabs, Typography, message } from "antd";
 import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
@@ -32,10 +33,10 @@ function WechatLoginTab() {
           alt="关注公众号"
           style={{ width: 180, height: 180 }}
         />
-        <div style={{ marginTop: 8, color: "#555", fontSize: 13 }}>
+        <div style={{ marginTop: 8, color: "var(--text-primary)", fontSize: 13 }}>
           扫码关注公众号，发送任意消息
         </div>
-        <div style={{ color: "#888", fontSize: 12 }}>
+        <div style={{ color: "var(--text-secondary)", fontSize: 12 }}>
           收到验证码后填入下方
         </div>
       </div>
@@ -171,17 +172,24 @@ function EmailRegisterTab() {
 
 export default function VisitorLogin() {
   return (
-    <Row justify="center" style={{ marginTop: 80 }}>
-      <Card style={{ width: 360 }}>
-        <Tabs
-          centered
-          items={[
-            { key: "wechat", label: "微信登录", children: <WechatLoginTab /> },
-            { key: "email-login", label: "邮箱登录", children: <EmailLoginTab /> },
-            { key: "email-register", label: "邮箱注册", children: <EmailRegisterTab /> },
-          ]}
-        />
-      </Card>
+    <Row justify="center" style={{ marginTop: "min(64px, 6vh)", padding: "0 12px" }}>
+      <div style={{ width: "100%", maxWidth: 360 }}>
+        <div className="login-hero">
+          <div className="login-hero-icon"><LineChartOutlined /></div>
+          <Typography.Title level={3} style={{ margin: "12px 0 2px" }}>雪球看板</Typography.Title>
+          <Typography.Text type="secondary" style={{ fontSize: 13 }}>大V观点 · 实时行情 · 智能选股</Typography.Text>
+        </div>
+        <Card style={{ width: "100%" }}>
+          <Tabs
+            centered
+            items={[
+              { key: "wechat", label: "微信登录", children: <WechatLoginTab /> },
+              { key: "email-login", label: "邮箱登录", children: <EmailLoginTab /> },
+              { key: "email-register", label: "邮箱注册", children: <EmailRegisterTab /> },
+            ]}
+          />
+        </Card>
+      </div>
     </Row>
   );
 }

@@ -1,8 +1,8 @@
 import {
   BulbFilled, BulbOutlined, DashboardOutlined, FileTextOutlined, FundOutlined,
-  MenuOutlined, PieChartOutlined, RadarChartOutlined, SettingOutlined, UserOutlined,
+  MoreOutlined, PieChartOutlined, RadarChartOutlined, SettingOutlined, UserOutlined,
 } from "@ant-design/icons";
-import { Button, Drawer, Dropdown, Grid, Input, Layout, Menu, Modal, theme, Typography, message } from "antd";
+import { Button, Dropdown, Input, Layout, Menu, Modal, theme, Typography, message } from "antd";
 import { useState } from "react";
 import { Navigate, Outlet, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 
@@ -10,6 +10,7 @@ import { errMsg } from "./api/client";
 import { useAuthConfig, useSetNickname, useVisitorMe } from "./api/hooks";
 import { useAuth } from "./auth";
 import FeibiWidget from "./components/FeibiWidget";
+import { useIsMobile } from "./hooks/useIsMobile";
 import Admin from "./pages/Admin";
 import VisitorLogin from "./pages/VisitorLogin";
 import Dashboard from "./pages/Dashboard";
@@ -22,7 +23,6 @@ import { useThemeMode } from "./theme";
 import { useVisitorAuth } from "./visitorAuth";
 
 const { Sider, Content, Header } = Layout;
-const { useBreakpoint } = Grid;
 
 const NAV = [
   { key: "/", icon: <DashboardOutlined />, label: "看板" },
@@ -123,14 +123,31 @@ function Brand() {
   );
 }
 
+// 底部Tab栏（仿微信/支付宝）：只放常用的5个只读页面，管理后台/主题切换/账号挪进 header 的「更多」菜单，
+// 栏位有限放不下这几个次要入口。
+function BottomTabBar({ selected, onSelect }: { selected: string; onSelect: (key: string) => void }) {
+  return (
+    <div className="bottom-tab-bar">
+      {NAV.map((item) => (
+        <div
+          key={item.key}
+          className={`bottom-tab-item${selected === item.key ? " active" : ""}`}
+          onClick={() => onSelect(item.key)}
+        >
+          {item.icon}
+          <span>{item.label}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function App() {
   const nav = useNavigate();
   const loc = useLocation();
   const { loggedIn } = useAuth();
   const selected = "/" + (loc.pathname.split("/")[1] || "");
-  const screens = useBreakpoint();
-  const isMobile = !screens.lg;
-  const [drawerOpen, setDrawerOpen] = useState(false);
+  const isMobile = useIsMobile();
   const { mode, toggle } = useThemeMode();
   const navTheme = mode === "dark" ? "dark" : "light";
   // Layout.Header 的默认背景是固定的深色 token（不随亮暗算法变），得自己接管颜色
@@ -138,7 +155,7 @@ export default function App() {
 
   // Menu 自带的 dark/light theme 是固定色板（暗色是那种深蓝 #001529），跟 Content/Header
   // 用 colorBgContainer 算出来的近黑背景不是一套色系。把 Menu 背景设透明，让它显出外层容器
-  // 背景，外层（Sider/Drawer）再显式接管成 colorBgContainer，整站背景色才能统一。
+  // 背景，外层（Sider）再显式接管成 colorBgContainer，整站背景色才能统一。
   // 管理后台入口只在管理员已登录时才出现在导航里，避免访客看到一个点了也进不去的菜单项。
   const navItems = loggedIn ? [...NAV, { key: "/admin", icon: <SettingOutlined />, label: "管理后台" }] : NAV;
   const navMenu = (
@@ -147,9 +164,24 @@ export default function App() {
       mode="inline"
       selectedKeys={[selected === "/" ? "/" : selected]}
       items={navItems}
-      onClick={(e) => { nav(e.key); setDrawerOpen(false); }}
+      onClick={(e) => nav(e.key)}
       style={{ background: "transparent" }}
     />
+  );
+
+  // 手机端底部Tab栏放不下管理后台/主题切换这两个次要入口，收进 header 右侧的「更多」下拉里。
+  const moreMenu = (
+    <Dropdown
+      menu={{
+        items: [
+          { key: "theme", icon: mode === "dark" ? <BulbOutlined /> : <BulbFilled />, label: mode === "dark" ? "切换为浅色主题" : "切换为深色主题" },
+          ...(loggedIn ? [{ key: "/admin", icon: <SettingOutlined />, label: "管理后台" }] : []),
+        ],
+        onClick: ({ key }) => { if (key === "theme") toggle(); else nav(key); },
+      }}
+    >
+      <Button type="text" icon={<MoreOutlined />} />
+    </Dropdown>
   );
 
   return (
@@ -166,19 +198,22 @@ export default function App() {
       )}
       <Layout>
         <Header className="app-header" style={{ background: token.colorBgContainer, borderBottom: `1px solid ${token.colorBorderSecondary}` }}>
-          {isMobile && (
-            <Button type="text" icon={<MenuOutlined />} onClick={() => setDrawerOpen(true)} />
-          )}
           <Typography.Text strong className="app-header-title">雪球看板 · Xueqiu Insight</Typography.Text>
-          <Button
-            type="text"
-            icon={mode === "dark" ? <BulbOutlined /> : <BulbFilled />}
-            onClick={toggle}
-            title={mode === "dark" ? "切换为浅色主题" : "切换为深色主题"}
-          />
+          {isMobile ? moreMenu : (
+            <Button
+              type="text"
+              icon={mode === "dark" ? <BulbOutlined /> : <BulbFilled />}
+              onClick={toggle}
+              title={mode === "dark" ? "切换为浅色主题" : "切换为深色主题"}
+            />
+          )}
           <VisitorMenu />
         </Header>
-        <Content style={{ padding: isMobile ? 12 : 20, overflow: "auto" }}>
+        <Content style={{
+          padding: isMobile ? 12 : 20,
+          paddingBottom: isMobile ? "calc(var(--tab-bar-height) + 12px)" : 20,
+          overflow: "auto",
+        }}>
           <Routes>
             <Route path="/login" element={<VisitorLogin />} />
             {/* 管理员登录/后台不受访客登录墙控制：管理员要能随时进来，且不出现在访客可见的导航里 */}
@@ -196,17 +231,7 @@ export default function App() {
           </Routes>
         </Content>
       </Layout>
-      <Drawer
-        placement="left"
-        open={drawerOpen}
-        onClose={() => setDrawerOpen(false)}
-        width={220}
-        styles={{ body: { padding: 0 } }}
-        closeIcon={null}
-        title={<Brand />}
-      >
-        {navMenu}
-      </Drawer>
+      {isMobile && <BottomTabBar selected={selected} onSelect={nav} />}
       {loggedIn && <FeibiWidget />}
     </Layout>
   );

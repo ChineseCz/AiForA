@@ -11,6 +11,7 @@ import {
   useAuthSettings, useJobStatus, useLogin, useSaveAuthSettings, useSaveSchedule, useSchedule, useUsers,
 } from "@/api/hooks";
 import { useAuth } from "@/auth";
+import { useIsMobile } from "@/hooks/useIsMobile";
 
 // ---- 登录表单 ----
 function LoginForm() {
@@ -18,8 +19,8 @@ function LoginForm() {
   const auth = useAuth();
   const nav = useNavigate();
   return (
-    <Row justify="center" style={{ marginTop: 80 }}>
-      <Card title="管理员登录" style={{ width: 360 }}>
+    <Row justify="center" style={{ marginTop: "min(80px, 8vh)", padding: "0 12px" }}>
+      <Card title="管理员登录" style={{ width: "100%", maxWidth: 360 }}>
         <Form
           layout="vertical"
           onFinish={(v) =>
@@ -187,19 +188,20 @@ function JobPanelInline(p: { kind: string; triggerPath: string; statusPath: stri
 
 export default function Admin({ login }: { login?: boolean }) {
   const { loggedIn, logout } = useAuth();
+  const isMobile = useIsMobile();
   if (login || !loggedIn) return <LoginForm />;
 
   return (
-    <Space direction="vertical" size={16} style={{ width: "100%" }}>
+    <Space direction="vertical" size={isMobile ? 12 : 16} style={{ width: "100%" }}>
       <Row justify="space-between" align="middle">
-        <Typography.Title level={4} style={{ margin: 0 }}>管理后台</Typography.Title>
-        <Button onClick={logout}>退出登录</Button>
+        <Typography.Title level={isMobile ? 5 : 4} style={{ margin: 0 }}>管理后台</Typography.Title>
+        <Button onClick={logout} size={isMobile ? "small" : "middle"}>退出登录</Button>
       </Row>
 
       <Alert type="info"
         message="抓取 / 历史K线回补依赖真实浏览器，需在 Windows 宿主的 browser 队列 worker 上运行；此处触发的这两项会进入队列等待宿主 worker 消费。" />
 
-      <Row gutter={[16, 16]}>
+      <Row gutter={[isMobile ? 8 : 16, isMobile ? 8 : 16]}>
         <Col xs={24} md={12}>
           <Typography.Title level={5}>数据同步</Typography.Title>
           <JobPanel title="行情快照同步" desc="全市场A股最新行情快照" kind="stock_sync"

@@ -31,6 +31,16 @@ ASK_SYSTEM_PROMPT = (
     "如果总结里没有能回答问题的信息，直接说明总结中未提及，不要编造。"
 )
 
+BRIEF_SYSTEM_PROMPT = (
+    "你是一名中文财经内容助理。任务是把一条雪球帖子正文压缩成一句话摘要，"
+    "供信息流默认折叠展示。严格遵守：\n"
+    "1. 只客观概括帖子说了什么，不替读者做判断，不加你自己的评论或建议。\n"
+    "2. 不编造原文没有的信息。\n"
+    "3. 控制在40个中文字符以内，不要标点收尾的省略号，不要加引号或前缀说明。\n"
+    "4. 直接输出这一句话，不要输出其他任何内容。"
+)
+
+
 FEIBI_SYSTEM_PROMPT = (
     "你是「菲比」，这个雪球大V看板系统的二次元管理员助手，只在管理后台里陪站长聊天、答疑。"
     "性格：元气、亲切、偶尔卖萌，但说正事的时候要靠谱、不废话，不装可爱到影响信息传达。"
@@ -61,6 +71,16 @@ def call_llm(user_content: str, system_prompt: str = SYSTEM_PROMPT) -> str:
 def ask_about_summary(summary_md: str, question: str) -> str:
     prompt = f"【总结内容】\n{summary_md}\n\n【用户问题】\n{question}"
     return call_llm(prompt, system_prompt=ASK_SYSTEM_PROMPT)
+
+
+def summarize_post_brief(text: str, title: str = "") -> str:
+    """给帖子流里的长帖子生成一句话摘要（抓取时自动调用，供默认折叠展示）。"""
+    parts = []
+    if title:
+        parts.append(f"标题：{title}")
+    parts.append(text or "")
+    brief = call_llm("\n".join(parts), system_prompt=BRIEF_SYSTEM_PROMPT)
+    return brief.strip().strip('"“”')
 
 
 def ask_feibi(history: list[dict], question: str, page_context: str = "") -> str:

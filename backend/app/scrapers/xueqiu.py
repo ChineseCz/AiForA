@@ -37,7 +37,51 @@ def clean_text(html: str) -> str:
         return ""
     soup = BeautifulSoup(html, "html.parser")
     text = soup.get_text("\n", strip=True)
-    return re.sub(r"\n{3,}", "\n\n", text).strip()
+    text = re.sub(r"\n{3,}", "\n\n", text).strip()
+    return normalize_post_text(text)
+
+
+# 专栏类帖子源 HTML 里每个块级元素（<p>/<li>/<div>）都会被 get_text("\n") 拆成独立一行，
+# 造成"编号"、"标题词+冒号"、"内容"本该在同一行的东西被空行隔断，如：
+# "1.\n\n福新转债\n\n：不强赎。" —— 下面几条规则把这类"本该是一行"的相邻片段重新粘回去，
+# 真正的段落间空行（两句完整陈述之间）不受影响。
+_NUM_MARKER_RE = re.compile(r"^(?:\d{1,3}[.．、)）]|[①-⑳]|\([0-9]{1,3}\))$")
+_LEADING_PUNCT_RE = re.compile(r"^[：:，,。.、）)]")
+
+
+def normalize_post_text(text: str) -> str:
+    if not text:
+        return text
+    lines = text.split("\n")
+    merged: list[str] = []
+    i, n = 0, len(lines)
+    while i < n:
+        line = lines[i]
+        stripped = line.strip()
+        if not stripped:
+            i += 1
+            continue
+        # 独占一行的编号（"1." "①" "(1)"）后面紧跟的内容行合并到同一行
+        if _NUM_MARKER_RE.match(stripped):
+            j = i + 1
+            while j < n and not lines[j].strip():
+                j += 1
+            if j < n:
+                merged.append(f"{stripped}{lines[j].strip()}")
+                i = j + 1
+                continue
+        # 下一非空行以标点开头（"：不强赎。"）——是上一行的续接，不是新段落
+        if merged:
+            j = i
+            while j < n and not lines[j].strip():
+                j += 1
+            if j < n and _LEADING_PUNCT_RE.match(lines[j].strip()):
+                merged[-1] = f"{merged[-1]}{lines[j].strip()}"
+                i = j + 1
+                continue
+        merged.append(stripped)
+        i += 1
+    return "\n\n".join(merged)
 
 
 def ms_to_date(ms: int) -> str:
@@ -160,7 +204,7 @@ def _day_start_ms(d) -> int:
     return int(datetime(d.year, d.month, d.day).timestamp() * 1000)
 
 
-def crawl_user(ctx, user: str, since=None, until=None) -> tuple[str, str, int, int, bool]:
+def crawl_user(ctx, user: str, since=None, until=None) -> tuple[str, str, int, int, bool, list[str]]:
     since_ms = _day_start_ms(since) if since else None
     until_ms = _day_start_ms(until) + 86_400_000 if until else None
 
@@ -255,6 +299,7 @@ def crawl_user(ctx, user: str, since=None, until=None) -> tuple[str, str, int, i
     user_id = ""
     user_name = ""
     new_count = 0
+    pending_brief_ids: list[str] = []
     for sid, st in statuses.items():
         uinfo = st.get("user") or {}
         user_id = str(uinfo.get("id") or user_id)
@@ -289,29 +334,34 @@ def crawl_user(ctx, user: str, since=None, until=None) -> tuple[str, str, int, i
             "fetched_at": int(time.time()),
         })
         new_count += 1
+        if len(text) > settings.post_brief_min_length:
+            pending_brief_ids.append(sid)
 
     try:
         page.close()
     except Exception:
         pass
-    return user_id, user_name, new_count, blocked, stopped_by_block
+    return user_id, user_name, new_count, blocked, stopped_by_block, pending_brief_ids
 
 
-def crawl_all(since=None, until=None) -> dict[str, tuple[str, int]]:
-    """返回 {user_id: (user_name, 本次新增条数)}，仅含新增>0的大V——供调用方决定
-    "谁需要重新生成当天总结"，避免没有新帖子也无脑重跑一遍 LLM。
+def crawl_all(since=None, until=None) -> tuple[dict[str, tuple[str, int]], list[str]]:
+    """返回 ({user_id: (user_name, 本次新增条数)}, pending_brief_ids)。
+
+    第一项仅含新增>0的大V——供调用方决定"谁需要重新生成当天总结"，避免没有新帖子也无脑重跑一遍 LLM。
+    第二项是本次新增里正文超长、需要派发"一句话总结"LLM任务的帖子id列表。
     """
     from playwright.sync_api import sync_playwright
 
     users = db.get_enabled_xueqiu_users()
     if not users:
         print("⚠️  xueqiu_users 表里没有启用的大V，无可抓取对象。")
-        return {}
+        return {}, []
     if since or until:
         print(f"📅 只抓时间段：{since or '最早'} ~ {until or '至今'}")
     print("🚀 启动浏览器，开始采集…")
     total_blocked = 0
     updated: dict[str, tuple[str, int]] = {}
+    pending_brief_ids: list[str] = []
     with sync_playwright() as p:
         ctx = open_context(p)
         try:
@@ -320,10 +370,11 @@ def crawl_all(since=None, until=None) -> dict[str, tuple[str, int]]:
                     _human_sleep(8.0)
                 print(f"→ 正在抓取 {user} …")
                 try:
-                    uid, uname, n, blocked, stopped = crawl_user(ctx, user, since, until)
+                    uid, uname, n, blocked, stopped, brief_ids = crawl_user(ctx, user, since, until)
                     total_blocked += blocked
                     if n > 0 and uid:
                         updated[uid] = (uname, n)
+                    pending_brief_ids.extend(brief_ids)
                     msg = f"✅ {uname or uid}（{uid}）：新增 {n} 条"
                     if blocked:
                         msg += f"；⚠️ 被 WAF 拦截 {blocked} 次"
@@ -339,7 +390,7 @@ def crawl_all(since=None, until=None) -> dict[str, tuple[str, int]]:
                 pass
     if total_blocked:
         print(f"\n⚠️  本次共有 {total_blocked} 次请求被 WAF 拦截，过几分钟重跑可补齐。")
-    return updated
+    return updated, pending_brief_ids
 
 
 def _xq_code_to_plain(code: str) -> str:

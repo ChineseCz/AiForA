@@ -423,6 +423,17 @@ def save_image_desc(post_id: str, desc: str) -> None:
         s.execute(text("UPDATE posts SET image_desc = :d WHERE id = :id"), {"d": desc, "id": post_id})
 
 
+def save_post_brief(post_id: str, brief: str) -> None:
+    with sync_session() as s:
+        s.execute(text("UPDATE posts SET brief = :b WHERE id = :id"), {"b": brief, "id": post_id})
+
+
+def get_post(post_id: str) -> dict | None:
+    with sync_session() as s:
+        row = s.execute(text("SELECT * FROM posts WHERE id = :id"), {"id": post_id}).mappings().first()
+        return dict(row) if row else None
+
+
 def get_posts_on_date(user_id: str, date_str: str) -> list[dict]:
     with sync_session() as s:
         rows = s.execute(text(

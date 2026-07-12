@@ -14,7 +14,7 @@ def task_crawl(source: str = "手动", summarize: bool = True, job_id: int | Non
 
     from app.scrapers import xueqiu
     with job_run("crawl", source, invalidate_cache=True, job_id=job_id):
-        updated = xueqiu.crawl_all()
+        updated, pending_brief_ids = xueqiu.crawl_all()
         if summarize and updated:
             # 只给"本次真的抓到新帖子"的大V重新生成当日总结，且强制 regen——否则当天已生成过一次
             # 总结的大V，即使后续抓到了新帖子，ensure_daily 命中缓存也不会重新生成，页面看不出变化。
@@ -23,6 +23,11 @@ def task_crawl(source: str = "手动", summarize: bool = True, job_id: int | Non
             for uid, (uname, n) in updated.items():
                 task_summarize_daily_one.delay(uid, uname, today, regen=True)
             print("✅ 今日总结任务已派发")
+        if pending_brief_ids:
+            print(f"… 派发帖子一句话总结任务（{len(pending_brief_ids)} 条长帖）…")
+            for pid in pending_brief_ids:
+                task_summarize_post_brief.delay(pid)
+            print("✅ 一句话总结任务已派发")
 
 
 @celery_app.task(name="browser.backfill", queue=QUEUE_BROWSER)
@@ -61,3 +66,23 @@ def task_summarize_daily_one(user_id: str, user_name: str, date_str: str, regen:
         d = datetime.strptime(date_str, "%Y-%m-%d").date()
         content = summaries_build.ensure_daily(user_id, user_name, d, regen=regen)
         print(f"  {user_name} {date_str}: {'✅' if content else '无帖子跳过'}")
+
+
+@celery_app.task(name="summarize.post_brief", queue="llm")
+def task_summarize_post_brief(post_id: str) -> None:
+    """给帖子流里的单条长帖子生成一句话摘要（抓取后自动派发，见 task_crawl）。"""
+    from app.core.cache import bump_dataver_sync
+    from app.repositories import sync_data as db
+    from app.services import summarizer
+
+    post = db.get_post(post_id)
+    if not post or not post.get("text"):
+        return
+    try:
+        brief = summarizer.summarize_post_brief(post["text"], post.get("title") or "")
+    except Exception as e:  # noqa: BLE001
+        print(f"⚠️  帖子 {post_id} 一句话总结失败：{e}")
+        return
+    if brief:
+        db.save_post_brief(post_id, brief)
+        bump_dataver_sync()
