@@ -1,5 +1,6 @@
 import { Button, Card, Collapse, Empty, Input, List, Select, Space, Tabs, Typography, message, theme } from "antd";
 import { useEffect, useState } from "react";
+import { useLocation } from "react-router-dom";
 
 import { errMsg } from "@/api/client";
 import { useAsk, useSummary, useSummaryKeys, useUsers } from "@/api/hooks";
@@ -19,12 +20,21 @@ export default function Summary() {
   const [key, setKey] = useState("");
   const [question, setQuestion] = useState("");
   const [listOpen, setListOpen] = useState(false);
+  const loc = useLocation();
 
   useEffect(() => {
-    if (user || !users?.length) return;
+    if (!users?.length) return;
+    // 从看板热度榜点击大V名字跳转过来时，location.state 带有 userId，直接预选该大V
+    const fromState = (loc.state as { userId?: string } | null)?.userId;
+    if (fromState) {
+      setUser(fromState);
+      return;
+    }
+    if (user) return;
     const preferred = users.find((u) => u.name === "冰冰小美");
     setUser((preferred ?? users[0]).id);
-  }, [users, user]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [users]);
 
   const { data: keys } = useSummaryKeys(user, type);
   const { data: summary } = useSummary(user, type, key);

@@ -17,8 +17,8 @@ const post = async <T>(url: string, body?: object): Promise<T> =>
 export const useUsers = () =>
   useQuery({ queryKey: ["users"], queryFn: () => get<UserItem[]>("/api/users") });
 
-export const useOverview = (user?: string) =>
-  useQuery({ queryKey: ["overview", user], queryFn: () => get<Overview>("/api/overview", { user }) });
+export const useOverview = (user?: string, days?: number) =>
+  useQuery({ queryKey: ["overview", user, days ?? 7], queryFn: () => get<Overview>("/api/overview", { user, days: days ?? 7 }) });
 
 export const usePosts = (p: { user?: string; start?: string; end?: string; q?: string; page: number; size: number }) =>
   useQuery({ queryKey: ["posts", p], queryFn: () => get<PostsPage>("/api/posts", p) });
