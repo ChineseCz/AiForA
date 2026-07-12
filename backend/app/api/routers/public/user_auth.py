@@ -1,15 +1,15 @@
 """访客账号（手机号+验证码 / 微信扫码）登录（Phase 9）。此路由不加管理员守卫，登录本身要开放。"""
 import json
 import logging
-import random
 import re
+import secrets
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse, PlainTextResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.concurrency import run_in_threadpool
 
-from app.api.deps import _is_login_required, cache, db_session, require_visitor
+from app.api.deps import _is_login_required, cache, db_session, require_visitor, require_visitor_payload
 from app.core.cache import CacheService
 from app.core.config import settings
 from app.core.ratelimit import limiter
@@ -80,17 +80,18 @@ async def send_code(request: Request, c: CacheService = Depends(cache)):
     if await c.client.get(_resend_key(phone)):
         return JSONResponse({"error": "发送太频繁，请稍后再试"}, status_code=429)
 
-    code = "".join(random.choices("0123456789", k=settings.sms_code_length))
+    code = "".join(secrets.choice("0123456789") for _ in range(settings.sms_code_length))
     await c.client.set(_code_key(phone), code, ex=settings.sms_code_expire_seconds)
     await c.client.set(_resend_key(phone), "1", ex=settings.sms_resend_interval_seconds)
 
-    ok = send_sms(phone, code)
+    ok = await run_in_threadpool(send_sms, phone, code)
     if not ok:
         return JSONResponse({"error": "验证码发送失败，请稍后重试"}, status_code=502)
     return {"error": ""}
 
 
 @router.post("/login")
+@limiter.limit(settings.rate_limit_login)
 async def login(request: Request, c: CacheService = Depends(cache), session: AsyncSession = Depends(db_session)):
     body = await _json_body(request)
     phone = str(body.get("phone") or "").strip()
@@ -104,31 +105,37 @@ async def login(request: Request, c: CacheService = Depends(cache), session: Asy
     await c.client.delete(_code_key(phone))
 
     user = await users_repo.get_or_create_by_phone(session, phone)
-    token = create_access_token(phone, typ="visitor", expire_minutes=settings.visitor_jwt_expire_minutes)
+    token = create_access_token(phone, typ="visitor", expire_minutes=settings.visitor_jwt_expire_minutes, sty="phone")
     return {"access_token": token, "token_type": "bearer", "phone": user["phone"]}
 
 
 @router.get("/me")
-async def me(sub: str = Depends(require_visitor), session: AsyncSession = Depends(db_session)):
-    """当前访客账号信息（手机号 / 微信 / 邮箱登录，三种取其一）。"""
-    user = await users_repo.get_by_phone(session, sub)
-    if user:
-        return {
-            "login_type": "phone", "phone": user["phone"],
-            "nickname": user.get("nickname"), "created_at": user["created_at"],
-        }
-    user = await users_repo.get_by_openid(session, sub)
-    if user:
-        return {
-            "login_type": "wechat", "phone": None,
-            "nickname": user.get("nickname"), "created_at": user["created_at"],
-        }
-    user = await users_repo.get_by_email(session, sub)
-    if user:
-        return {
-            "login_type": "email", "phone": None, "email": user["email"],
-            "nickname": user.get("nickname"), "created_at": user["created_at"],
-        }
+async def me(payload: dict = Depends(require_visitor_payload), session: AsyncSession = Depends(db_session)):
+    """当前访客账号信息。sty 字段直接路由到对应查询，避免串行三次 DB 查询。"""
+    sub = payload["sub"]
+    sty = payload.get("sty", "phone")  # 旧 token 无 sty 时降级为 phone
+
+    if sty == "wechat":
+        user = await users_repo.get_by_openid(session, sub)
+        if user:
+            return {
+                "login_type": "wechat", "phone": None,
+                "nickname": user.get("nickname"), "created_at": user["created_at"],
+            }
+    elif sty == "email":
+        user = await users_repo.get_by_email(session, sub)
+        if user:
+            return {
+                "login_type": "email", "phone": None, "email": user["email"],
+                "nickname": user.get("nickname"), "created_at": user["created_at"],
+            }
+    else:
+        user = await users_repo.get_by_phone(session, sub)
+        if user:
+            return {
+                "login_type": "phone", "phone": user["phone"],
+                "nickname": user.get("nickname"), "created_at": user["created_at"],
+            }
     return JSONResponse({"error": "用户不存在"}, status_code=404)
 
 
@@ -160,7 +167,7 @@ async def email_send_code(request: Request, c: CacheService = Depends(cache), se
     if await c.client.get(_email_resend_key(email)):
         return JSONResponse({"error": "发送太频繁，请稍后再试"}, status_code=429)
 
-    code = "".join(random.choices("0123456789", k=6))
+    code = "".join(secrets.choice("0123456789") for _ in range(6))
     await c.client.set(_email_code_key(email), code, ex=settings.email_code_expire_seconds)
     await c.client.set(_email_resend_key(email), "1", ex=settings.email_resend_interval_seconds)
 
@@ -171,6 +178,7 @@ async def email_send_code(request: Request, c: CacheService = Depends(cache), se
 
 
 @router.post("/email/register")
+@limiter.limit(settings.rate_limit_login)
 async def email_register(request: Request, c: CacheService = Depends(cache), session: AsyncSession = Depends(db_session)):
     body = await _json_body(request)
     email = str(body.get("email") or "").strip().lower()
@@ -189,7 +197,7 @@ async def email_register(request: Request, c: CacheService = Depends(cache), ses
     user = await users_repo.create_by_email(session, email, hash_password(password))
     if not user:
         return JSONResponse({"error": "该邮箱已注册，请直接登录"}, status_code=400)
-    token = create_access_token(email, typ="visitor", expire_minutes=settings.visitor_jwt_expire_minutes)
+    token = create_access_token(email, typ="visitor", expire_minutes=settings.visitor_jwt_expire_minutes, sty="email")
     return {"access_token": token, "token_type": "bearer", "email": email}
 
 
@@ -206,7 +214,7 @@ async def email_login(request: Request, session: AsyncSession = Depends(db_sessi
     if not user or not user.get("password_hash") or not verify_password(password, user["password_hash"]):
         return JSONResponse({"error": "邮箱或密码错误"}, status_code=401)
 
-    token = create_access_token(email, typ="visitor", expire_minutes=settings.visitor_jwt_expire_minutes)
+    token = create_access_token(email, typ="visitor", expire_minutes=settings.visitor_jwt_expire_minutes, sty="email")
     return {"access_token": token, "token_type": "bearer", "email": email}
 
 
@@ -260,7 +268,7 @@ async def wechat_webhook_event(
     evt = event.get("Event", "")
     is_click_get_code = msg_type == "event" and evt == "CLICK" and event.get("EventKey", "") == "GET_CODE"
     if (msg_type == "text" or is_click_get_code) and openid:
-        code = "".join(random.choices("0123456789", k=6))
+        code = "".join(secrets.choice("0123456789") for _ in range(6))
         await c.client.set(f"{_WX_MSGCODE_PREFIX}{code}", openid, ex=_WX_MSGCODE_EXPIRE)
         reply = wechat.build_text_reply(openid, mp_id, f"您的登录验证码是 {code}，5分钟内有效。")
         return PlainTextResponse(reply, media_type="application/xml")
@@ -277,13 +285,14 @@ async def wechat_webhook_event(
                 scene_key = ek[len("qrscene_"):]
         if scene_key and await c.client.get(f"{_WX_SCENE_PREFIX}{scene_key}") == "pending":
             await users_repo.get_or_create_by_openid(session, openid)
-            token = create_access_token(openid, typ="visitor", expire_minutes=settings.visitor_jwt_expire_minutes)
+            token = create_access_token(openid, typ="visitor", expire_minutes=settings.visitor_jwt_expire_minutes, sty="wechat")
             await c.client.set(f"{_WX_SCENE_PREFIX}{scene_key}", token, ex=_WX_SCENE_EXPIRE)
 
     return PlainTextResponse("success")
 
 
 @router.post("/wechat/code-login")
+@limiter.limit(settings.rate_limit_login)
 async def wechat_code_login(
     request: Request,
     c: CacheService = Depends(cache),
@@ -301,7 +310,7 @@ async def wechat_code_login(
     await c.client.delete(f"{_WX_MSGCODE_PREFIX}{code}")
 
     await users_repo.get_or_create_by_openid(session, openid)
-    token = create_access_token(openid, typ="visitor", expire_minutes=settings.visitor_jwt_expire_minutes)
+    token = create_access_token(openid, typ="visitor", expire_minutes=settings.visitor_jwt_expire_minutes, sty="wechat")
     return {"access_token": token, "token_type": "bearer"}
 
 

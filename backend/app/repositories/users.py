@@ -24,7 +24,8 @@ async def get_or_create_by_phone(session: AsyncSession, phone: str) -> dict:
     )
     await session.commit()
     row = await get_by_phone(session, phone)
-    assert row is not None
+    if row is None:
+        raise RuntimeError(f"INSERT OR IGNORE succeeded but phone row not found: {phone!r}")
     return row
 
 
@@ -47,7 +48,8 @@ async def get_or_create_by_openid(session: AsyncSession, openid: str) -> dict:
     )
     await session.commit()
     row = await get_by_openid(session, openid)
-    assert row is not None
+    if row is None:
+        raise RuntimeError(f"INSERT OR IGNORE succeeded but openid row not found: {openid!r}")
     return row
 
 
@@ -73,7 +75,8 @@ async def create_by_email(session: AsyncSession, email: str, password_hash: str)
     if not inserted:
         return None
     row = await get_by_email(session, email)
-    assert row is not None
+    if row is None:
+        raise RuntimeError(f"INSERT RETURNING succeeded but email row not found: {email!r}")
     return row
 
 

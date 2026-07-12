@@ -3,8 +3,10 @@
 对应旧 config.py 的每一项，1:1 迁移；密钥只留 env，不入库。
 数据库/Redis/池大小/缓存 TTL 等基础设施项是新增的。
 """
+import sys
 from functools import lru_cache
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -42,6 +44,8 @@ class Settings(BaseSettings):
     fetch_full_text: bool = True
     request_delay: float = 1.5
     headless: bool = False
+    # 帖子正文超过这个字数才在抓取后自动生成一句话总结（brief），短帖子直接全文展示不用调LLM
+    post_brief_min_length: int = 200
 
     # ===== 路径（宿主 worker / 迁移脚本用）=====
     data_dir: str = "./data"
@@ -99,6 +103,24 @@ class Settings(BaseSettings):
     wechat_appsecret: str = ""
     # 与公众平台"服务器配置"里填写的 Token 保持一致
     wechat_token: str = ""
+
+    @model_validator(mode="after")
+    def _check_jwt_secret(self) -> "Settings":
+        default = "change-me-in-production"
+        if self.jwt_secret == default:
+            # 本地开发（database_url 包含 localhost）允许默认值，仅打警告；生产环境强制退出。
+            if "localhost" not in self.database_url and "127.0.0.1" not in self.database_url:
+                print(
+                    "[FATAL] JWT_SECRET 未配置或仍为默认值，生产环境禁止使用！"
+                    " 请在 .env 中设置 JWT_SECRET=<随机强密钥>",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+            print(
+                "[WARN] JWT_SECRET 使用默认值，仅允许本地开发环境。生产部署前必须修改！",
+                file=sys.stderr,
+            )
+        return self
 
     @property
     def effective_vision_model(self) -> str:

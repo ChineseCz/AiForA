@@ -61,7 +61,7 @@ async def require_admin(
 async def require_visitor(
     creds: HTTPAuthorizationCredentials | None = Depends(_bearer),
 ) -> str:
-    """校验访客 JWT（typ=visitor）；返回手机号（sub）。无效 → 401。"""
+    """校验访客 JWT（typ=visitor）；返回手机号/openid/email（sub）。无效 → 401。"""
     payload = _decode_bearer(creds)
     if not payload or not payload.get("sub") or payload.get("typ") != "visitor":
         raise HTTPException(
@@ -70,6 +70,20 @@ async def require_visitor(
             headers={"WWW-Authenticate": "Bearer"},
         )
     return str(payload["sub"])
+
+
+async def require_visitor_payload(
+    creds: HTTPAuthorizationCredentials | None = Depends(_bearer),
+) -> dict:
+    """校验访客 JWT 并返回完整 payload（含 sty 字段，供 /me 路由避免串行 DB 查询）。无效 → 401。"""
+    payload = _decode_bearer(creds)
+    if not payload or not payload.get("sub") or payload.get("typ") != "visitor":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="需要登录",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return payload
 
 
 async def require_visitor_or_anonymous(

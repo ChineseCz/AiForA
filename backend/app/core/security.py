@@ -18,15 +18,27 @@ def verify_password(password: str, password_hash: str) -> bool:
         return False
 
 
-def create_access_token(subject: str, typ: str = "admin", expire_minutes: int | None = None) -> str:
+def create_access_token(
+    subject: str,
+    typ: str = "admin",
+    expire_minutes: int | None = None,
+    sty: str | None = None,
+) -> str:
+    """签发 JWT。
+
+    sty（sub type）供访客 token 记录登录方式，避免 /me 串行三次 DB 查询：
+    'phone' | 'wechat' | 'email'，管理员 token 不传。
+    """
     now = int(time.time())
     minutes = expire_minutes if expire_minutes is not None else settings.jwt_expire_minutes
-    payload = {
+    payload: dict = {
         "sub": subject,
         "typ": typ,
         "iat": now,
         "exp": now + minutes * 60,
     }
+    if sty is not None:
+        payload["sty"] = sty
     return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
 
 
