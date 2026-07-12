@@ -217,3 +217,35 @@ export interface ScheduleCfg {
   stock_auto_sync_enabled: boolean;
   weekly_summary_enabled: boolean;
 }
+
+export interface AuthSettingsCfg {
+  require_login_enabled: boolean;
+}
+
+export interface AuthConfigResp {
+  require_login: boolean;
+}
+
+export interface VisitorLoginResp {
+  access_token: string;
+  phone?: string;
+  email?: string;
+}
+
+export interface WechatQrcodeResp {
+  scene_key: string;
+  qr_url: string;
+}
+
+export interface WechatPollResp {
+  status: "pending" | "scanned";
+  access_token?: string;
+}
+
+export interface VisitorMeResp {
+  login_type: "phone" | "wechat" | "email";
+  phone: string | null;
+  email?: string | null;
+  nickname: string | null;
+  created_at: number;
+}

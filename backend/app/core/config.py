@@ -75,6 +75,30 @@ class Settings(BaseSettings):
     rate_limit_enabled: bool = True
     rate_limit_public: str = "120/minute"   # 公开只读接口默认限额（按 IP）
     rate_limit_login: str = "5/minute"      # 登录接口更严（防爆破）
+    rate_limit_sms_send: str = "1/minute"   # 发送验证码接口（按 IP，配合 Redis 按手机号节流）
+    rate_limit_email_send: str = "1/minute"  # 邮箱验证码发送接口（按 IP，配合 Redis 按邮箱节流）
+
+    # ===== 访客账号（手机号+验证码）=====
+    sms_code_length: int = 6
+    sms_code_expire_seconds: int = 300      # 验证码有效期 5 分钟
+    sms_resend_interval_seconds: int = 60   # 同一手机号重发间隔
+    visitor_jwt_expire_minutes: int = 43200  # 访客 token 有效期 30 天
+
+    # ===== 邮箱账号（注册验证码 + 账密登录）=====
+    email_code_expire_seconds: int = 600     # 注册验证码有效期 10 分钟
+    email_resend_interval_seconds: int = 60  # 同一邮箱重发间隔
+    smtp_host: str = ""
+    smtp_port: int = 465
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_from: str = ""       # 发件人显示地址；空则用 smtp_user
+    smtp_use_ssl: bool = True
+
+    # ===== 微信公众号（扫码登录）=====
+    wechat_appid: str = ""
+    wechat_appsecret: str = ""
+    # 与公众平台"服务器配置"里填写的 Token 保持一致
+    wechat_token: str = ""
 
     @property
     def effective_vision_model(self) -> str:

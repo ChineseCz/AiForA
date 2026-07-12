@@ -11,7 +11,7 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
-from app.api.deps import require_admin
+from app.api.deps import require_admin, require_visitor_or_anonymous
 from app.core import cache as cache_mod
 from app.core.bootstrap import bootstrap_admin
 from app.core.config import settings
@@ -41,10 +41,18 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    # 公开只读路由（匿名）
+    # 访客账号系统（注册/登录，开放，限流更严）+ 匿名访问开关查询接口（开放）
+    from app.api.routers.public import user_auth
+    app.include_router(user_auth.router, tags=["user-auth"])
+    app.include_router(user_auth.auth_config_router, tags=["user-auth"])
+
+    # 公开只读路由（登录/纯匿名开关由 require_visitor_or_anonymous 决定是否需要鉴权）
     from app.api.routers.public import groups, health, meta, overview, posts, screen, sectors, stocks, summaries
-    for mod in (meta, overview, posts, summaries, screen, stocks, sectors, groups, health):
-        app.include_router(mod.router, tags=["public"])
+    for mod in (meta, overview, posts, summaries, screen, stocks, sectors, groups):
+        app.include_router(mod.router, tags=["public"], dependencies=[Depends(require_visitor_or_anonymous)])
+
+    # 健康检查（容器编排探针，始终开放）
+    app.include_router(health.router, tags=["public"])
 
     # Prometheus 指标 /metrics（Phase 5 可观测性）
     from prometheus_fastapi_instrumentator import Instrumentator

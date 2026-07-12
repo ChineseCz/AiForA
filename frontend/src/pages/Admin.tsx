@@ -7,7 +7,9 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { api, errMsg } from "@/api/client";
-import { useJobStatus, useLogin, useSaveSchedule, useSchedule, useUsers } from "@/api/hooks";
+import {
+  useAuthSettings, useJobStatus, useLogin, useSaveAuthSettings, useSaveSchedule, useSchedule, useUsers,
+} from "@/api/hooks";
 import { useAuth } from "@/auth";
 
 // ---- 登录表单 ----
@@ -112,6 +114,32 @@ function SchedulePanel() {
   );
 }
 
+// ---- 用户模式开关 ----
+function AuthSettingsPanel() {
+  const { data } = useAuthSettings();
+  const save = useSaveAuthSettings();
+  const enabled = !!data?.require_login_enabled;
+  return (
+    <Card size="small" title="访客登录" style={{ marginBottom: 12 }}>
+      <Space align="center">
+        <Switch
+          checked={enabled}
+          loading={save.isPending}
+          onChange={(v) =>
+            save.mutate({ require_login_enabled: v }, {
+              onSuccess: () => message.success(v ? "已开启，访客需登录才能查看" : "已关闭，恢复匿名访问"),
+              onError: (e) => message.error(errMsg(e)),
+            })
+          }
+        />
+        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+          {enabled ? "已开启：访客需登录（手机号或微信）才能访问只读页面" : "已关闭：任何人可匿名浏览只读页面"}
+        </Typography.Text>
+      </Space>
+    </Card>
+  );
+}
+
 // ---- 总结生成 ----
 function SummarizePanel() {
   const { data: users } = useUsers();
@@ -193,6 +221,7 @@ export default function Admin({ login }: { login?: boolean }) {
             triggerPath="/api/crawl" statusPath="/api/crawl/status" body={{ summarize: true }} />
           <SummarizePanel />
           <SchedulePanel />
+          <AuthSettingsPanel />
         </Col>
       </Row>
     </Space>

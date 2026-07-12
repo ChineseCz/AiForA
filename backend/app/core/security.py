@@ -18,12 +18,14 @@ def verify_password(password: str, password_hash: str) -> bool:
         return False
 
 
-def create_access_token(subject: str) -> str:
+def create_access_token(subject: str, typ: str = "admin", expire_minutes: int | None = None) -> str:
     now = int(time.time())
+    minutes = expire_minutes if expire_minutes is not None else settings.jwt_expire_minutes
     payload = {
         "sub": subject,
+        "typ": typ,
         "iat": now,
-        "exp": now + settings.jwt_expire_minutes * 60,
+        "exp": now + minutes * 60,
     }
     return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
 

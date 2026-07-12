@@ -10,6 +10,7 @@ from app.models.sector import SectorCatalog, StockSector
 from app.models.stock_daily import StockDaily
 from app.models.stock_finance import StockFinance
 from app.models.summary import Summary
+from app.models.user import User
 from app.models.xueqiu_user import XueqiuUser
 
 __all__ = [
@@ -27,4 +28,5 @@ __all__ = [
     "XueqiuUser",
     "Schedule",
     "JobRun",
+    "User",
 ]

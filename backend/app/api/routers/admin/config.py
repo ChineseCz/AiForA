@@ -1,11 +1,15 @@
 """管理员：定时配置 + 分组写操作。Phase 2 已接入 schedules / stock_groups 表。"""
 import json
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 
+from app.api.deps import cache
+from app.core.cache import CacheService
 from app.repositories import sync_data as db
+from app.services.external import wechat
+from app.core.config import settings
 
 router = APIRouter(prefix="/api")
 
@@ -81,3 +85,40 @@ async def add_group_members(group_id: int, request: Request):
 async def remove_group_member(group_id: int, code: str):
     await run_in_threadpool(db.remove_group_member, group_id, code)
     return {"error": ""}
+
+
+# ================= 访客登录开关（Phase 9） =================
+@router.get("/auth-settings")
+async def get_auth_settings():
+    return await run_in_threadpool(db.get_auth_settings)
+
+
+@router.post("/auth-settings")
+async def set_auth_settings(request: Request):
+    body = await _json_body(request)
+    cfg = {"require_login_enabled": bool(body.get("require_login_enabled", False))}
+    return await run_in_threadpool(db.save_auth_settings, cfg)
+
+
+# ================= 微信公众号菜单 =================
+_WX_TOKEN_REDIS_KEY = "wx:access_token"
+_WX_DEFAULT_MENU = {
+    "button": [
+        {"type": "click", "name": "获取验证码", "key": "GET_CODE"}
+    ]
+}
+
+
+@router.post("/wechat/menu")
+async def create_wechat_menu(c: CacheService = Depends(cache)):
+    """一键创建/更新公众号自定义菜单，管理员调用一次即可。"""
+    cached = await c.client.get(_WX_TOKEN_REDIS_KEY)
+    if cached:
+        token = cached
+    else:
+        token = await run_in_threadpool(wechat.fetch_access_token, settings.wechat_appid, settings.wechat_appsecret)
+        await c.client.set(_WX_TOKEN_REDIS_KEY, token, ex=7000)
+    result = await run_in_threadpool(wechat.create_menu, token, _WX_DEFAULT_MENU)
+    if result.get("errcode", 0) != 0:
+        return JSONResponse({"error": f"微信接口返回: {result}"}, status_code=502)
+    return {"error": "", "detail": result}

@@ -8,6 +8,7 @@ import { BrowserRouter } from "react-router-dom";
 import App from "./App";
 import { AuthProvider } from "./auth";
 import { ThemeModeProvider, useThemeMode } from "./theme";
+import { VisitorAuthProvider } from "./visitorAuth";
 import "./index.css";
 
 const queryClient = new QueryClient({
@@ -26,11 +27,13 @@ function ThemedRoot() {
     >
       <QueryClientProvider client={queryClient}>
         <AuthProvider>
-          <AntApp>
-            <BrowserRouter>
-              <App />
-            </BrowserRouter>
-          </AntApp>
+          <VisitorAuthProvider>
+            <AntApp>
+              <BrowserRouter>
+                <App />
+              </BrowserRouter>
+            </AntApp>
+          </VisitorAuthProvider>
         </AuthProvider>
       </QueryClientProvider>
     </ConfigProvider>

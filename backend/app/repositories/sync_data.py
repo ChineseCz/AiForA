@@ -761,3 +761,35 @@ def save_schedule(cfg: dict) -> dict:
     return {k: params[k] for k in (
         "enabled", "start", "end", "interval", "stock_auto_sync_enabled", "weekly_summary_enabled",
     )}
+
+
+def get_auth_settings() -> dict:
+    with sync_session() as s:
+        row = s.execute(text(
+            "SELECT require_login_enabled FROM auth_settings ORDER BY id LIMIT 1"
+        )).mappings().first()
+        if not row:
+            return {"require_login_enabled": False}
+        return dict(row)
+
+
+def save_auth_settings(cfg: dict) -> dict:
+    now = int(time.time())
+    with sync_session() as s:
+        existing = s.execute(text("SELECT id FROM auth_settings ORDER BY id LIMIT 1")).first()
+        params = {
+            "require_login_enabled": bool(cfg.get("require_login_enabled", False)),
+            "now": now,
+        }
+        if existing:
+            params["id"] = existing[0]
+            s.execute(text(
+                "UPDATE auth_settings SET require_login_enabled=:require_login_enabled, "
+                "updated_at=:now WHERE id=:id"
+            ), params)
+        else:
+            s.execute(text(
+                "INSERT INTO auth_settings (require_login_enabled, updated_at) "
+                "VALUES (:require_login_enabled, :now)"
+            ), params)
+    return {"require_login_enabled": params["require_login_enabled"]}

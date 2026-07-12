@@ -3,8 +3,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { api } from "./client";
 import type {
-  Condition, Fundamentals, FieldMeta, GroupItem, JobStatus, KlineView, NewsItem,
+  AuthConfigResp, AuthSettingsCfg, Condition, Fundamentals, FieldMeta, GroupItem, JobStatus, KlineView, NewsItem,
   Overview, PostsPage, Quote, ScheduleCfg, ScreenResp, SectorItem, SectorRankResp, SummaryResp, UserItem,
+  VisitorLoginResp, VisitorMeResp, WechatQrcodeResp, WechatPollResp,
 } from "./types";
 
 const get = async <T>(url: string, params?: object): Promise<T> =>
@@ -115,7 +116,65 @@ export const useAsk = () =>
       post<{ answer: string; html: string }>("/api/summary/ask", b),
   });
 
-// 分组写
+export const useAuthSettings = () =>
+  useQuery({ queryKey: ["auth_settings"], queryFn: () => get<AuthSettingsCfg>("/api/auth-settings") });
+export const useSaveAuthSettings = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (cfg: AuthSettingsCfg) => post<AuthSettingsCfg>("/api/auth-settings", cfg),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["auth_settings"] }),
+  });
+};
+
+// ===== 访客账号（手机号 + 验证码） =====
+export const useAuthConfig = () =>
+  useQuery({ queryKey: ["auth_config"], queryFn: () => get<AuthConfigResp>("/api/auth/config") });
+
+export const useSendCode = () =>
+  useMutation({ mutationFn: (b: { phone: string }) => post<{ error: string }>("/api/user/send-code", b) });
+
+export const useVisitorLogin = () =>
+  useMutation({ mutationFn: (b: { phone: string; code: string }) => post<VisitorLoginResp>("/api/user/login", b) });
+
+export const useWechatCodeLogin = () =>
+  useMutation({ mutationFn: (b: { code: string }) => post<VisitorLoginResp>("/api/user/wechat/code-login", b) });
+
+// ===== 访客账号（邮箱注册 + 账密登录） =====
+export const useSendEmailCode = () =>
+  useMutation({ mutationFn: (b: { email: string }) => post<{ error: string }>("/api/user/email/send-code", b) });
+
+export const useEmailRegister = () =>
+  useMutation({
+    mutationFn: (b: { email: string; code: string; password: string }) =>
+      post<VisitorLoginResp>("/api/user/email/register", b),
+  });
+
+export const useEmailLogin = () =>
+  useMutation({
+    mutationFn: (b: { email: string; password: string }) => post<VisitorLoginResp>("/api/user/email/login", b),
+  });
+
+export const useVisitorMe = (enabled: boolean) =>
+  useQuery({ queryKey: ["visitor_me"], queryFn: () => get<VisitorMeResp>("/api/user/me"), enabled });
+
+export const useSetNickname = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (nickname: string) => post<{ error: string; nickname: string }>("/api/user/nickname", { nickname }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["visitor_me"] }),
+  });
+};
+
+export const useWechatQrcode = () =>
+  useQuery({ queryKey: ["wechat_qrcode"], queryFn: () => get<WechatQrcodeResp>("/api/user/wechat/qrcode") });
+
+export const useWechatPoll = (sceneKey: string) =>
+  useQuery({
+    queryKey: ["wechat_poll", sceneKey],
+    queryFn: () => get<WechatPollResp>(`/api/user/wechat/poll/${sceneKey}`),
+    enabled: !!sceneKey,
+    refetchInterval: (query) => (query.state.data?.status === "scanned" ? false : 2000),
+  });
 export const useGroupMutations = () => {
   const qc = useQueryClient();
   const inval = () => qc.invalidateQueries({ queryKey: ["groups"] });
