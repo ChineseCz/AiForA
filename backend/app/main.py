@@ -37,8 +37,8 @@ def create_app() -> FastAPI:
         CORSMiddleware,
         allow_origins=settings.cors_origins,
         allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_methods=["GET", "POST"],
+        allow_headers=["Authorization", "Content-Type"],
     )
 
     # 访客账号系统（注册/登录，开放，限流更严）+ 匿名访问开关查询接口（开放）
@@ -55,8 +55,17 @@ def create_app() -> FastAPI:
     app.include_router(health.router, tags=["public"])
 
     # Prometheus 指标 /metrics（Phase 5 可观测性）
+    # 不使用 .expose() 的默认无守卫路由，改为手动注册并加管理员鉴权，防止内部指标被公网探测
     from prometheus_fastapi_instrumentator import Instrumentator
-    Instrumentator().instrument(app).expose(app, endpoint="/metrics", include_in_schema=False)
+    from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+    from fastapi.responses import Response as FastAPIResponse
+
+    instrumentator = Instrumentator()
+    instrumentator.instrument(app)
+
+    @app.get("/metrics", include_in_schema=False)
+    async def metrics(_admin: str = Depends(require_admin)):
+        return FastAPIResponse(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
     # 管理员登录（开放，限流更严）
     from app.api.routers.admin import auth as admin_auth

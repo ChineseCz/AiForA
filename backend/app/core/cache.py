@@ -76,14 +76,23 @@ def get_cache() -> CacheService:
     return CacheService(get_client())
 
 
+_sync_pool: "sync_redis.ConnectionPool | None" = None  # type: ignore[name-defined]
+
+
+def _get_sync_pool():
+    """模块级连接池单例，避免每次 bump_dataver_sync 都新建 TCP 连接。"""
+    global _sync_pool
+    if _sync_pool is None:
+        import redis as _r
+        _sync_pool = _r.ConnectionPool.from_url(settings.redis_url, decode_responses=True)
+    return _sync_pool
+
+
 def bump_dataver_sync() -> int:
     """同步版失效：供 Celery 任务在数据同步完成后调用（一次 INCR）。失败降级不抛。"""
     try:
         import redis as sync_redis
-        client = sync_redis.from_url(settings.redis_url, decode_responses=True)
-        try:
-            return client.incr(_DATAVER_KEY)
-        finally:
-            client.close()
+        client = sync_redis.Redis(connection_pool=_get_sync_pool())
+        return client.incr(_DATAVER_KEY)
     except Exception:
         return 0

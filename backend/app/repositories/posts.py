@@ -105,8 +105,11 @@ async def get_posts(
         extra += " AND date <= :end"
         params["end"] = end
     if q:
+        q_stripped = q.strip()
+        if len(q_stripped) < 2:
+            return {"total": 0, "items": [], "_warn": "搜索关键词至少 2 个字符"}
         extra += " AND (text LIKE :q OR title LIKE :q)"
-        params["q"] = f"%{q}%"
+        params["q"] = f"%{q_stripped}%"
 
     where = f"WHERE 1=1 {clause} {extra}"
     total = (await session.execute(
@@ -115,7 +118,7 @@ async def get_posts(
     rows = (await session.execute(text(
         f"""
         SELECT id, user_name, date, created_at, title, text, url,
-               like_count, retweet_count, reply_count, fav_count, images
+               like_count, retweet_count, reply_count, fav_count, images, brief
         FROM posts {where}
         ORDER BY created_at DESC
         LIMIT :limit OFFSET :offset
