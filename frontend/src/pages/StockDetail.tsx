@@ -75,6 +75,12 @@ function buildOption(bars: KlineBar[], dark: boolean, compact: boolean) {
   const gridLeft = compact ? 40 : 52;
   const gridRight = compact ? 8 : 20;
 
+  // 默认显示最近约1个月（22个交易日）；bars 不足22条时全显。
+  const MONTH_BARS = 22;
+  const defaultStart = bars.length > MONTH_BARS
+    ? Math.round(((bars.length - MONTH_BARS) / bars.length) * 100)
+    : 0;
+
   return {
     animation: false,
     axisPointer: { link: [{ xAxisIndex: "all" }] },
@@ -113,8 +119,8 @@ function buildOption(bars: KlineBar[], dark: boolean, compact: boolean) {
       // zoomLock（手机端开）—— 关掉 echarts 自带的双指缩放响应（内置逻辑不看手指移动幅度，
       // 每次 pinch 事件固定缩 10%，手指划得快事件密集触发就显得"缩放贼快"）；缩放交给组件里
       // 自己写的 pinch 处理去接管，按真实的 pinchScale 幅度算，能单独调"多快"。
-      { type: "inside", xAxisIndex: [0, 1, 2, 3], start: 55, end: 100, zoomLock: compact, preventDefaultMouseMove: false },
-      { type: "slider", xAxisIndex: [0, 1, 2, 3], bottom: 2, start: 55, end: 100, height: 16, textStyle: { color: axisLabelColor } },
+      { type: "inside", xAxisIndex: [0, 1, 2, 3], start: defaultStart, end: 100, zoomLock: compact, preventDefaultMouseMove: false },
+      { type: "slider", xAxisIndex: [0, 1, 2, 3], bottom: 2, start: defaultStart, end: 100, height: 16, textStyle: { color: axisLabelColor } },
     ],
     series: [
       {
@@ -190,6 +196,41 @@ function SubIndicatorLabels({ bar, left }: { bar: KlineBar; left: number }) {
   );
 }
 
+/** 6位代码 → 交易所前缀 */
+function exchangePrefix(code: string): string {
+  return /^[569]/.test(code) ? "SH" : /^[48]/.test(code) ? "BJ" : "SZ";
+}
+
+/**
+ * 唤起雪球 App 并跳到对应股票页。
+ *
+ * 方案：URL Scheme（xueqiu://s/SH600000）。
+ * - 本地服务（localhost）不在 xueqiu.com 域名，Universal Links 不会被 iOS 拦截，
+ *   必须用 scheme 才能从 web app 直接打开原生 App。
+ * - window.blur 降级：若 1.5s 内焦点没有转移（App 未安装/Scheme 未响应），
+ *   则打开网页版作为兜底。
+ *
+ * 若 App 版本更新导致路径变化出现404，可替换 appUrl 里的路径后重新部署。
+ */
+function openXueqiu(code: string) {
+  const symbol = `${exchangePrefix(code)}${code}`;
+  const appUrl  = `xueqiu://s/${symbol}`;          // scheme 路径对应 web /S/
+  const webUrl  = `https://xueqiu.com/S/${symbol}`; // 降级：App 未安装时打开网页
+
+  let fallback: ReturnType<typeof setTimeout> | null = setTimeout(() => {
+    window.open(webUrl, "_blank", "noreferrer");
+  }, 1500);
+
+  // App 成功接管时浏览器会触发 blur，取消降级
+  const cancel = () => {
+    if (fallback) { clearTimeout(fallback); fallback = null; }
+    window.removeEventListener("blur", cancel);
+  };
+  window.addEventListener("blur", cancel, { once: true });
+
+  window.location.href = appUrl;
+}
+
 export default function StockDetail() {
   const { code = "" } = useParams();
   const location = useLocation();
@@ -210,11 +251,7 @@ export default function StockDetail() {
   // 当前可见区间 [start,end]（百分比），双指缩放手势需要它算新窗口；随 datazoom 事件更新。
   const rangeRef = useRef({ start: 55, end: 100 });
 
-  // 秒级行情只覆盖"今天这根K线"的 close/high/low/volume，让价格看起来实时跳动；
-  // MA5/MA10/MA20、MACD、KDJ 等指标仍是后端按最近一次快照算好的日级值，不随秒级价格重算——
-  // 这些指标本质是收盘价的日线计算，盘中用最新价重算意义不大，还会造成"信号一会儿出现一会儿消失"的抖动。
-  // 只有当 quote.trade_date 与K线最后一天完全一致时才合并；今天还没做过第一次快照同步（没有"今天"这根
-  // K线）时不合并——不在前端凑一根后端没算过指标的假K线出来。
+  // ── bars：含实时报价合并，供顶部指标条 / hover 悬停显示用 ──
   const bars = useMemo(() => {
     const raw = kline?.bars ?? [];
     if (!quote || quote.error || !raw.length) return raw;
@@ -235,7 +272,43 @@ export default function StockDetail() {
   const prevClose = activeIdx > 0 ? bars[activeIdx - 1]?.close : undefined;
 
   const dark = mode === "dark";
-  const option = useMemo(() => buildOption(bars, dark, isMobile), [bars, dark, isMobile]);
+
+  // ── option：只依赖 kline/dark/isMobile，不依赖 quote ──
+  // quote 实时更新不走 notMerge 全量重建（会重置 dataZoom），
+  // 而是走下面的 useEffect 直接写入 ECharts 实例，保留缩放状态。
+  const option = useMemo(() => buildOption(kline?.bars ?? [], dark, isMobile), [kline, dark, isMobile]);
+
+  // ── 实时报价轻量更新：只改 K线和成交量两条系列的最后一根数据 ──
+  useEffect(() => {
+    if (!quote || quote.error || !chartReady) return;
+    const inst = chartRef.current?.getEchartsInstance();
+    if (!inst) return;
+    const raw = kline?.bars ?? [];
+    if (!raw.length) return;
+    const last = raw[raw.length - 1];
+    if (last.trade_date !== quote.trade_date) return;
+    const merged = {
+      ...last,
+      close: quote.close,
+      high: Math.max(last.high, quote.high),
+      low: Math.min(last.low, quote.low),
+      volume: quote.volume ?? last.volume,
+    };
+    const allBars = [...raw.slice(0, -1), merged];
+    // setOption without notMerge → 仅合并变化的 series，dataZoom/zoom 状态完全保留
+    inst.setOption({
+      series: [
+        { name: "K线", data: allBars.map((b) => [b.open, b.close, b.low, b.high]) },
+        {
+          name: "成交量",
+          data: allBars.map((b) => ({
+            value: b.volume,
+            itemStyle: { color: b.close >= b.open ? UP : DOWN },
+          })),
+        },
+      ],
+    });
+  }, [quote, kline, chartReady]);
   const onEvents = useMemo(
     () => ({
       // 悬停时读取当前索引，更新顶部指标条。因为 buildOption 里 tooltip.triggerOn 已经设成
@@ -280,14 +353,29 @@ export default function StockDetail() {
     let lastX = 0;
     let lastY = 0;
     let timer: number | null = null;
+    let lastTouchEnd = 0; // 记录最近一次 touch 抬手时刻，过滤浏览器合成的 mousemove
 
     const clearHoldTimer = () => {
       if (timer != null) { window.clearTimeout(timer); timer = null; }
     };
-    const showAt = (x: number, y: number) => inst.dispatchAction({ type: "showTip", x, y });
+    let crosshairHidden = false; // 追踪十字线是否已切成 none 类型
+
+    const showAt = (x: number, y: number) => {
+      // 如果上一次 hide() 把 axisPointer type 切成了 none，先恢复再显示
+      if (crosshairHidden) {
+        inst.setOption({ tooltip: { axisPointer: { type: "cross" } } });
+        crosshairHidden = false;
+      }
+      inst.dispatchAction({ type: "showTip", x, y });
+    };
     const setPanDisabled = (v: boolean) => inst.setOption({ dataZoom: [{ disabled: v }] });
     const hide = () => {
-      inst.dispatchAction({ type: "hideTip" });
+      // 把 axisPointer type 切成 "none" —— 这是唯一能可靠清除十字线的方式。
+      // hideTip 只藏 tooltip 浮层（本就是 showContent:false 所以看不到），
+      // 而两条虚线是 axisPointer 独立绘制的，必须改 type 才会消失。
+      // 下次 showAt 调用前会先切回 "cross"，对用户无感知。
+      inst.setOption({ tooltip: { axisPointer: { type: "none" } } });
+      crosshairHidden = true;
       setHoverIdx(null);
     };
 
@@ -305,7 +393,13 @@ export default function StockDetail() {
       }, HOLD_MS);
     };
     const onMove = (e: { offsetX: number; offsetY: number; zrByTouch?: boolean }) => {
-      if (!e.zrByTouch) { showAt(e.offsetX, e.offsetY); return; } // 鼠标悬停：立即显示
+      if (!e.zrByTouch) {
+        // 手指松开后浏览器会合成一个 mousemove（zrByTouch=false），200ms 内忽略，
+        // 防止 hide() 之后立刻被这个合成事件又把十字光标召回来。
+        if (Date.now() - lastTouchEnd < 200) return;
+        showAt(e.offsetX, e.offsetY);
+        return;
+      }
       lastX = e.offsetX;
       lastY = e.offsetY;
       if (!isTouchDown) return;
@@ -314,10 +408,14 @@ export default function StockDetail() {
       if (moved) clearHoldTimer();
     };
     const onUp = () => {
+      const wasTouch = isTouchDown;
       isTouchDown = false;
       if (armed) setPanDisabled(false);
       armed = false;
       clearHoldTimer();
+      // 无论是否进入过 armed 状态，只要是 touch 抬手就记录时刻，
+      // 阻断后续浏览器合成的 mousemove（zrByTouch=false）召回十字光标。
+      if (wasTouch) lastTouchEnd = Date.now();
       hide();
     };
 
@@ -393,6 +491,15 @@ export default function StockDetail() {
         <Typography.Title level={isMobile ? 5 : 4} style={{ margin: 0 }}>
           {kline?.name || code} <Typography.Text type="secondary">{code}</Typography.Text>
         </Typography.Title>
+        {code && (
+          <Button
+            size="small"
+            icon={<MobileOutlined />}
+            onClick={() => openXueqiu(code)}
+          >
+            雪球
+          </Button>
+        )}
       </Space>
 
       <Card styles={{ body: { padding: isMobile ? 6 : 12 } }}>
