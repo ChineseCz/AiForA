@@ -96,6 +96,34 @@ def fetch_board_list(param: str, kind: str) -> list[dict]:
             rows.append({"board_code": board_code, "name": parts[1], "kind": kind})
     return rows
 
+_SINA_HIST_URL = "https://quotes.sina.cn/cn/api/json_v2.php/CN_MarketDataService.getKLineData"
+
+
+def fetch_index_kline(code: str, datalen: int = 500) -> list[dict]:
+    """指数（如 sh000001 上证指数）历史K线，单次 requests 直连，不走 kline.py 那套浏览器反爬流程
+    （反爬阈值针对批量个股，单个指数请求不会触发）。失败/无数据返回空列表。
+    """
+    url = f"{_SINA_HIST_URL}?symbol={code}&scale=240&ma=no&datalen={datalen}"
+    try:
+        r = requests.get(url, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
+        data = r.json()
+    except Exception as e:  # noqa: BLE001
+        print(f"⚠️ 指数K线拉取失败 {code}：{e}")
+        return []
+    bars = []
+    for item in data or []:
+        try:
+            bars.append({
+                "trade_date": item["day"] if "day" in item else item["date"],
+                "open": float(item["open"]), "high": float(item["high"]),
+                "low": float(item["low"]), "close": float(item["close"]),
+                "volume": float(item.get("volume") or 0),
+            })
+        except (KeyError, ValueError, TypeError):
+            continue
+    return bars
+
+
 _SINA_QFQ_URL = "https://finance.sina.com.cn/realstock/company"
 
 

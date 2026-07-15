@@ -1,6 +1,11 @@
 """个股详情页视图：K线 / 基本面 / 分组成员。从旧 stock.py 移植。数据走 sync_data。"""
 from app.repositories import sync_data as db
 from app.services import indicators, matching
+from app.services.external import sina
+
+INDEX_NAMES = {
+    "sh000001": "上证指数", "sz399001": "深证成指", "sz399006": "创业板指", "sh000300": "沪深300",
+}
 
 
 def get_kline_view(code: str) -> dict:
@@ -27,6 +32,37 @@ def get_kline_view(code: str) -> dict:
             "trade_date": b["trade_date"],
             "open": b["open"] if b["open"] is not None else b["close"],
             "high": b["high"], "low": b["low"], "close": b["close"], "volume": b["volume"],
+            "ma5": ma5[i], "ma10": ma10[i], "ma20": ma20[i],
+            "dif": dif[i], "dea": dea[i], "macd": macd[i],
+            "k": k[i], "d": d[i], "j": j[i],
+            "strict_ok": strict_ok[i], "loose_ok": loose_ok[i], "golden_ok": golden_ok[i],
+            "mid_reverse_ok": mid_reverse_ok[i], "stop_loss_ok": stop_loss_ok[i],
+        })
+    return {"code": code, "name": name, "bars": out_bars}
+
+
+def get_index_kline_view(code: str) -> dict:
+    """大盘指数日线K线 + MA/MACD/KDJ，供看板首页画图。数据不落库，实时从新浪拉取。"""
+    name = INDEX_NAMES.get(code, code)
+    bars = sina.fetch_index_kline(code)
+    if len(bars) < 23:
+        return {"code": code, "name": name, "bars": []}
+
+    closes = [b["close"] for b in bars]
+    ma5 = indicators.moving_avg(closes, 5)
+    ma10 = indicators.moving_avg(closes, 10)
+    ma20 = indicators.moving_avg(closes, 20)
+    dif, dea, macd = indicators.compute_macd(closes)
+    k, d, j = indicators.compute_kdj(bars)
+    strict_ok, loose_ok = indicators.daily_signal_series(bars)
+    golden_ok = indicators.daily_golden_signal_series(dif, dea, k, d)
+    mid_reverse_ok, stop_loss_ok = indicators.daily_sell_signal_series(closes, ma5, ma10, dif, dea)
+
+    out_bars = []
+    for i, b in enumerate(bars):
+        out_bars.append({
+            "trade_date": b["trade_date"],
+            "open": b["open"], "high": b["high"], "low": b["low"], "close": b["close"], "volume": b["volume"],
             "ma5": ma5[i], "ma10": ma10[i], "ma20": ma20[i],
             "dif": dif[i], "dea": dea[i], "macd": macd[i],
             "k": k[i], "d": d[i], "j": j[i],

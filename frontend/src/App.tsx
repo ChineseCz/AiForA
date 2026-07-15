@@ -1,6 +1,6 @@
 import {
-  BulbFilled, BulbOutlined, DashboardOutlined, FileTextOutlined, FundOutlined,
-  MoreOutlined, PieChartOutlined, RadarChartOutlined, SettingOutlined, UserOutlined,
+  BulbFilled, BulbOutlined, DashboardOutlined, MessageOutlined,
+  MoreOutlined, RadarChartOutlined, SettingOutlined, StarOutlined, UserOutlined,
 } from "@ant-design/icons";
 import { Button, Dropdown, Input, Layout, Menu, Modal, theme, Typography, message } from "antd";
 import { useState } from "react";
@@ -12,13 +12,12 @@ import { useAuth } from "./auth";
 import FeibiWidget from "./components/FeibiWidget";
 import { useIsMobile } from "./hooks/useIsMobile";
 import Admin from "./pages/Admin";
+import Feed from "./pages/Feed";
 import VisitorLogin from "./pages/VisitorLogin";
+import My from "./pages/My";
 import Dashboard from "./pages/Dashboard";
-import Posts from "./pages/Posts";
 import Screener from "./pages/Screener";
-import SectorRank from "./pages/SectorRank";
 import StockDetail from "./pages/StockDetail";
-import Summary from "./pages/Summary";
 import { useThemeMode } from "./theme";
 import { useVisitorAuth } from "./visitorAuth";
 
@@ -26,10 +25,9 @@ const { Sider, Content, Header } = Layout;
 
 const NAV = [
   { key: "/", icon: <DashboardOutlined />, label: "看板" },
-  { key: "/posts", icon: <FileTextOutlined />, label: "帖子流" },
-  { key: "/summary", icon: <FundOutlined />, label: "AI 总结" },
+  { key: "/feed", icon: <MessageOutlined />, label: "大V动态" },
   { key: "/screener", icon: <RadarChartOutlined />, label: "选股" },
-  { key: "/sectors", icon: <PieChartOutlined />, label: "板块行情" },
+  { key: "/my", icon: <StarOutlined />, label: "我的" },
 ];
 
 function RequireAdmin({ children }: { children: JSX.Element }) {
@@ -221,10 +219,12 @@ export default function App() {
             <Route path="/admin" element={<RequireAdmin><Admin /></RequireAdmin>} />
             <Route element={<RequireVisitorOrAnon><Outlet /></RequireVisitorOrAnon>}>
               <Route path="/" element={<Dashboard />} />
-              <Route path="/posts" element={<Posts />} />
-              <Route path="/summary" element={<Summary />} />
+              <Route path="/feed" element={<Feed />} />
+              <Route path="/posts" element={<Navigate to="/feed" replace />} />
+              <Route path="/summary" element={<Navigate to="/feed" replace />} />
               <Route path="/screener" element={<Screener />} />
-              <Route path="/sectors" element={<SectorRank />} />
+              <Route path="/sectors" element={<Navigate to="/screener" replace />} />
+              <Route path="/my" element={<My />} />
               <Route path="/stock/:code" element={<StockDetail />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Route>

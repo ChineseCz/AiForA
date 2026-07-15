@@ -2,8 +2,10 @@
 from fastapi import APIRouter, Depends, Query
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import text
 
-from app.api.deps import cache
+from app.api.deps import cache, db_session
 from app.core.cache import CacheService
 from app.core.config import settings
 from app.services import views
@@ -45,6 +47,20 @@ async def api_stock_kline(code: str = Query(default=""), c: CacheService = Depen
     return view
 
 
+@router.get("/index/kline")
+async def api_index_kline(code: str = Query(default="sh000001"), c: CacheService = Depends(cache)):
+    """大盘指数日线（看板首页），不落库，直连新浪，60s TTL 保证盘中实时刷新。"""
+    code = code.strip() or "sh000001"
+    key = await c.key("index_kline", code=code)
+    hit = await c.get_json(key)
+    if hit is not None:
+        return hit
+    view = await run_in_threadpool(views.get_index_kline_view, code)
+    view["error"] = ""
+    await c.set_json(key, view, 60)
+    return view
+
+
 @router.get("/stock/fundamentals")
 async def api_stock_fundamentals(
     code: str = Query(default=""), days: int = Query(default=90), c: CacheService = Depends(cache)
@@ -79,3 +95,31 @@ async def api_stock_news(
     result = {"items": items, "days": days, "error": ""}
     await c.set_json(key, result, settings.cache_ttl_news)
     return result
+
+
+@router.get("/stock/search")
+async def api_stock_search(
+    q: str = Query(default="", max_length=20),
+    limit: int = Query(default=10, le=20),
+    session: AsyncSession = Depends(db_session),
+):
+    """按名称或代码模糊搜索股票，返回最新交易日的 {code, name} 列表。"""
+    q = q.strip()
+    if not q:
+        return {"items": []}
+    pattern = f"%{q}%"
+    rows = (await session.execute(
+        text(
+            """
+            SELECT code, name FROM stock_daily
+            WHERE trade_date = (SELECT MAX(trade_date) FROM stock_daily)
+              AND (name ILIKE :p OR code LIKE :p)
+            ORDER BY
+              CASE WHEN code = :exact THEN 0 WHEN name ILIKE :exact THEN 1 ELSE 2 END,
+              name
+            LIMIT :lim
+            """
+        ),
+        {"p": pattern, "exact": q, "lim": limit},
+    )).mappings().all()
+    return {"items": [{"code": r["code"], "name": r["name"]} for r in rows]}

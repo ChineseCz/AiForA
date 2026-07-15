@@ -201,6 +201,46 @@ export interface GroupItem {
   member_count: number;
 }
 
+export interface GroupMember {
+  code: string;
+  name: string;
+  added_at: number;
+  close?: number;
+  change_pct?: number;
+  volume?: number;
+}
+
+export interface TradeRecord {
+  id: number;
+  code: string;
+  stock_name: string;
+  direction: "buy" | "sell";
+  price: number;
+  quantity: number;
+  trade_date: string;
+  note: string;
+  created_at: number;
+}
+
+export interface TradeNote {
+  id: number;
+  note_date: string;  // YYYY-MM-DD
+  content: string;
+  updated_at: number;
+  is_favorite: boolean;
+}
+
+export interface TradeStats {
+  total_sell_trades: number;
+  wins: number;
+  losses: number;
+  win_rate: number;
+  avg_win: number;
+  avg_loss: number;
+  profit_factor: number | null;
+  total_realized_pnl: number;
+}
+
 export interface JobStatus {
   running: boolean;
   log: string[];

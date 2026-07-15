@@ -37,7 +37,7 @@ def create_app() -> FastAPI:
         CORSMiddleware,
         allow_origins=settings.cors_origins,
         allow_credentials=True,
-        allow_methods=["GET", "POST"],
+        allow_methods=["GET", "POST", "DELETE"],
         allow_headers=["Authorization", "Content-Type"],
     )
 
@@ -47,8 +47,8 @@ def create_app() -> FastAPI:
     app.include_router(user_auth.auth_config_router, tags=["user-auth"])
 
     # 公开只读路由（登录/纯匿名开关由 require_visitor_or_anonymous 决定是否需要鉴权）
-    from app.api.routers.public import groups, health, meta, overview, posts, screen, sectors, stocks, summaries
-    for mod in (meta, overview, posts, summaries, screen, stocks, sectors, groups):
+    from app.api.routers.public import groups, health, meta, overview, posts, screen, sectors, stocks, summaries, trades, notes
+    for mod in (meta, overview, posts, summaries, screen, stocks, sectors, groups, trades, notes):
         app.include_router(mod.router, tags=["public"], dependencies=[Depends(require_visitor_or_anonymous)])
 
     # 健康检查（容器编排探针，始终开放）

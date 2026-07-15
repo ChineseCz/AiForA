@@ -35,7 +35,12 @@ def sync_sector_catalog() -> int:
     n_industry = db.save_sector_catalog(industry_rows)
     concept_rows = sina.fetch_hot_concepts()
     n_concept = db.replace_concept_catalog(concept_rows)
-    print(f"✅ 已同步 {n_industry} 个行业板块 + {n_concept} 个概念板块")
+    parts = []
+    if n_industry:
+        parts.append(f"{n_industry} 个行业板块")
+    if n_concept:
+        parts.append(f"{n_concept} 个概念板块")
+    print(f"✅ 已同步 {' + '.join(parts) if parts else '0 条板块'}")
     return n_industry + n_concept
 
 

@@ -3,8 +3,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { api } from "./client";
 import type {
-  AuthConfigResp, AuthSettingsCfg, Condition, Fundamentals, FieldMeta, GroupItem, JobStatus, KlineView, NewsItem,
-  Overview, PostsPage, Quote, ScheduleCfg, ScreenResp, SectorItem, SectorRankResp, SummaryResp, UserItem,
+  AuthConfigResp, AuthSettingsCfg, Condition, Fundamentals, FieldMeta, GroupItem, GroupMember, JobStatus, KlineView, NewsItem,
+  Overview, PostsPage, Quote, ScheduleCfg, ScreenResp, SectorItem, SectorRankResp, SummaryResp, TradeNote, TradeRecord, TradeStats, UserItem,
   VisitorLoginResp, VisitorMeResp, WechatQrcodeResp, WechatPollResp,
 } from "./types";
 
@@ -45,6 +45,9 @@ export const useSectors = () =>
 
 export const useKline = (code: string) =>
   useQuery({ queryKey: ["kline", code], queryFn: () => get<KlineView>("/api/stock/kline", { code }), enabled: !!code });
+
+export const useIndexKline = (code: string) =>
+  useQuery({ queryKey: ["index_kline", code], queryFn: () => get<KlineView>("/api/index/kline", { code }), enabled: !!code, refetchInterval: 60_000 });
 
 export const useFundamentals = (code: string) =>
   useQuery({ queryKey: ["fundamentals", code], queryFn: () => get<Fundamentals>("/api/stock/fundamentals", { code }), enabled: !!code });
@@ -178,13 +181,122 @@ export const useWechatPoll = (sceneKey: string) =>
 export const useGroupMutations = () => {
   const qc = useQueryClient();
   const inval = () => qc.invalidateQueries({ queryKey: ["groups"] });
+  const invalMembers = (id: number) => qc.invalidateQueries({ queryKey: ["group_members", id] });
   return {
     create: useMutation({ mutationFn: (name: string) => post("/api/groups", { name }), onSuccess: inval }),
     remove: useMutation({ mutationFn: (id: number) => api.delete(`/api/groups/${id}`).then((r) => r.data), onSuccess: inval }),
     addMembers: useMutation({
       mutationFn: (v: { id: number; stocks: { code: string; name: string }[] }) =>
         post(`/api/groups/${v.id}/members`, { stocks: v.stocks }),
+      onSuccess: (_d, v) => { inval(); invalMembers(v.id); },
+    }),
+    removeMember: useMutation({
+      mutationFn: (v: { groupId: number; code: string }) =>
+        api.delete(`/api/groups/${v.groupId}/members/${v.code}`).then((r) => r.data),
+      onSuccess: (_d, v) => { inval(); invalMembers(v.groupId); },
+    }),
+  };
+};
+
+export const useGroupMembers = (groupId: number | null) =>
+  useQuery({
+    queryKey: ["group_members", groupId],
+    queryFn: () => get<{ items: GroupMember[] }>(`/api/groups/${groupId}/members`),
+    enabled: groupId !== null,
+  });
+
+export const useTrades = (code?: string) =>
+  useQuery({
+    queryKey: ["trades", code ?? "all"],
+    queryFn: () => get<{ items: TradeRecord[] }>("/api/trades", code ? { code } : undefined),
+  });
+
+export const useTradeMutations = () => {
+  const qc = useQueryClient();
+  const inval = () => qc.invalidateQueries({ queryKey: ["trades"] });
+  return {
+    create: useMutation({ mutationFn: (body: Omit<TradeRecord, "id" | "created_at">) => post("/api/trades", body), onSuccess: inval }),
+    remove: useMutation({ mutationFn: (id: number) => api.delete(`/api/trades/${id}`).then((r) => r.data), onSuccess: inval }),
+    importTxt: useMutation({
+      mutationFn: (file: File) => {
+        const fd = new FormData();
+        fd.append("file", file);
+        return api.post<{ imported: number; total: number; error: string }>("/api/trades/import", fd).then((r) => r.data);
+      },
       onSuccess: inval,
     }),
   };
 };
+
+export const useNoteList = (startDate?: string, endDate?: string, page = 1, pageSize = 20, favoriteOnly = false) =>
+  useQuery({
+    queryKey: ["notes", startDate ?? null, endDate ?? null, page, pageSize, favoriteOnly],
+    queryFn: () =>
+      get<{ items: TradeNote[]; total: number }>("/api/notes", {
+        start_date: startDate,
+        end_date: endDate,
+        page,
+        page_size: pageSize,
+        favorite_only: favoriteOnly || undefined,
+      }),
+  });
+
+export const useFavoriteNote = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (date: string) => api.patch<{ note: TradeNote }>(`/api/notes/${date}/favorite`).then((r) => r.data),
+    onSuccess: (_data, date) => {
+      qc.invalidateQueries({ queryKey: ["notes"] });
+      qc.invalidateQueries({ queryKey: ["note", date] });
+    },
+  });
+};
+
+export const useNote = (date: string | null) =>
+  useQuery({
+    queryKey: ["note", date],
+    queryFn: () => get<{ note: TradeNote | null }>("/api/notes", { date }),
+    enabled: date !== null,
+  });
+
+export const useNoteMutation = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { date: string; content: string }) => post<{ note: TradeNote }>("/api/notes", body),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: ["notes"] });
+      qc.invalidateQueries({ queryKey: ["note", vars.date] });
+    },
+  });
+};
+
+export const useGenerateNote = () =>
+  useMutation({
+    mutationFn: (date: string) => post<{ content: string }>("/api/notes/generate", { date }),
+  });
+
+export const useDeleteNote = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (date: string) => api.delete(`/api/notes?date=${date}`).then((r) => r.data),
+    onSuccess: (_data, date) => {
+      qc.invalidateQueries({ queryKey: ["notes"] });
+      qc.invalidateQueries({ queryKey: ["note", date] });
+    },
+  });
+};
+
+export const useBatchGenerateNotes = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { start_date: string; end_date: string }) =>
+      post<{ generated: number; dates: string[] }>("/api/notes/batch-generate", body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["notes"] }),
+  });
+};
+
+export const useTradeStats = () =>
+  useQuery({
+    queryKey: ["trade_stats"],
+    queryFn: () => get<{ stats: TradeStats }>("/api/trades/stats"),
+  });

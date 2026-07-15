@@ -2,10 +2,11 @@ import {
   CheckCircleFilled, DeleteOutlined, FilterOutlined, PieChartOutlined, PlusOutlined, TeamOutlined,
 } from "@ant-design/icons";
 import {
-  Button, Card, Checkbox, Empty, Input, InputNumber, List, Select, Space, Table, Tag, Typography, message,
+  Button, Card, Checkbox, Empty, Input, InputNumber, List, Segmented, Select, Space,
+  Table, Tabs, Tag, Typography, message,
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 
 import { useIsMobile } from "@/hooks/useIsMobile";
@@ -34,16 +35,82 @@ function CollapsibleTags({ items, bullish, color }: { items?: string[]; bullish?
 }
 
 import { errMsg } from "@/api/client";
-import { useScreen, useScreenFields, useSectors, useUsers } from "@/api/hooks";
+import { useScreen, useScreenFields, useSectorRank, useSectors, useUsers } from "@/api/hooks";
 import type { ScreenBody } from "@/api/hooks";
-import type { Condition, StockRow } from "@/api/types";
+import type { Condition, SectorRankItem, StockRow } from "@/api/types";
 import { usePageContext } from "@/pageContext";
 import { screenerState } from "./screenerState";
 import { fmtNum, fmtPct, fmtYi, pctClass } from "@/util";
 
-// 手机端把12列的横向滚动表格换成一只股票一张卡：头一行放名称/代码+最新价/涨跌幅，
-// 中间板块/概念题材标签换行展示，底部一个2列小表放换手率/市盈率/市净率/总市值/ROE，
-// 最后是大V看好标签——信息密度风格，不用横向滚动就能看全。
+// ──────────────────────────────────────────────
+// 板块行情 Tab
+// ──────────────────────────────────────────────
+
+function SectorRankTab({ onGotoScreener }: { onGotoScreener: () => void }) {
+  const isMobile = useIsMobile();
+  const { data, isLoading } = useSectorRank();
+  const [kind, setKind] = useState<"industry" | "concept">("industry");
+  const [q, setQ] = useState("");
+
+  const items = useMemo(() => {
+    const all = (data?.items || []).filter((it) => it.kind === kind);
+    const query = q.trim();
+    return query ? all.filter((it) => it.sector.includes(query)) : all;
+  }, [data, kind, q]);
+
+  const gotoMembers = (sector: string) => {
+    Object.assign(screenerState, {
+      strategies: [], conds: [], nameQuery: "",
+      mentionOn: false, sectorOn: true, sectorMode: "manual", sectorNames: [sector],
+    });
+    onGotoScreener();
+  };
+
+  const columns: ColumnsType<SectorRankItem> = isMobile ? [
+    { title: "板块", dataIndex: "sector",
+      render: (name: string) => <a onClick={() => gotoMembers(name)}>{name}</a> },
+    { title: "涨/跌", dataIndex: "up_count", width: 76,
+      render: (_v, r) => <span style={{ fontSize: 12 }}><span className="up">{r.up_count}</span>/<span className="down">{r.down_count}</span></span> },
+    { title: "平均涨幅", dataIndex: "avg_change_pct", width: 84,
+      render: (v) => <span className={pctClass(v)}>{fmtPct(v)}</span>,
+      sorter: (a, b) => (Number(a.avg_change_pct) || 0) - (Number(b.avg_change_pct) || 0),
+      defaultSortOrder: "descend" },
+  ] : [
+    { title: "板块", dataIndex: "sector", width: 180,
+      render: (name: string) => <a onClick={() => gotoMembers(name)}>{name}</a> },
+    { title: "成分股数", dataIndex: "member_count", width: 90 },
+    { title: "上涨", dataIndex: "up_count", width: 70, render: (v) => <span className="up">{v}</span> },
+    { title: "下跌", dataIndex: "down_count", width: 70, render: (v) => <span className="down">{v}</span> },
+    { title: "平均涨幅", dataIndex: "avg_change_pct", width: 100,
+      render: (v) => <span className={pctClass(v)}>{fmtPct(v)}</span>,
+      sorter: (a, b) => (Number(a.avg_change_pct) || 0) - (Number(b.avg_change_pct) || 0),
+      defaultSortOrder: "descend" },
+    { title: "市值加权涨幅", dataIndex: "mv_weighted_change_pct", width: 120,
+      render: (v) => <span className={pctClass(v)}>{fmtPct(v)}</span>,
+      sorter: (a, b) => (Number(a.mv_weighted_change_pct) || 0) - (Number(b.mv_weighted_change_pct) || 0) },
+  ];
+
+  return (
+    <Card size="small">
+      <Space wrap style={{ marginBottom: 12 }}>
+        <Segmented value={kind} onChange={(v) => setKind(v as "industry" | "concept")}
+          options={[{ label: "行业", value: "industry" }, { label: "概念题材", value: "concept" }]} />
+        <Input placeholder="搜索板块名" allowClear value={q} onChange={(e) => setQ(e.target.value)}
+          style={{ width: isMobile ? 150 : 200 }} />
+        {data?.trade_date && <Tag color="blue">行情日 {data.trade_date}</Tag>}
+      </Space>
+      {items.length ? (
+        <Table<SectorRankItem> rowKey="sector" size="small" columns={columns} dataSource={items}
+          loading={isLoading} pagination={{ pageSize: 30, showSizeChanger: true }} />
+      ) : <Empty description={isLoading ? "加载中" : "暂无数据"} />}
+    </Card>
+  );
+}
+
+// ──────────────────────────────────────────────
+// 选股 Tab
+// ──────────────────────────────────────────────
+
 function StockCard({ row }: { row: StockRow }) {
   return (
     <Card size="small" style={{ marginBottom: 8 }}>
@@ -89,15 +156,15 @@ const PRESETS = [
 ];
 const OPS = [">", ">=", "<", "<=", "==", "!="];
 
-export default function Screener() {
+function ScreenerTab({ pendingRun, onRunDone }: { pendingRun: boolean; onRunDone: () => void }) {
   const isMobile = useIsMobile();
   const { data: fields } = useScreenFields();
   const { data: sectors } = useSectors();
   const { data: users } = useUsers();
   const screen = useScreen();
+  const loc = useLocation();
+  const nav = useNavigate();
 
-  // 初始值取自 screenerState 这个模块级单例——从 /stock/:code 返回时能接得上上次的筛选和结果，
-  // 不用每次都重新勾一遍条件、重新点一次筛选。
   const [strategies, setStrategies] = useState<string[]>(screenerState.strategies);
   const [conds, setConds] = useState<Condition[]>(screenerState.conds);
   const [nameQuery, setNameQuery] = useState(screenerState.nameQuery);
@@ -108,12 +175,8 @@ export default function Screener() {
   const [sectorOn, setSectorOn] = useState(screenerState.sectorOn);
   const [sectorMode, setSectorMode] = useState(screenerState.sectorMode);
   const [sectorNames, setSectorNames] = useState<string[]>(screenerState.sectorNames);
-
   const [rows, setRows] = useState<StockRow[]>(screenerState.rows);
   const [tradeDate, setTradeDate] = useState<string | null>(screenerState.tradeDate);
-
-  const loc = useLocation();
-  const nav = useNavigate();
 
   usePageContext(
     `用户在"选股"页。已选策略：${strategies.length ? strategies.join("、") : "无"}；` +
@@ -124,7 +187,6 @@ export default function Screener() {
       : "还没有筛选结果。"),
   );
 
-  // 组件还活着的每一次变化都同步写回单例，下次重新 mount 时就能读到最新的
   useEffect(() => {
     Object.assign(screenerState, {
       strategies, conds, nameQuery, mentionOn, mentionDays, mentionUsers, mentionBullishOnly,
@@ -150,7 +212,13 @@ export default function Screener() {
     });
   };
 
-  // 从板块行情页点板块名跳转过来（带 autoRun state）时，自动跑一次筛选，不用用户再点一次按钮。
+  // 从板块行情 Tab 点板块名跳转过来时自动跑一次筛选
+  useEffect(() => {
+    if (pendingRun) { run(); onRunDone(); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingRun]);
+
+  // 兼容旧的外部 navigate("/screener", { state: { autoRun: true } }) 跳转
   useEffect(() => {
     if ((loc.state as { autoRun?: boolean } | null)?.autoRun) {
       run();
@@ -184,8 +252,6 @@ export default function Screener() {
 
   return (
     <Space direction="vertical" size={isMobile ? 12 : 16} style={{ width: "100%" }}>
-      <Typography.Title level={isMobile ? 5 : 4} style={{ margin: 0 }}>选股</Typography.Title>
-
       <Card title={isMobile ? "预设策略" : "预设策略（可多选，取交集；不选也可以，靠下面的条件/提及/板块筛选）"} size="small">
         <div className="preset-grid">
           {PRESETS.map((p) => {
@@ -281,6 +347,37 @@ export default function Screener() {
           )
         ) : <Empty description="设定条件后点击「开始筛选」" />}
       </Card>
+    </Space>
+  );
+}
+
+// ──────────────────────────────────────────────
+// 选股主页（板块行情 + 选股两 Tab）
+// ──────────────────────────────────────────────
+
+export default function Screener() {
+  const isMobile = useIsMobile();
+  const [activeTab, setActiveTab] = useState("sectors");
+  const [pendingRun, setPendingRun] = useState(false);
+
+  const handleGotoScreener = () => {
+    setActiveTab("screener");
+    setPendingRun(true);
+  };
+
+  return (
+    <Space direction="vertical" size={0} style={{ width: "100%" }}>
+      <Typography.Title level={isMobile ? 5 : 4} style={{ margin: "0 0 12px" }}>选股</Typography.Title>
+      <Tabs
+        activeKey={activeTab}
+        onChange={setActiveTab}
+        size={isMobile ? "small" : "middle"}
+        destroyInactiveTabPane
+        items={[
+          { key: "sectors", label: "板块行情", children: <SectorRankTab onGotoScreener={handleGotoScreener} /> },
+          { key: "screener", label: "选股", children: <ScreenerTab pendingRun={pendingRun} onRunDone={() => setPendingRun(false)} /> },
+        ]}
+      />
     </Space>
   );
 }

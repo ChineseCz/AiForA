@@ -1,5 +1,6 @@
 # API 容器依赖（不含 playwright / 浏览器 —— 抓取任务在 Windows 宿主 worker 跑，见 requirements-host.txt）
 fastapi>=0.111
+python-multipart>=0.0.9
 uvicorn[standard]>=0.30
 pydantic>=2.7
 pydantic-settings>=2.3
