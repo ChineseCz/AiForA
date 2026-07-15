@@ -161,6 +161,10 @@ export interface KlineBar {
   golden_ok: boolean;
   mid_reverse_ok: boolean;
   stop_loss_ok: boolean;
+  volume_breakout_ok: boolean;
+  boll_breakout_ok: boolean;
+  rsi_bounce_ok: boolean;
+  rsi_overbought_ok: boolean;
 }
 
 export interface KlineView {

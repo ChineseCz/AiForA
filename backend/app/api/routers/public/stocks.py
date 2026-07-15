@@ -1,4 +1,6 @@
 """个股详情：K线 / 基本面 / 相关新闻。计算/外部抓取均跑 threadpool。"""
+import json as _json
+
 from fastapi import APIRouter, Depends, Query
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
@@ -33,19 +35,37 @@ async def api_stock_quote(code: str = Query(default=""), c: CacheService = Depen
 
 
 @router.get("/stock/kline")
-async def api_stock_kline(code: str = Query(default=""), c: CacheService = Depends(cache)):
+async def api_stock_kline(
+    code: str = Query(default=""),
+    sp: str = Query(default=""),
+    c: CacheService = Depends(cache),
+):
     code = code.strip()
     if not code:
         return JSONResponse(
             {"error": "缺少股票代码", "code": "", "name": "", "bars": []}, status_code=400
         )
-    key = await c.key("kline", code=code)
-    hit = await c.get_json(key)
-    if hit is not None:
-        return hit
-    view = await run_in_threadpool(views.get_kline_view, code)
+    signal_params: dict | None = None
+    if sp:
+        try:
+            parsed = _json.loads(sp)
+            if isinstance(parsed, dict):
+                signal_params = parsed
+        except (ValueError, _json.JSONDecodeError):
+            pass
+
+    if not signal_params:
+        key = await c.key("kline", code=code)
+        hit = await c.get_json(key)
+        if hit is not None:
+            return hit
+        view = await run_in_threadpool(views.get_kline_view, code, None)
+        view["error"] = ""
+        await c.set_json(key, view, settings.cache_ttl_kline)
+        return view
+
+    view = await run_in_threadpool(views.get_kline_view, code, signal_params)
     view["error"] = ""
-    await c.set_json(key, view, settings.cache_ttl_kline)
     return view
 
 

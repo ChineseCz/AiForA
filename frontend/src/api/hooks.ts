@@ -44,8 +44,14 @@ export const useScreenFields = () =>
 export const useSectors = () =>
   useQuery({ queryKey: ["sectors"], queryFn: () => get<SectorItem[]>("/api/screen/sectors") });
 
-export const useKline = (code: string) =>
-  useQuery({ queryKey: ["kline", code], queryFn: () => get<KlineView>("/api/stock/kline", { code }), enabled: !!code });
+export const useKline = (code: string, sp?: Record<string, number | boolean>) => {
+  const spStr = sp && Object.keys(sp).length ? JSON.stringify(sp) : undefined;
+  return useQuery({
+    queryKey: ["kline", code, spStr],
+    queryFn: () => get<KlineView>("/api/stock/kline", { code, ...(spStr ? { sp: spStr } : {}) }),
+    enabled: !!code,
+  });
+};
 
 export const useIndexKline = (code: string) =>
   useQuery({ queryKey: ["index_kline", code], queryFn: () => get<KlineView>("/api/index/kline", { code }), enabled: !!code, refetchInterval: 60_000 });

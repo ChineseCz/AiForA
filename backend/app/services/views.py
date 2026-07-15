@@ -8,8 +8,9 @@ INDEX_NAMES = {
 }
 
 
-def get_kline_view(code: str) -> dict:
-    """日线K线 + MA/MACD/KDJ + 逐日买卖点信号，供前端画6幅图。"""
+def get_kline_view(code: str, sp: dict | None = None) -> dict:
+    """日线K线 + MA/MACD/KDJ + 逐日买卖点信号，供前端画6幅图。sp 为可选信号参数覆盖。"""
+    sp = sp or {}
     name = (db.get_latest_row_by_code(code) or {}).get("name") or code
 
     bars = db.get_history_for_code(code)
@@ -22,9 +23,30 @@ def get_kline_view(code: str) -> dict:
     ma20 = indicators.moving_avg(closes, 20)
     dif, dea, macd = indicators.compute_macd(closes)
     k, d, j = indicators.compute_kdj(bars)
-    strict_ok, loose_ok = indicators.daily_signal_series(bars)
-    golden_ok = indicators.daily_golden_signal_series(dif, dea, k, d)
+    strict_ok, loose_ok = indicators.daily_signal_series(
+        bars,
+        cross_days=int(sp.get("cross_days", 3)),
+        rise_days=int(sp.get("rise_days", 5)),
+        rise_pct=float(sp.get("rise_pct", 0.03)),
+    )
+    golden_ok = indicators.daily_golden_signal_series(
+        dif, dea, k, d,
+        cross_days=int(sp.get("golden_cross_days", 4)),
+        require_both=bool(sp.get("require_both", True)),
+    )
     mid_reverse_ok, stop_loss_ok = indicators.daily_sell_signal_series(closes, ma5, ma10, dif, dea)
+    vb_ok = indicators.daily_volume_breakout_series(
+        bars, int(sp.get("vb_breakout_days", 20)), float(sp.get("vb_volume_mult", 1.5)),
+    )
+    boll_ok = indicators.daily_boll_breakout_series(
+        bars, int(sp.get("boll_period", 20)), float(sp.get("boll_mult", 2.0)),
+    )
+    rsi_bounce_ok = indicators.daily_rsi_bounce_series(
+        bars, int(sp.get("rsi_period", 14)), float(sp.get("rsi_buy_threshold", 30.0)),
+    )
+    rsi_ob_ok = indicators.daily_rsi_overbought_series(
+        bars, int(sp.get("rsi_period", 14)), float(sp.get("rsi_sell_threshold", 70.0)),
+    )
 
     out_bars = []
     for i, b in enumerate(bars):
@@ -37,6 +59,8 @@ def get_kline_view(code: str) -> dict:
             "k": k[i], "d": d[i], "j": j[i],
             "strict_ok": strict_ok[i], "loose_ok": loose_ok[i], "golden_ok": golden_ok[i],
             "mid_reverse_ok": mid_reverse_ok[i], "stop_loss_ok": stop_loss_ok[i],
+            "volume_breakout_ok": vb_ok[i], "boll_breakout_ok": boll_ok[i],
+            "rsi_bounce_ok": rsi_bounce_ok[i], "rsi_overbought_ok": rsi_ob_ok[i],
         })
     return {"code": code, "name": name, "bars": out_bars}
 

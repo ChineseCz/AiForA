@@ -152,7 +152,9 @@ def golden_cross_metrics(
     }
 
 
-def daily_signal_series(bars: list[dict]) -> tuple[list[bool], list[bool]]:
+def daily_signal_series(
+    bars: list[dict], cross_days: int = 3, rise_days: int = 5, rise_pct: float = 0.03,
+) -> tuple[list[bool], list[bool]]:
     closes = [b["close"] for b in bars]
     n = len(closes)
     ma5 = moving_avg(closes, 5)
@@ -161,15 +163,15 @@ def daily_signal_series(bars: list[dict]) -> tuple[list[bool], list[bool]]:
     strict_ok = [False] * n
     loose_ok = [False] * n
     for t in range(n):
-        if ma20[t] is None or t < 5 or closes[t - 5] in (None, 0):
+        if ma20[t] is None or t < rise_days or closes[t - rise_days] in (None, 0):
             continue
-        cross1 = any(crossed_up(ma5, ma10, t - k) for k in range(3) if t - k >= 1)
+        cross1 = any(crossed_up(ma5, ma10, t - k) for k in range(cross_days) if t - k >= 1)
         cross23 = any(
             crossed_up(ma10, ma20, t - k) or crossed_up(ma5, ma20, t - k)
-            for k in range(3) if t - k >= 1
+            for k in range(cross_days) if t - k >= 1
         )
-        rise5 = closes[t] / closes[t - 5] - 1 > 0.03
-        loose_ok[t] = bool(cross1 and cross23 and rise5)
+        rise_ok = closes[t] / closes[t - rise_days] - 1 > rise_pct
+        loose_ok[t] = bool(cross1 and cross23 and rise_ok)
         if loose_ok[t]:
             price_above20 = closes[t] > ma20[t]
             duotou = ma5[t] is not None and ma10[t] is not None and ma5[t] > ma10[t] > ma20[t]
@@ -301,12 +303,68 @@ def volume_price_up_metrics(bars: list[dict], streak_days: int = 3) -> dict | No
     return {"streak_ok": streak_ok}
 
 
-def daily_golden_signal_series(dif: list[float], dea: list[float],
-                               k_list: list[float], d_list: list[float]) -> list[bool]:
+def daily_golden_signal_series(
+    dif: list[float], dea: list[float], k_list: list[float], d_list: list[float],
+    cross_days: int = 4, require_both: bool = True,
+) -> list[bool]:
     n = len(dif)
     out = [False] * n
     for t in range(n):
-        macd_recent = any(crossed_up(dif, dea, t - i) for i in range(4) if t - i >= 1)
-        kdj_recent = any(crossed_up(k_list, d_list, t - i) for i in range(4) if t - i >= 1)
-        out[t] = bool(macd_recent and kdj_recent)
+        macd_recent = any(crossed_up(dif, dea, t - i) for i in range(cross_days) if t - i >= 1)
+        kdj_recent = any(crossed_up(k_list, d_list, t - i) for i in range(cross_days) if t - i >= 1)
+        out[t] = bool(macd_recent and kdj_recent) if require_both else bool(macd_recent or kdj_recent)
+    return out
+
+
+def daily_volume_breakout_series(bars: list[dict], breakout_days: int = 20, volume_mult: float = 1.5) -> list[bool]:
+    """逐日放量突破信号：收盘突破前N日最高价 且 当日量>前N日均量×倍数。"""
+    n = len(bars)
+    out = [False] * n
+    for i in range(breakout_days, n):
+        window = bars[i - breakout_days: i]
+        b = bars[i]
+        prior_high = max(w["high"] for w in window)
+        avg_vol = sum(w["volume"] for w in window) / len(window)
+        out[i] = bool(b["close"] > prior_high and avg_vol > 0 and b["volume"] > avg_vol * volume_mult)
+    return out
+
+
+def daily_boll_breakout_series(bars: list[dict], period: int = 20, mult: float = 2.0) -> list[bool]:
+    """逐日布林带上轨突破信号：昨收≤上轨，今收>上轨。"""
+    closes = [b["close"] for b in bars]
+    _, upper, _ = compute_boll(closes, period, mult)
+    n = len(closes)
+    out = [False] * n
+    for i in range(1, n):
+        if upper[i] is None or upper[i - 1] is None:
+            continue
+        out[i] = bool(closes[i] > upper[i] and closes[i - 1] <= upper[i - 1])
+    return out
+
+
+def daily_rsi_bounce_series(bars: list[dict], period: int = 14, threshold: float = 30.0) -> list[bool]:
+    """逐日RSI超卖反弹信号：RSI从<threshold 回升到 >=threshold 且当日收阳。"""
+    closes = [b["close"] for b in bars]
+    rsi = compute_rsi(closes, period)
+    n = len(closes)
+    out = [False] * n
+    for i in range(1, n):
+        if rsi[i] is None or rsi[i - 1] is None:
+            continue
+        if rsi[i] >= threshold and rsi[i - 1] < threshold and bars[i]["close"] > bars[i]["open"]:
+            out[i] = True
+    return out
+
+
+def daily_rsi_overbought_series(bars: list[dict], period: int = 14, threshold: float = 70.0) -> list[bool]:
+    """逐日RSI超买回落信号：RSI从>threshold 回落到 <=threshold。"""
+    closes = [b["close"] for b in bars]
+    rsi = compute_rsi(closes, period)
+    n = len(closes)
+    out = [False] * n
+    for i in range(1, n):
+        if rsi[i] is None or rsi[i - 1] is None:
+            continue
+        if rsi[i] <= threshold and rsi[i - 1] > threshold:
+            out[i] = True
     return out

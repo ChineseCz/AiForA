@@ -1,5 +1,5 @@
-import { ArrowLeftOutlined, MobileOutlined } from "@ant-design/icons";
-import { Button, Card, Col, Descriptions, Empty, List, Row, Space, Spin, Tag, Tooltip, Typography, message } from "antd";
+import { ArrowLeftOutlined, MobileOutlined, SettingOutlined } from "@ant-design/icons";
+import { Button, Card, Col, Collapse, Descriptions, Empty, InputNumber, List, Row, Space, Spin, Tag, Tooltip, Typography, message } from "antd";
 import ReactECharts from "echarts-for-react";
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
@@ -13,14 +13,42 @@ import { usePageContext } from "@/pageContext";
 import { useThemeMode } from "@/theme";
 import { fmtNum, fmtYi } from "@/util";
 
-// 买卖点信号：3 买(朝上、置于K线下方) + 2 卖(朝下、置于K线上方)，各一色，带图例
+// 买卖点信号：买(朝上、置于K线下方) + 卖(朝下、置于K线上方)，各一色，带图例
 const SIGNALS = [
-  { key: "strict_ok", name: "严格买点", color: "#e64545", dir: "buy" },
-  { key: "loose_ok", name: "宽松买点", color: "#3b82f6", dir: "buy" },
-  { key: "golden_ok", name: "金叉买点", color: "#06b6d4", dir: "buy" },
-  { key: "mid_reverse_ok", name: "中期反转", color: "#f97316", dir: "sell" },
-  { key: "stop_loss_ok", name: "短期止损", color: "#8b5cf6", dir: "sell" },
+  { key: "strict_ok",          name: "严格买点",     color: "#e64545", dir: "buy"  },
+  { key: "loose_ok",           name: "宽松买点",     color: "#3b82f6", dir: "buy"  },
+  { key: "golden_ok",          name: "金叉买点",     color: "#06b6d4", dir: "buy"  },
+  { key: "volume_breakout_ok", name: "放量突破",     color: "#84cc16", dir: "buy"  },
+  { key: "boll_breakout_ok",   name: "布林带突破",   color: "#a855f7", dir: "buy"  },
+  { key: "rsi_bounce_ok",      name: "RSI超卖反弹",  color: "#f59e0b", dir: "buy"  },
+  { key: "mid_reverse_ok",     name: "趋势下跌",     color: "#f97316", dir: "sell" },
+  { key: "stop_loss_ok",       name: "短期止损",     color: "#8b5cf6", dir: "sell" },
+  { key: "rsi_overbought_ok",  name: "RSI超买回落",  color: "#ec4899", dir: "sell" },
 ] as const;
+
+// 信号参数默认值
+const SP_DEFAULTS: Record<string, number> = {
+  cross_days: 3, rise_days: 5, rise_pct: 0.03,
+  golden_cross_days: 4,
+  vb_breakout_days: 20, vb_volume_mult: 1.5,
+  boll_period: 20, boll_mult: 2.0,
+  rsi_period: 14, rsi_buy_threshold: 30, rsi_sell_threshold: 70,
+};
+
+// 参数面板字段定义
+const SP_FIELDS: { key: string; label: string; step: number; group: string }[] = [
+  { key: "cross_days",         label: "金叉回望天数",   step: 1,    group: "均线买点" },
+  { key: "rise_days",          label: "涨幅统计天数",   step: 1,    group: "均线买点" },
+  { key: "rise_pct",           label: "涨幅阈值",       step: 0.01, group: "均线买点" },
+  { key: "golden_cross_days",  label: "MACD/KDJ回望天", step: 1,    group: "金叉买点" },
+  { key: "vb_breakout_days",   label: "突破统计天数",   step: 1,    group: "放量突破" },
+  { key: "vb_volume_mult",     label: "放量倍数",       step: 0.1,  group: "放量突破" },
+  { key: "boll_period",        label: "布林带周期",     step: 1,    group: "布林带" },
+  { key: "boll_mult",          label: "标准差倍数",     step: 0.1,  group: "布林带" },
+  { key: "rsi_period",         label: "RSI周期",        step: 1,    group: "RSI" },
+  { key: "rsi_buy_threshold",  label: "超卖阈值",       step: 1,    group: "RSI" },
+  { key: "rsi_sell_threshold", label: "超买阈值",       step: 1,    group: "RSI" },
+];
 
 const UP = "#e64545";   // A股惯例：红涨绿跌
 const DOWN = "#2ba471";
@@ -273,7 +301,9 @@ export default function StockDetail() {
   // location.key === "default" 表示这是直接进入的（没有站内上一页可回，如刷新/外部链接直达）
   const canGoBack = location.key !== "default";
   const goBack = () => (canGoBack ? navigate(-1) : navigate("/screener"));
-  const { data: kline, isLoading } = useKline(code);
+  const [signalParams, setSignalParams] = useState<Record<string, number>>({});
+  const spForQuery = Object.keys(signalParams).length ? signalParams : undefined;
+  const { data: kline, isLoading } = useKline(code, spForQuery);
   const { data: fund } = useFundamentals(code);
   const { data: news } = useNews(code);
   const { data: quote } = useQuote(code);
@@ -556,6 +586,29 @@ export default function StockDetail() {
             </>
           ) : <Empty description="暂无K线数据（需先在后台回补历史K线）" />}
         </Spin>
+        <Collapse ghost size="small" style={{ marginTop: 4 }} items={[{
+          key: "sp",
+          label: <Space size={4}><SettingOutlined />信号参数{Object.keys(signalParams).length > 0 && <Tag color="blue" style={{ marginLeft: 4 }}>已自定义</Tag>}</Space>,
+          children: (
+            <div>
+              <Space wrap size={[12, 8]}>
+                {SP_FIELDS.map((f) => (
+                  <Space key={f.key} size={4}>
+                    <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>{f.label}</span>
+                    <InputNumber
+                      size="small" style={{ width: 72 }} step={f.step}
+                      value={signalParams[f.key] ?? SP_DEFAULTS[f.key]}
+                      onChange={(v) => setSignalParams((prev) => ({ ...prev, [f.key]: Number(v) }))}
+                    />
+                  </Space>
+                ))}
+              </Space>
+              <div style={{ marginTop: 8 }}>
+                <Button size="small" onClick={() => setSignalParams({})}>恢复默认</Button>
+              </div>
+            </div>
+          ),
+        }]} />
       </Card>
 
       <Row gutter={[isMobile ? 8 : 16, isMobile ? 8 : 16]}>
