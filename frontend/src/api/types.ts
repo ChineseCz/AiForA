@@ -133,6 +133,13 @@ export interface Condition {
   value: number;
 }
 
+export interface StockAiAnalysisResp {
+  content: string;
+  html: string;
+  generated: boolean;
+  error: string;
+}
+
 export interface KlineBar {
   trade_date: string;
   open: number;

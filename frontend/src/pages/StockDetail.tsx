@@ -1,11 +1,13 @@
 import { ArrowLeftOutlined, MobileOutlined } from "@ant-design/icons";
-import { Button, Card, Col, Descriptions, Empty, List, Row, Space, Spin, Tag, Tooltip, Typography } from "antd";
+import { Button, Card, Col, Descriptions, Empty, List, Row, Space, Spin, Tag, Tooltip, Typography, message } from "antd";
 import ReactECharts from "echarts-for-react";
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 
-import { useFundamentals, useKline, useNews, useQuote } from "@/api/hooks";
+import { errMsg } from "@/api/client";
+import { useFundamentals, useGenerateStockAiAnalysis, useKline, useNews, useQuote, useStockAiAnalysis } from "@/api/hooks";
 import type { KlineBar } from "@/api/types";
+import MarkdownContent from "@/components/MarkdownContent";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { usePageContext } from "@/pageContext";
 import { useThemeMode } from "@/theme";
@@ -229,6 +231,39 @@ function openXueqiu(code: string) {
   window.addEventListener("blur", cancel, { once: true });
 
   window.location.href = appUrl;
+}
+
+function AiAnalysisCard({ code }: { code: string }) {
+  const { data, isFetching } = useStockAiAnalysis(code, true);
+  const gen = useGenerateStockAiAnalysis();
+  const html = gen.data?.html ?? data?.html ?? "";
+  const generated = gen.data?.generated ?? data?.generated ?? false;
+
+  return (
+    <Card
+      title="AI综合解读"
+      size="small"
+      extra={generated && (
+        <Button size="small" loading={gen.isPending}
+          onClick={() => gen.mutate(code, { onError: (e) => message.error(errMsg(e, "生成失败")) })}>
+          重新生成
+        </Button>
+      )}
+    >
+      <Spin spinning={isFetching || gen.isPending}>
+        {generated ? (
+          <MarkdownContent className="markdown-body" html={html} />
+        ) : (
+          <Empty description="还没有生成过技术面+基本面综合解读">
+            <Button type="primary" loading={gen.isPending}
+              onClick={() => gen.mutate(code, { onError: (e) => message.error(errMsg(e, "生成失败")) })}>
+              生成解读
+            </Button>
+          </Empty>
+        )}
+      </Spin>
+    </Card>
+  );
 }
 
 export default function StockDetail() {
@@ -584,6 +619,8 @@ export default function StockDetail() {
           </Card>
         </Col>
       </Row>
+
+      {code && <AiAnalysisCard code={code} />}
     </Space>
   );
 }

@@ -4,6 +4,7 @@ import type { Condition, StockRow } from "@/api/types";
 
 export interface ScreenerState {
   strategies: string[];
+  strategyParams: Record<string, Record<string, number | boolean>>;
   conds: Condition[];
   nameQuery: string;
   mentionOn: boolean;
@@ -19,6 +20,7 @@ export interface ScreenerState {
 
 export const screenerState: ScreenerState = {
   strategies: [],
+  strategyParams: {},
   conds: [],
   nameQuery: "",
   mentionOn: false,

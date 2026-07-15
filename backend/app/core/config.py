@@ -63,6 +63,10 @@ class Settings(BaseSettings):
     cache_ttl_sectors: int = 3600
     cache_ttl_news: int = 900
     cache_ttl_quote: int = 1  # 秒级轮询：短TTL，多用户同时看同一只股票也只打一次上游
+    # 个股AI分析：按 code+trade_date 缓存，同一交易日内多次访问/多用户共享同一份结果，
+    # 不随 dataver 版本失效（全市场10分钟同步会频繁 bump dataver，若跟着它失效会导致刚生成
+    # 的分析很快被冲掉，被迫重新调用LLM），靠 TTL 自然过期 + trade_date 变化后 key 自动不同。
+    cache_ttl_ai_analysis: int = 43200  # 12小时，覆盖单个交易日剩余时段
 
     # ===== CORS（Phase 4 前端用）=====
     cors_origins: list[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]
