@@ -34,9 +34,11 @@ def screen(body: dict) -> tuple[dict, int]:
     sector = body.get("sector") or {}
     no_strategy_filter_on = bool(mentioned.get("enabled")) or bool(sector.get("enabled"))
 
+    strategy_params = body.get("strategy_params") or {}
+
     try:
         if strategies:
-            rows = screening.screen_combined_all(strategies, conditions, limit)
+            rows = screening.screen_combined_all(strategies, conditions, limit, strategy_params)
         elif conditions:
             where_sql, params = screening.build_where(conditions)
             rows = db.screen_stocks(trade_date, where_sql, params, limit)
@@ -97,8 +99,10 @@ def preset(body: dict) -> tuple[dict, int]:
     except (TypeError, ValueError):
         limit = 200
 
+    strategy_params = body.get("strategy_params") or {}
+
     try:
-        rows = screening.screen_combined(strategies, limit)
+        rows = screening.screen_combined(strategies, limit, strategy_params)
     except (screening.InsufficientHistoryError, screening.InsufficientFinanceError, ValueError) as e:
         return {"error": str(e), "items": [], "trade_date": trade_date}, 400
 

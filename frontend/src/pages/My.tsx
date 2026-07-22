@@ -2,9 +2,10 @@ import { DeleteOutlined, FolderOutlined, PlusOutlined, StarFilled, StarOutlined,
 import {
   AutoComplete, Button, Col, DatePicker, Empty, Form, Input, InputNumber,
   Modal, Pagination, Popconfirm, Progress, Row, Select, Space, Spin, Table, Tabs,
-  Tag, Typography, Upload, message, theme,
+  Tag, Tooltip, Typography, Upload, message, theme,
 } from "antd";
 import { useState, useEffect, useRef } from "react";
+import { Link } from "react-router-dom";
 
 import { errMsg, api } from "../api/client";
 import { useQueryClient } from "@tanstack/react-query";
@@ -15,6 +16,8 @@ import { useIsMobile } from "../hooks/useIsMobile";
 import dayjs from "dayjs";
 
 const { Text } = Typography;
+
+const AUTO_GROUP_NAMES = new Set(["持仓", "清仓"]);
 
 // ─── 自选股 ──────────────────────────────────────────────────────────────────
 
@@ -74,7 +77,12 @@ function WatchlistTab() {
 
   const memberCols = [
     { title: "代码", dataIndex: "code", width: 90 },
-    { title: "名称", dataIndex: "name", ellipsis: true },
+    {
+      title: "名称",
+      dataIndex: "name",
+      ellipsis: true,
+      render: (name: string, row: GroupMember) => <Link to={`/stock/${row.code}`}>{name}</Link>,
+    },
     {
       title: "最新价",
       dataIndex: "close",
@@ -87,9 +95,8 @@ function WatchlistTab() {
       width: 90,
       render: (v: number) => {
         if (v == null) return "–";
-        const pct = (v * 100).toFixed(2);
         const color = v > 0 ? token.colorError : v < 0 ? token.colorSuccess : undefined;
-        return <Text style={{ color }}>{v > 0 ? "+" : ""}{pct}%</Text>;
+        return <Text style={{ color }}>{v > 0 ? "+" : ""}{v.toFixed(2)}%</Text>;
       },
     },
     {
@@ -97,16 +104,20 @@ function WatchlistTab() {
       dataIndex: "code",
       key: "del",
       width: 50,
-      render: (code: string) => (
-        <Popconfirm title="移除该股票？" onConfirm={() =>
-          muts.removeMember.mutate(
-            { groupId: selectedId!, code },
-            { onError: (e) => message.error(errMsg(e, "移除失败")) },
-          )
-        }>
-          <Button type="text" danger size="small" icon={<DeleteOutlined />} />
-        </Popconfirm>
-      ),
+      render: (code: string) => {
+        const isAuto = AUTO_GROUP_NAMES.has(selectedGroup?.name ?? "");
+        if (isAuto) return null;
+        return (
+          <Popconfirm title="移除该股票？" onConfirm={() =>
+            muts.removeMember.mutate(
+              { groupId: selectedId!, code },
+              { onError: (e) => message.error(errMsg(e, "移除失败")) },
+            )
+          }>
+            <Button type="text" danger size="small" icon={<DeleteOutlined />} />
+          </Popconfirm>
+        );
+      },
     },
   ];
 
@@ -128,6 +139,7 @@ function WatchlistTab() {
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             {groups.map((g) => {
               const active = selectedId === g.id;
+              const isAuto = AUTO_GROUP_NAMES.has(g.name ?? "");
               return (
                 <div
                   key={g.id}
@@ -149,18 +161,24 @@ function WatchlistTab() {
                     <span>{g.name}</span>
                     <Tag style={{ margin: 0 }}>{g.member_count}</Tag>
                   </Space>
-                  <Popconfirm
-                    title="删除该分组及其成员？"
-                    onConfirm={() => handleDeleteGroup(g.id)}
-                  >
-                    <Button
-                      type="text"
-                      danger
-                      size="small"
-                      icon={<DeleteOutlined />}
-                      onClick={(e) => e.stopPropagation()}
-                    />
-                  </Popconfirm>
+                  {isAuto ? (
+                    <Tooltip title="自动维护，不可手动删除">
+                      <Button type="text" size="small" icon={<DeleteOutlined />} disabled onClick={(e) => e.stopPropagation()} />
+                    </Tooltip>
+                  ) : (
+                    <Popconfirm
+                      title="删除该分组及其成员？"
+                      onConfirm={() => handleDeleteGroup(g.id)}
+                    >
+                      <Button
+                        type="text"
+                        danger
+                        size="small"
+                        icon={<DeleteOutlined />}
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                    </Popconfirm>
+                  )}
                 </div>
               );
             })}
@@ -176,7 +194,9 @@ function WatchlistTab() {
           <>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
               <Text strong>{selectedGroup?.name ?? "成员列表"}</Text>
-              <Button size="small" icon={<PlusOutlined />} onClick={() => setAddOpen(true)}>添加股票</Button>
+              {!AUTO_GROUP_NAMES.has(selectedGroup?.name ?? "") && (
+                <Button size="small" icon={<PlusOutlined />} onClick={() => setAddOpen(true)}>添加股票</Button>
+              )}
             </div>
             <Table
               dataSource={members}
@@ -185,7 +205,7 @@ function WatchlistTab() {
               loading={loadingMembers}
               size="small"
               pagination={false}
-              locale={{ emptyText: "暂无成员，点击「添加股票」" }}
+              locale={{ emptyText: AUTO_GROUP_NAMES.has(selectedGroup?.name ?? "") ? "暂无数据（交易记录同步后自动更新）" : "暂无成员，点击「添加股票」" }}
               scroll={{ x: isMobile ? 360 : undefined }}
             />
           </>
@@ -274,7 +294,7 @@ function StatsCards() {
   return (
     <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 16 }}>
       {[
-        { label: "胜率", value: `${(s.win_rate * 100).toFixed(1)}%`, sub: `${s.wins}胜 ${s.losses}负 / ${s.total_sell_trades}笔卖出` },
+        { label: "胜率", value: `${(s.win_rate * 100).toFixed(1)}%`, sub: `${s.wins}只盈利 ${s.losses}只亏损 / ${s.total_stocks ?? s.wins + s.losses}只股票` },
         { label: "平均盈", value: `+${s.avg_win.toFixed(0)}`, sub: "元/笔", color: token.colorError },
         { label: "平均亏", value: `-${s.avg_loss.toFixed(0)}`, sub: "元/笔", color: token.colorSuccess },
         { label: "盈亏比", value: s.profit_factor != null ? s.profit_factor.toFixed(2) : "–", sub: "盈/亏" },
@@ -514,116 +534,102 @@ function ReviewTab() {
 
 // ─── 复盘笔记 ─────────────────────────────────────────────────────────────────
 
+function renderBracketToken(key: string, inner: string, replaceAt: (s: string) => void): React.ReactNode {
+  if (inner === "✓是") {
+    return <span key={key} style={{ background: "#f6ffed", color: "#52c41a", border: "1px solid #b7eb8f", borderRadius: 4, padding: "0 6px", cursor: "pointer", fontSize: 12, margin: "0 2px" }} onClick={() => replaceAt("【是/否】")}>✓ 是</span>;
+  }
+  if (inner === "✗否") {
+    return <span key={key} style={{ background: "#fff2f0", color: "#ff4d4f", border: "1px solid #ffccc7", borderRadius: 4, padding: "0 6px", cursor: "pointer", fontSize: 12, margin: "0 2px" }} onClick={() => replaceAt("【是/否】")}>✗ 否</span>;
+  }
+  if (inner.includes("/") || inner.includes("、")) {
+    const sep = inner.includes("/") ? "/" : "、";
+    const singleSelect = sep === "/";
+    const opts = inner.split(sep);
+    const handleClick = (oi: number) => {
+      const isSel = opts[oi].startsWith("✓");
+      const newOpts = opts.map((o, i) => {
+        const clean = o.startsWith("✓") ? o.slice(1) : o;
+        if (i !== oi) return singleSelect ? clean : o;
+        return isSel ? clean : "✓" + clean;
+      });
+      replaceAt("【" + newOpts.join(sep) + "】");
+    };
+    return (
+      <span key={key} style={{ display: "inline-flex", flexWrap: "wrap", gap: 2, margin: "0 2px" }}>
+        {opts.map((opt, oi) => {
+          const isSel = opt.startsWith("✓");
+          const label = isSel ? opt.slice(1) : opt;
+          return (
+            <span key={oi} onClick={() => handleClick(oi)}
+              style={{ background: isSel ? "#f6ffed" : "transparent", color: isSel ? "#52c41a" : "#595959", border: `1px solid ${isSel ? "#b7eb8f" : "#d9d9d9"}`, borderRadius: 4, padding: "0 5px", cursor: "pointer", fontSize: 12, whiteSpace: "nowrap" }}>
+              {isSel ? "✓ " : ""}{label}
+            </span>
+          );
+        })}
+      </span>
+    );
+  }
+  if (/^_+$/.test(inner) || inner.startsWith("~") || inner === "填写" || inner === "请填写" || inner === "输入") {
+    const val = inner.startsWith("~") ? inner.slice(1) : "";
+    return (
+      <input key={key} type="text" value={val} placeholder="____"
+        onChange={(e) => { const v = e.target.value; replaceAt(v ? "【~" + v + "】" : "【____】"); }}
+        style={{ border: "none", borderBottom: "1px solid #aaa", background: "transparent", fontSize: 13, color: "inherit", outline: "none", padding: "0 2px", width: Math.max(40, val.length * 14 + 16) + "px" }}
+      />
+    );
+  }
+  return <span key={key} style={{ color: "#d48806", background: "#fffbe6", borderRadius: 3, padding: "0 3px", fontSize: 13 }}>{"【" + inner + "】"}</span>;
+}
+
 function renderNoteContent(
   content: string,
   onChange: (s: string) => void,
-): React.ReactNode[] {
-  const parts: React.ReactNode[] = [];
-  let last = 0;
-  let match: RegExpExecArray | null;
-  let ti = 0;
-  const re = /【([^】]*)】/g;
+): React.ReactNode {
+  const lines = content.split("\n");
+  return (
+    <>
+      {lines.map((line, li) => {
+        let lineStart = 0;
+        for (let i = 0; i < li; i++) lineStart += lines[i].length + 1;
 
-  while ((match = re.exec(content)) !== null) {
-    if (match.index > last)
-      parts.push(<span key={`s${last}`}>{content.slice(last, match.index)}</span>);
+        const hm = line.match(/^##\s+(.+?)(?:\s*\((\d{6})\))?\s*$/);
+        if (hm) {
+          const [, title, code] = hm;
+          return (
+            <div key={li} style={{ fontSize: 14, fontWeight: 600, marginTop: li > 0 ? 10 : 0, marginBottom: 2, borderLeft: "3px solid #1677ff", paddingLeft: 8 }}>
+              {code ? <Link to={`/stock/${code}`} style={{ color: "inherit" }}>{title}({code})</Link> : title}
+            </div>
+          );
+        }
 
-    const ci = ti++;
-    const inner = match[1];
-    const full = match[0];
-    const pos = match.index;
-    const replaceAt = (next: string) =>
-      onChange(content.slice(0, pos) + next + content.slice(pos + full.length));
+        const parts: React.ReactNode[] = [];
+        let last = 0;
+        let ti = 0;
+        let match: RegExpExecArray | null;
+        const re = /【([^】]*)】|\*\*([^*\n]+)\*\*|==([^=\n]+)==/g;
+        while ((match = re.exec(line)) !== null) {
+          if (match.index > last)
+            parts.push(<span key={`${li}_s${last}`}>{line.slice(last, match.index)}</span>);
+          const absPos = lineStart + match.index;
+          if (match[1] !== undefined) {
+            const inner = match[1];
+            const full = match[0];
+            const replaceAt = (next: string) => onChange(content.slice(0, absPos) + next + content.slice(absPos + full.length));
+            parts.push(renderBracketToken(`${li}_t${ti++}`, inner, replaceAt));
+          } else if (match[2] !== undefined) {
+            parts.push(<strong key={`${li}_b${ti++}`}>{match[2]}</strong>);
+          } else {
+            parts.push(<mark key={`${li}_m${ti++}`} style={{ background: "#fff3cd", color: "#d46b08", borderRadius: 2, padding: "0 2px" }}>{match[3]}</mark>);
+          }
+          last = re.lastIndex;
+        }
+        if (last < line.length)
+          parts.push(<span key={`${li}_s${last}`}>{line.slice(last)}</span>);
 
-    // Backward compat: old single-badge selected tokens
-    if (inner === "✓是") {
-      parts.push(
-        <span key={`t${ci}`}
-          style={{ background: "#f6ffed", color: "#52c41a", border: "1px solid #b7eb8f", borderRadius: 4, padding: "0 6px", cursor: "pointer", fontSize: 12, margin: "0 2px" }}
-          onClick={() => replaceAt("【是/否】")}
-        >✓ 是</span>,
-      );
-    } else if (inner === "✗否") {
-      parts.push(
-        <span key={`t${ci}`}
-          style={{ background: "#fff2f0", color: "#ff4d4f", border: "1px solid #ffccc7", borderRadius: 4, padding: "0 6px", cursor: "pointer", fontSize: 12, margin: "0 2px" }}
-          onClick={() => replaceAt("【是/否】")}
-        >✗ 否</span>,
-      );
-    }
-    // Multi-option bracket: / (single-select) or 、(multi-select)
-    else if (inner.includes("/") || inner.includes("、")) {
-      const sep = inner.includes("/") ? "/" : "、";
-      const singleSelect = sep === "/";
-      const opts = inner.split(sep);
-
-      const handleClick = (oi: number) => {
-        const isSel = opts[oi].startsWith("✓");
-        const newOpts = opts.map((o, i) => {
-          const clean = o.startsWith("✓") ? o.slice(1) : o;
-          if (i !== oi) return singleSelect ? clean : o;
-          return isSel ? clean : "✓" + clean;
-        });
-        replaceAt("【" + newOpts.join(sep) + "】");
-      };
-
-      parts.push(
-        <span key={`t${ci}`} style={{ display: "inline-flex", flexWrap: "wrap", gap: 2, margin: "0 2px" }}>
-          {opts.map((opt, oi) => {
-            const isSel = opt.startsWith("✓");
-            const label = isSel ? opt.slice(1) : opt;
-            return (
-              <span key={oi} onClick={() => handleClick(oi)}
-                style={{
-                  background: isSel ? "#f6ffed" : "transparent",
-                  color: isSel ? "#52c41a" : "#595959",
-                  border: `1px solid ${isSel ? "#b7eb8f" : "#d9d9d9"}`,
-                  borderRadius: 4,
-                  padding: "0 5px",
-                  cursor: "pointer",
-                  fontSize: 12,
-                  whiteSpace: "nowrap",
-                }}
-              >{isSel ? "✓ " : ""}{label}</span>
-            );
-          })}
-        </span>,
-      );
-    }
-    // Fill-in-blank: underscores, ~-prefixed (filled), or common Chinese placeholders
-    else if (/^_+$/.test(inner) || inner.startsWith("~") || inner === "填写" || inner === "请填写" || inner === "输入") {
-      const val = inner.startsWith("~") ? inner.slice(1) : "";
-      parts.push(
-        <input key={`t${ci}`} type="text" value={val}
-          placeholder="____"
-          onChange={(e) => {
-            const v = e.target.value;
-            replaceAt(v ? "【~" + v + "】" : "【____】");
-          }}
-          style={{
-            border: "none", borderBottom: "1px solid #aaa",
-            background: "transparent", fontSize: 13, color: "inherit",
-            outline: "none", padding: "0 2px",
-            width: Math.max(40, val.length * 14 + 16) + "px",
-          }}
-        />,
-      );
-    }
-    // Plain bracket — render as amber template label
-    else {
-      parts.push(
-        <span key={`t${ci}`}
-          style={{ color: "#d48806", background: "#fffbe6", borderRadius: 3, padding: "0 3px", fontSize: 13 }}
-        >{full}</span>,
-      );
-    }
-
-    last = re.lastIndex;
-  }
-
-  if (last < content.length)
-    parts.push(<span key={`s${last}`}>{content.slice(last)}</span>);
-  return parts;
+        return <div key={li} style={{ minHeight: "1.4em" }}>{parts}</div>;
+      })}
+    </>
+  );
 }
 
 function NotesTab() {
@@ -995,7 +1001,6 @@ function NotesTab() {
             minHeight: isMobile ? 300 : 440,
             fontSize: 14,
             lineHeight: 2,
-            whiteSpace: "pre-wrap",
             overflowY: "auto",
             background: token.colorBgContainer,
             cursor: "text",

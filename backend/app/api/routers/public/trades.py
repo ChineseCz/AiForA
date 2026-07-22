@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import db_session, require_visitor
+from app.repositories import groups as groups_repo
 from app.repositories import trades as trades_repo
 
 router = APIRouter(prefix="/api")
@@ -112,6 +113,7 @@ async def api_create_trade(
     if body.direction not in ("buy", "sell"):
         raise HTTPException(400, "direction must be buy or sell")
     trade = await trades_repo.create_trade(session, user_id, body.model_dump())
+    await groups_repo.sync_auto_groups(session, user_id)
     return {"trade": trade, "error": ""}
 
 
@@ -124,6 +126,7 @@ async def api_delete_trade(
     ok = await trades_repo.delete_trade(session, user_id, trade_id)
     if not ok:
         raise HTTPException(404, "trade not found")
+    await groups_repo.sync_auto_groups(session, user_id)
     return {"error": ""}
 
 
@@ -141,6 +144,7 @@ async def api_import_trades(
     if not records:
         raise HTTPException(400, "未识别到任何成交记录，请确认文件格式")
     imported = await trades_repo.bulk_import_trades(session, user_id, records)
+    await groups_repo.sync_auto_groups(session, user_id)
     return {"imported": imported, "total": len(records), "error": ""}
 
 

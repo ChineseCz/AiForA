@@ -4,7 +4,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "./client";
 import type {
   AuthConfigResp, AuthSettingsCfg, Condition, Fundamentals, FieldMeta, GroupItem, GroupMember, JobStatus, KlineView, NewsItem,
-  Overview, PostsPage, Quote, ScheduleCfg, ScreenResp, SectorItem, SectorRankResp, SummaryResp, TradeNote, TradeRecord, TradeStats, UserItem,
+  Overview, PostsPage, Quote, ScheduleCfg, ScreenResp, SectorItem, SectorRankResp, StockAiAnalysisResp, SummaryResp,
+  TradeNote, TradeRecord, TradeStats, UserItem,
   VisitorLoginResp, VisitorMeResp, WechatQrcodeResp, WechatPollResp,
 } from "./types";
 
@@ -43,8 +44,14 @@ export const useScreenFields = () =>
 export const useSectors = () =>
   useQuery({ queryKey: ["sectors"], queryFn: () => get<SectorItem[]>("/api/screen/sectors") });
 
-export const useKline = (code: string) =>
-  useQuery({ queryKey: ["kline", code], queryFn: () => get<KlineView>("/api/stock/kline", { code }), enabled: !!code });
+export const useKline = (code: string, sp?: Record<string, number | boolean>) => {
+  const spStr = sp && Object.keys(sp).length ? JSON.stringify(sp) : undefined;
+  return useQuery({
+    queryKey: ["kline", code, spStr],
+    queryFn: () => get<KlineView>("/api/stock/kline", { code, ...(spStr ? { sp: spStr } : {}) }),
+    enabled: !!code,
+  });
+};
 
 export const useIndexKline = (code: string) =>
   useQuery({ queryKey: ["index_kline", code], queryFn: () => get<KlineView>("/api/index/kline", { code }), enabled: !!code, refetchInterval: 60_000 });
@@ -77,6 +84,8 @@ export interface ScreenBody {
   conditions?: Condition[];
   name_query?: string;
   limit?: number;
+  // 每个策略key -> 该策略的参数覆盖（不传/传空 = 用默认值，走预计算快路径）。
+  strategy_params?: Record<string, Record<string, number | boolean>>;
   // user_ids 为空数组 = 全部大V；非空则只看这几位。
   mentioned?: { enabled: boolean; days: number; user_ids: string[]; bullish_only?: boolean };
   sector?: { enabled: boolean; mode: string; names: string[]; days: number; user_ids: string[] };
@@ -300,3 +309,19 @@ export const useTradeStats = () =>
     queryKey: ["trade_stats"],
     queryFn: () => get<{ stats: TradeStats }>("/api/trades/stats"),
   });
+
+export const useStockAiAnalysis = (code: string, enabled: boolean) =>
+  useQuery({
+    queryKey: ["stock_ai_analysis", code],
+    queryFn: () => get<StockAiAnalysisResp>("/api/stock/ai-analysis", { code }),
+    enabled: enabled && !!code,
+  });
+
+export const useGenerateStockAiAnalysis = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (code: string) =>
+      api.post<StockAiAnalysisResp>("/api/stock/ai-analysis/generate", null, { params: { code } }).then((r) => r.data),
+    onSuccess: (_data, code) => qc.setQueryData(["stock_ai_analysis", code], _data),
+  });
+};

@@ -1,9 +1,9 @@
 import {
-  CheckCircleFilled, DeleteOutlined, FilterOutlined, PieChartOutlined, PlusOutlined, TeamOutlined,
+  BulbOutlined, CheckCircleFilled, DeleteOutlined, FilterOutlined, PieChartOutlined, PlusOutlined, TeamOutlined,
 } from "@ant-design/icons";
 import {
-  Button, Card, Checkbox, Empty, Input, InputNumber, List, Segmented, Select, Space,
-  Table, Tabs, Tag, Typography, message,
+  Button, Card, Checkbox, Collapse, Empty, Input, InputNumber, List, Modal, Segmented, Select, Space,
+  Spin, Switch, Table, Tabs, Tag, Typography, message,
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useEffect, useMemo, useState } from "react";
@@ -35,11 +35,13 @@ function CollapsibleTags({ items, bullish, color }: { items?: string[]; bullish?
 }
 
 import { errMsg } from "@/api/client";
-import { useScreen, useScreenFields, useSectorRank, useSectors, useUsers } from "@/api/hooks";
+import { useGenerateStockAiAnalysis, useScreen, useScreenFields, useSectorRank, useSectors, useStockAiAnalysis, useUsers } from "@/api/hooks";
 import type { ScreenBody } from "@/api/hooks";
 import type { Condition, SectorRankItem, StockRow } from "@/api/types";
+import MarkdownContent from "@/components/MarkdownContent";
 import { usePageContext } from "@/pageContext";
 import { screenerState } from "./screenerState";
+import type { CapFilter } from "./screenerState";
 import { fmtNum, fmtPct, fmtYi, pctClass } from "@/util";
 
 // ──────────────────────────────────────────────
@@ -116,12 +118,15 @@ function StockCard({ row }: { row: StockRow }) {
     <Card size="small" style={{ marginBottom: 8 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 6 }}>
         <Space size={6}>
-          <Link to={`/stock/${row.code}`} style={{ fontWeight: 600, fontSize: 15 }}>{row.name || row.code}</Link>
+          <Link to={`/stock/${row.code}`} state={{ from: "screener" }} style={{ fontWeight: 600, fontSize: 15 }}>{row.name || row.code}</Link>
           <span style={{ color: "var(--text-secondary)", fontSize: 12 }}>{row.code}</span>
         </Space>
-        <span className={pctClass(row.change_pct)} style={{ fontWeight: 600 }}>
-          {fmtNum(row.close)} {fmtPct(row.change_pct)}
-        </span>
+        <Space size={4}>
+          <span className={pctClass(row.change_pct)} style={{ fontWeight: 600 }}>
+            {fmtNum(row.close)} {fmtPct(row.change_pct)}
+          </span>
+          <StockAiAnalysisButton code={row.code} />
+        </Space>
       </div>
       {(row.sectors?.length || row.concepts?.length) ? (
         <div style={{ marginBottom: 6 }}>
@@ -148,13 +153,193 @@ function StockCard({ row }: { row: StockRow }) {
   );
 }
 
-const PRESETS = [
-  { value: "ma_cross", title: "严格买点", desc: "金叉+站上MA20+多头排列+5日涨幅>3%（主板）" },
-  { value: "ma_cross2", title: "宽松买点", desc: "金叉+5日涨幅>3%（剔除科创板）" },
-  { value: "golden_cross", title: "金叉买点", desc: "近4日MACD金叉≥1次 且 KDJ金叉≥1次" },
-  { value: "fund_ok", title: "基本面达标", desc: "净利润/EPS/ROE/营收/毛利率" },
+interface ParamField {
+  key: string;
+  label: string;
+  default: number | boolean;
+  type?: "bool";
+  step?: number;
+}
+
+const PRESETS: { value: string; title: string; desc: string; params?: ParamField[] }[] = [
+  {
+    value: "ma_cross", title: "严格买点", desc: "金叉+站上MA20+多头排列+N日涨幅>阈值（主板）",
+    params: [
+      { key: "ma_fast", label: "快线周期", default: 5 },
+      { key: "ma_mid", label: "中线周期", default: 10 },
+      { key: "ma_slow", label: "慢线周期", default: 20 },
+      { key: "cross_days", label: "金叉回望天数", default: 3 },
+      { key: "rise_days", label: "涨幅统计天数", default: 5 },
+      { key: "rise_pct", label: "涨幅阈值", default: 0.03, step: 0.01 },
+      { key: "first_day", label: "仅首日出现", default: false, type: "bool" },
+    ],
+  },
+  {
+    value: "ma_cross2", title: "宽松买点", desc: "金叉+N日涨幅>阈值（剔除科创板）",
+    params: [
+      { key: "ma_fast", label: "快线周期", default: 5 },
+      { key: "ma_mid", label: "中线周期", default: 10 },
+      { key: "ma_slow", label: "慢线周期", default: 20 },
+      { key: "cross_days", label: "金叉回望天数", default: 3 },
+      { key: "rise_days", label: "涨幅统计天数", default: 5 },
+      { key: "rise_pct", label: "涨幅阈值", default: 0.03, step: 0.01 },
+      { key: "first_day", label: "仅首日出现", default: false, type: "bool" },
+    ],
+  },
+  {
+    value: "golden_cross", title: "金叉买点", desc: "近N日MACD金叉 且/或 KDJ金叉",
+    params: [
+      { key: "macd_fast", label: "MACD快线", default: 12 },
+      { key: "macd_slow", label: "MACD慢线", default: 26 },
+      { key: "macd_signal", label: "MACD信号线", default: 9 },
+      { key: "kdj_window", label: "KDJ窗口", default: 9 },
+      { key: "cross_days", label: "金叉回望天数", default: 4 },
+      { key: "require_both", label: "要求MACD且KDJ同时", default: true, type: "bool" },
+    ],
+  },
+  {
+    value: "fund_ok", title: "基本面达标", desc: "净利润/EPS/ROE/营收/毛利率",
+    params: [
+      { key: "net_profit_yoy_min", label: "净利润同比>", default: 0, step: 1 },
+      { key: "eps_min", label: "EPS>", default: 0.1, step: 0.1 },
+      { key: "roe_min", label: "ROE(%)>", default: 3, step: 1 },
+      { key: "revenue_yoy_min", label: "营收同比(%)>", default: 10, step: 1 },
+      { key: "gross_margin_min", label: "毛利率(%)>", default: 10, step: 1 },
+    ],
+  },
+  {
+    value: "volume_breakout", title: "放量突破", desc: "突破N日最高价 且 成交量>均量×倍数",
+    params: [
+      { key: "breakout_days", label: "统计天数", default: 20 },
+      { key: "volume_mult", label: "放量倍数", default: 1.5, step: 0.1 },
+    ],
+  },
+  {
+    value: "pullback_low_volume", title: "缩量回踩", desc: "近期曾放量上涨，现回踩均线附近且缩量",
+    params: [
+      { key: "lookback_days", label: "放量回看天数", default: 10 },
+      { key: "ma_period", label: "均线周期", default: 20 },
+      { key: "near_pct", label: "贴近均线幅度", default: 0.02, step: 0.01 },
+      { key: "recent_days", label: "近期量能天数", default: 3 },
+      { key: "avg_days", label: "均量统计天数", default: 20 },
+      { key: "spike_mult", label: "放量判定倍数", default: 1.5, step: 0.1 },
+      { key: "low_volume_mult", label: "缩量判定倍数", default: 0.7, step: 0.1 },
+    ],
+  },
+  {
+    value: "boll_breakout", title: "布林带收口突破", desc: "带宽收口后突破布林带上轨",
+    params: [
+      { key: "period", label: "布林带周期", default: 20 },
+      { key: "mult", label: "标准差倍数", default: 2, step: 0.1 },
+      { key: "squeeze_days", label: "收口统计天数", default: 60 },
+      { key: "squeeze_pct", label: "收口分位阈值", default: 0.3, step: 0.05 },
+    ],
+  },
+  {
+    value: "rsi_oversold_bounce", title: "RSI超卖反弹", desc: "RSI从阈值下方回升到阈值上方且当日收阳",
+    params: [
+      { key: "period", label: "RSI周期", default: 14 },
+      { key: "threshold", label: "超卖阈值", default: 30, step: 1 },
+      { key: "lookback_days", label: "回看天数", default: 2 },
+    ],
+  },
+  {
+    value: "turnover_surge", title: "换手异动", desc: "换手率>阈值 且 涨幅在区间内（排除涨停）",
+    params: [
+      { key: "turnover_min", label: "换手率(%)>", default: 5, step: 0.5 },
+      { key: "change_pct_min", label: "涨幅下限(%)", default: 4, step: 0.5 },
+      { key: "change_pct_max", label: "涨幅上限(%)", default: 9.5, step: 0.5 },
+    ],
+  },
+  {
+    value: "volume_price_up", title: "量价齐升", desc: "连续N日成交量与收盘价同步递增",
+    params: [{ key: "streak_days", label: "连续天数", default: 3 }],
+  },
+  {
+    value: "sell_ma_death_cross", title: "MA死叉卖点", desc: "近N日MA5下穿MA10（趋势转弱信号）",
+    params: [{ key: "cross_days", label: "死叉回望天数", default: 3 }],
+  },
+  {
+    value: "sell_break_ma20", title: "跌破均线卖点", desc: "收盘价从均线上方下穿均线（止损信号）",
+    params: [{ key: "ma_period", label: "均线周期", default: 20 }],
+  },
+  {
+    value: "sell_rsi_overbought", title: "RSI超买回落", desc: "RSI从阈值上方回落到阈值下方（高位止盈）",
+    params: [
+      { key: "period", label: "RSI周期", default: 14 },
+      { key: "threshold", label: "超买阈值", default: 70, step: 1 },
+      { key: "lookback_days", label: "回看天数", default: 2 },
+    ],
+  },
+  {
+    value: "sell_high_volume_drop", title: "高位放量阴线", desc: "均线上方+阴线+成交量>均量×倍数（出货信号）",
+    params: [
+      { key: "ma_period", label: "均线周期", default: 20 },
+      { key: "volume_lookback", label: "均量统计天数", default: 20 },
+      { key: "volume_mult", label: "放量倍数", default: 1.5, step: 0.1 },
+    ],
+  },
 ];
 const OPS = [">", ">=", "<", "<=", "==", "!="];
+
+function StrategyParamPanel({
+  fields, values, onChange,
+}: { fields: ParamField[]; values: Record<string, number | boolean>; onChange: (key: string, v: number | boolean) => void }) {
+  return (
+    <div className="strategy-param-panel" onClick={(e) => e.stopPropagation()}>
+      <Space wrap size={[12, 8]}>
+        {fields.map((f) => (
+          <Space key={f.key} size={4}>
+            <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>{f.label}</span>
+            {f.type === "bool" ? (
+              <Switch size="small" checked={Boolean(values[f.key] ?? f.default)}
+                onChange={(v) => onChange(f.key, v)} />
+            ) : (
+              <InputNumber size="small" style={{ width: 80 }} step={f.step ?? 1}
+                value={Number(values[f.key] ?? f.default)}
+                onChange={(v) => onChange(f.key, Number(v))} />
+            )}
+          </Space>
+        ))}
+      </Space>
+    </div>
+  );
+}
+
+function StockAiAnalysisButton({ code }: { code: string }) {
+  const [open, setOpen] = useState(false);
+  const { data, isFetching } = useStockAiAnalysis(code, open);
+  const gen = useGenerateStockAiAnalysis();
+
+  return (
+    <>
+      <Button size="small" type="text" icon={<BulbOutlined />} onClick={(e) => { e.stopPropagation(); setOpen(true); }}>
+        AI解读
+      </Button>
+      <Modal title={`AI综合解读 · ${code}`} open={open} onCancel={() => setOpen(false)} footer={null} width={640}>
+        <Spin spinning={isFetching || gen.isPending}>
+          {data?.generated || gen.data?.generated ? (
+            <MarkdownContent className="markdown-body" html={gen.data?.html ?? data?.html ?? ""} />
+          ) : (
+            <Empty description="还没有生成过，点击下方按钮生成">
+              <Button type="primary" onClick={() => gen.mutate(code, { onError: (e) => message.error(errMsg(e, "生成失败")) })}>
+                生成解读
+              </Button>
+            </Empty>
+          )}
+          {(data?.generated || gen.data?.generated) && (
+            <div style={{ marginTop: 12, textAlign: "right" }}>
+              <Button size="small" loading={gen.isPending}
+                onClick={() => gen.mutate(code, { onError: (e) => message.error(errMsg(e, "生成失败")) })}>
+                重新生成
+              </Button>
+            </div>
+          )}
+        </Spin>
+      </Modal>
+    </>
+  );
+}
 
 function ScreenerTab({ pendingRun, onRunDone }: { pendingRun: boolean; onRunDone: () => void }) {
   const isMobile = useIsMobile();
@@ -166,8 +351,12 @@ function ScreenerTab({ pendingRun, onRunDone }: { pendingRun: boolean; onRunDone
   const nav = useNavigate();
 
   const [strategies, setStrategies] = useState<string[]>(screenerState.strategies);
+  const [strategyParams, setStrategyParams] = useState<Record<string, Record<string, number | boolean>>>(
+    screenerState.strategyParams,
+  );
   const [conds, setConds] = useState<Condition[]>(screenerState.conds);
   const [nameQuery, setNameQuery] = useState(screenerState.nameQuery);
+  const [capFilter, setCapFilter] = useState<CapFilter>(screenerState.capFilter);
   const [mentionOn, setMentionOn] = useState(screenerState.mentionOn);
   const [mentionDays, setMentionDays] = useState(screenerState.mentionDays);
   const [mentionUsers, setMentionUsers] = useState<string[]>(screenerState.mentionUsers);
@@ -189,11 +378,15 @@ function ScreenerTab({ pendingRun, onRunDone }: { pendingRun: boolean; onRunDone
 
   useEffect(() => {
     Object.assign(screenerState, {
-      strategies, conds, nameQuery, mentionOn, mentionDays, mentionUsers, mentionBullishOnly,
+      strategies, strategyParams, conds, nameQuery, capFilter, mentionOn, mentionDays, mentionUsers, mentionBullishOnly,
       sectorOn, sectorMode, sectorNames, rows, tradeDate,
     });
-  }, [strategies, conds, nameQuery, mentionOn, mentionDays, mentionUsers, mentionBullishOnly,
+  }, [strategies, strategyParams, conds, nameQuery, capFilter, mentionOn, mentionDays, mentionUsers, mentionBullishOnly,
     sectorOn, sectorMode, sectorNames, rows, tradeDate]);
+
+  const setStrategyParam = (strategyKey: string, paramKey: string, v: number | boolean) => {
+    setStrategyParams((prev) => ({ ...prev, [strategyKey]: { ...prev[strategyKey], [paramKey]: v } }));
+  };
 
   const addCond = () => setConds([...conds, { field: "change_pct", op: ">", value: 0 }]);
   const setCond = (i: number, patch: Partial<Condition>) =>
@@ -201,7 +394,23 @@ function ScreenerTab({ pendingRun, onRunDone }: { pendingRun: boolean; onRunDone
   const delCond = (i: number) => setConds(conds.filter((_, idx) => idx !== i));
 
   const run = () => {
-    const body: ScreenBody = { strategies, conditions: conds, name_query: nameQuery, limit: 300 };
+    const activeParams: Record<string, Record<string, number | boolean>> = {};
+    for (const s of strategies) {
+      if (strategyParams[s] && Object.keys(strategyParams[s]).length) activeParams[s] = strategyParams[s];
+    }
+    const mvConds: Condition[] = [];
+    if (capFilter === "small") {
+      mvConds.push({ field: "total_mv", op: "<", value: 500000 });
+    } else if (capFilter === "mid") {
+      mvConds.push({ field: "total_mv", op: ">=", value: 500000 });
+      mvConds.push({ field: "total_mv", op: "<", value: 2000000 });
+    } else if (capFilter === "large") {
+      mvConds.push({ field: "total_mv", op: ">=", value: 2000000 });
+    }
+    const body: ScreenBody = {
+      strategies, conditions: [...conds, ...mvConds], name_query: nameQuery, limit: 300,
+      strategy_params: Object.keys(activeParams).length ? activeParams : undefined,
+    };
     if (mentionOn) {
       body.mentioned = { enabled: true, days: mentionDays, user_ids: mentionUsers, bullish_only: mentionBullishOnly };
     }
@@ -229,7 +438,7 @@ function ScreenerTab({ pendingRun, onRunDone }: { pendingRun: boolean; onRunDone
 
   const columns: ColumnsType<StockRow> = [
     { title: "名称", dataIndex: "name", fixed: "left", width: 110,
-      render: (n: string, r) => <Link to={`/stock/${r.code}`}>{n || r.code}</Link> },
+      render: (n: string, r) => <Link to={`/stock/${r.code}`} state={{ from: "screener" }}>{n || r.code}</Link> },
     { title: "代码", dataIndex: "code", width: 90 },
     { title: "所属板块", dataIndex: "sectors", width: 200,
       render: (secs: string[] | undefined, r) => <CollapsibleTags items={secs} bullish={r.bullish_sectors} /> },
@@ -248,6 +457,8 @@ function ScreenerTab({ pendingRun, onRunDone }: { pendingRun: boolean; onRunDone
       render: (users?: string[]) => users?.length
         ? <Space size={[4, 4]} wrap>{users.map((u) => <Tag key={u} color="volcano">{u}</Tag>)}</Space>
         : "-" },
+    { title: "", key: "ai", fixed: "right", width: 90,
+      render: (_v, r) => <StockAiAnalysisButton code={r.code} /> },
   ];
 
   return (
@@ -267,6 +478,24 @@ function ScreenerTab({ pendingRun, onRunDone }: { pendingRun: boolean; onRunDone
                 {active && <CheckCircleFilled className="preset-card-check" />}
                 <div className="preset-card-title">{p.title}</div>
                 <div className="preset-card-desc">{p.desc}</div>
+                {active && p.params && (
+                  <div onClick={(e) => e.stopPropagation()}>
+                    <Collapse
+                      size="small" ghost
+                      items={[{
+                        key: "params",
+                        label: "参数（默认值即原策略行为）",
+                        children: (
+                          <StrategyParamPanel
+                            fields={p.params}
+                            values={strategyParams[p.value] ?? {}}
+                            onChange={(k, v) => setStrategyParam(p.value, k, v)}
+                          />
+                        ),
+                      }]}
+                    />
+                  </div>
+                )}
               </div>
             );
           })}
@@ -277,6 +506,20 @@ function ScreenerTab({ pendingRun, onRunDone }: { pendingRun: boolean; onRunDone
         <Space direction="vertical" size={16} style={{ width: "100%" }}>
           <Input placeholder="股票名称/代码/缩写，如 茅台 / 600519 / GZMT" allowClear
             value={nameQuery} onChange={(e) => setNameQuery(e.target.value)} style={{ maxWidth: 360 }} />
+
+          <div className="filter-section">
+            <div className="filter-section-title">市值规模</div>
+            <Segmented
+              value={capFilter}
+              onChange={(v) => setCapFilter(v as CapFilter)}
+              options={[
+                { label: "不限", value: "all" },
+                { label: "小盘 (<50亿)", value: "small" },
+                { label: "中盘 (50-200亿)", value: "mid" },
+                { label: "大盘 (>200亿)", value: "large" },
+              ]}
+            />
+          </div>
 
           <div className="filter-section">
             <div className="filter-section-title"><FilterOutlined /> 数值条件</div>
@@ -343,7 +586,7 @@ function ScreenerTab({ pendingRun, onRunDone }: { pendingRun: boolean; onRunDone
             />
           ) : (
             <Table<StockRow> rowKey="code" size="small" columns={columns} dataSource={rows}
-              scroll={{ x: 1460 }} pagination={{ pageSize: 20, showSizeChanger: true }} />
+              scroll={{ x: 1550 }} pagination={{ pageSize: 20, showSizeChanger: true }} />
           )
         ) : <Empty description="设定条件后点击「开始筛选」" />}
       </Card>
@@ -357,7 +600,7 @@ function ScreenerTab({ pendingRun, onRunDone }: { pendingRun: boolean; onRunDone
 
 export default function Screener() {
   const isMobile = useIsMobile();
-  const [activeTab, setActiveTab] = useState("sectors");
+  const [activeTab, setActiveTab] = useState("screener");
   const [pendingRun, setPendingRun] = useState(false);
 
   const handleGotoScreener = () => {
