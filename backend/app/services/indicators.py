@@ -368,3 +368,99 @@ def daily_rsi_overbought_series(bars: list[dict], period: int = 14, threshold: f
         if rsi[i] <= threshold and rsi[i - 1] > threshold:
             out[i] = True
     return out
+
+
+def daily_break_ma_series(bars: list[dict], period: int = 20) -> list[bool]:
+    """逐日跌破均线止损信号：收盘价从均线上方穿破到下方。"""
+    closes = [b["close"] for b in bars]
+    ma = moving_avg(closes, period)
+    n = len(closes)
+    out = [False] * n
+    for i in range(1, n):
+        if ma[i] is None or ma[i - 1] is None:
+            continue
+        if closes[i] < ma[i] and closes[i - 1] >= ma[i - 1]:
+            out[i] = True
+    return out
+
+
+def daily_high_volume_drop_series(
+    bars: list[dict], ma_period: int = 20, volume_lookback: int = 20, volume_mult: float = 1.5,
+) -> list[bool]:
+    """逐日高位放量阴线信号：收盘价在均线上方 + 当日阴线 + 当日量 > 近N日均量×倍数。"""
+    closes = [b["close"] for b in bars]
+    ma = moving_avg(closes, ma_period)
+    n = len(bars)
+    out = [False] * n
+    for i in range(volume_lookback, n):
+        if ma[i] is None:
+            continue
+        above_ma = bars[i]["close"] > ma[i]
+        bearish = bars[i]["close"] < bars[i]["open"]
+        avg_vol = sum(bars[j]["volume"] for j in range(i - volume_lookback, i)) / volume_lookback
+        high_vol = avg_vol > 0 and bars[i]["volume"] >= avg_vol * volume_mult
+        out[i] = bool(above_ma and bearish and high_vol)
+    return out
+
+
+def ma_death_cross_metrics(bars: list[dict], cross_days: int = 3) -> dict | None:
+    """近 cross_days 日内 MA5 下穿 MA10（死叉）。"""
+    if len(bars) < 11:
+        return None
+    closes = [b["close"] for b in bars]
+    ma5 = moving_avg(closes, 5)
+    ma10 = moving_avg(closes, 10)
+    n = len(closes)
+    death = any(
+        ma5[n - 1 - k] is not None and ma10[n - 1 - k] is not None
+        and ma5[n - 2 - k] is not None and ma10[n - 2 - k] is not None
+        and ma5[n - 1 - k] < ma10[n - 1 - k] and ma5[n - 2 - k] >= ma10[n - 2 - k]
+        for k in range(cross_days) if n - 2 - k >= 0
+    )
+    return {"death_cross": death}
+
+
+def break_ma_metrics(bars: list[dict], ma_period: int = 20) -> dict | None:
+    """最新K线收盘价从均线上方穿破均线下方。"""
+    if len(bars) < ma_period + 1:
+        return None
+    closes = [b["close"] for b in bars]
+    ma = moving_avg(closes, ma_period)
+    if ma[-1] is None or ma[-2] is None:
+        return None
+    broke = closes[-1] < ma[-1] and closes[-2] >= ma[-2]
+    return {"broke": broke}
+
+
+def rsi_overbought_metrics(
+    bars: list[dict], period: int = 14, threshold: float = 70.0, lookback_days: int = 2,
+) -> dict | None:
+    """近 lookback_days 日内 RSI 由>threshold 回落到 <=threshold。"""
+    if len(bars) < period + lookback_days + 1:
+        return None
+    closes = [b["close"] for b in bars]
+    rsi = compute_rsi(closes, period)
+    n = len(closes)
+    fell = any(
+        rsi[n - 1 - k] is not None and rsi[n - 2 - k] is not None
+        and rsi[n - 1 - k] <= threshold and rsi[n - 2 - k] > threshold
+        for k in range(lookback_days) if n - 2 - k >= 0
+    )
+    return {"fell": fell}
+
+
+def high_volume_drop_metrics(
+    bars: list[dict], ma_period: int = 20, volume_lookback: int = 20, volume_mult: float = 1.5,
+) -> dict | None:
+    """最新K线：收盘在均线上方 + 阴线 + 成交量 > 近N日均量×倍数。"""
+    if len(bars) < max(ma_period, volume_lookback) + 1:
+        return None
+    closes = [b["close"] for b in bars]
+    ma = moving_avg(closes, ma_period)
+    if ma[-1] is None:
+        return None
+    above_ma = bars[-1]["close"] > ma[-1]
+    bearish = bars[-1]["close"] < bars[-1]["open"]
+    avg_vol = sum(bars[i]["volume"] for i in range(-volume_lookback - 1, -1)) / volume_lookback
+    high_vol = avg_vol > 0 and bars[-1]["volume"] >= avg_vol * volume_mult
+    return {"above_ma": above_ma, "bearish": bearish, "high_vol": high_vol}

@@ -24,6 +24,8 @@ const SIGNALS = [
   { key: "mid_reverse_ok",     name: "趋势下跌",     color: "#f97316", dir: "sell" },
   { key: "stop_loss_ok",       name: "短期止损",     color: "#8b5cf6", dir: "sell" },
   { key: "rsi_overbought_ok",  name: "RSI超买回落",  color: "#ec4899", dir: "sell" },
+  { key: "break_ma_ok",        name: "跌破均线止损",  color: "#f43f5e", dir: "sell" },
+  { key: "high_vol_drop_ok",   name: "高位放量阴线",  color: "#dc2626", dir: "sell" },
 ] as const;
 
 // 信号参数默认值
@@ -33,25 +35,56 @@ const SP_DEFAULTS: Record<string, number> = {
   vb_breakout_days: 20, vb_volume_mult: 1.5,
   boll_period: 20, boll_mult: 2.0,
   rsi_period: 14, rsi_buy_threshold: 30, rsi_sell_threshold: 70,
+  break_ma_period: 20,
+  hvd_ma_period: 20, hvd_volume_lookback: 20, hvd_volume_mult: 1.5,
 };
 
 // 参数面板字段定义
 const SP_FIELDS: { key: string; label: string; step: number; group: string }[] = [
-  { key: "cross_days",         label: "金叉回望天数",   step: 1,    group: "均线买点" },
-  { key: "rise_days",          label: "涨幅统计天数",   step: 1,    group: "均线买点" },
-  { key: "rise_pct",           label: "涨幅阈值",       step: 0.01, group: "均线买点" },
-  { key: "golden_cross_days",  label: "MACD/KDJ回望天", step: 1,    group: "金叉买点" },
-  { key: "vb_breakout_days",   label: "突破统计天数",   step: 1,    group: "放量突破" },
-  { key: "vb_volume_mult",     label: "放量倍数",       step: 0.1,  group: "放量突破" },
-  { key: "boll_period",        label: "布林带周期",     step: 1,    group: "布林带" },
-  { key: "boll_mult",          label: "标准差倍数",     step: 0.1,  group: "布林带" },
-  { key: "rsi_period",         label: "RSI周期",        step: 1,    group: "RSI" },
-  { key: "rsi_buy_threshold",  label: "超卖阈值",       step: 1,    group: "RSI" },
-  { key: "rsi_sell_threshold", label: "超买阈值",       step: 1,    group: "RSI" },
+  { key: "cross_days",          label: "金叉回望天数",   step: 1,    group: "均线买点" },
+  { key: "rise_days",           label: "涨幅统计天数",   step: 1,    group: "均线买点" },
+  { key: "rise_pct",            label: "涨幅阈值",       step: 0.01, group: "均线买点" },
+  { key: "golden_cross_days",   label: "MACD/KDJ回望天", step: 1,    group: "金叉买点" },
+  { key: "vb_breakout_days",    label: "突破统计天数",   step: 1,    group: "放量突破" },
+  { key: "vb_volume_mult",      label: "放量倍数",       step: 0.1,  group: "放量突破" },
+  { key: "boll_period",         label: "布林带周期",     step: 1,    group: "布林带" },
+  { key: "boll_mult",           label: "标准差倍数",     step: 0.1,  group: "布林带" },
+  { key: "rsi_period",          label: "RSI周期",        step: 1,    group: "RSI" },
+  { key: "rsi_buy_threshold",   label: "超卖阈值",       step: 1,    group: "RSI" },
+  { key: "rsi_sell_threshold",  label: "超买阈值",       step: 1,    group: "RSI" },
+  { key: "break_ma_period",     label: "跌破均线周期",   step: 1,    group: "跌破均线" },
+  { key: "hvd_ma_period",       label: "均线周期",       step: 1,    group: "放量阴线" },
+  { key: "hvd_volume_lookback", label: "均量统计天数",   step: 1,    group: "放量阴线" },
+  { key: "hvd_volume_mult",     label: "放量倍数",       step: 0.1,  group: "放量阴线" },
 ];
 
 const UP = "#e64545";   // A股惯例：红涨绿跌
 const DOWN = "#2ba471";
+
+// 基础指标：K线本身 + 三条均线，legend/series 的 name 字段就是下面这几个字符串，
+// 显示面板复用同一份数据保证名字对得上。
+const BASIC_ITEMS = [
+  { key: "kline", name: "K线", color: UP },
+  { key: "ma5",   name: "MA5",  color: "#3b82f6" },
+  { key: "ma10",  name: "MA10", color: "#eab308" },
+  { key: "ma20",  name: "MA20", color: "#ec4899" },
+] as const;
+
+
+// 默认显示：基础指标全开；买点只留宽松买点；卖点只留趋势下跌——其余信号默认收起，
+// 需要时自己在面板里勾选，避免图上一次性堆太多三角形。
+function defaultSignalVisibility(mobile = false): Record<string, boolean> {
+  const v: Record<string, boolean> = {};
+  BASIC_ITEMS.forEach((b) => { v[b.key] = true; });
+  SIGNALS.forEach((s) => { v[s.key] = false; });
+  if (!mobile) {
+    v.loose_ok = true;
+    v.strict_ok = true;
+    v.stop_loss_ok = true;
+    v.mid_reverse_ok = true;
+  }
+  return v;
+}
 
 // 新浪"新闻"资讯里一部分链接来自"新浪看点"域名，是给其 App 用的深链接跳转页——
 // 部分手机系统浏览器（尤其国产定制ROM）打不开对应App时会短暂显示内容后跳转到404。
@@ -72,10 +105,16 @@ const BUY_KEYS = SIGNALS.filter((s) => s.dir === "buy").map((s) => s.key);
 const SELL_KEYS = SIGNALS.filter((s) => s.dir === "sell").map((s) => s.key);
 const STACK_STEP_PX = 13;
 
-function buildOption(bars: KlineBar[], dark: boolean, compact: boolean) {
+// legend.selected 的 key 用系列 name（不是 signal key）；集中一处算，构建 option 首帧和
+// 后续 toggle 面板的增量 setOption 都用它，保证两处映射规则不会走岔。
+
+function buildOption(bars: KlineBar[], dark: boolean, compact: boolean, visibility: Record<string, boolean>) {
   const dates = bars.map((b) => b.trade_date);
   const candle = bars.map((b) => [b.open, b.close, b.low, b.high]);
 
+  // 系列本身始终全量构建；哪些信号实际显示交给 legend.selected 控制（见 buildLegendSelected），
+  // 这样切换面板勾选只需 setOption({legend:{selected}}) 局部更新，不用整图 notMerge 重建，
+  // 缩放/可见区间不会被打断。
   const signalSeries = SIGNALS.map((s) => {
     const order = s.dir === "buy" ? BUY_KEYS.indexOf(s.key) : SELL_KEYS.indexOf(s.key);
     const pxOffset = (order + 1) * STACK_STEP_PX * (s.dir === "buy" ? 1 : -1);
@@ -84,9 +123,9 @@ function buildOption(bars: KlineBar[], dark: boolean, compact: boolean) {
       type: "scatter",
       xAxisIndex: 0,
       yAxisIndex: 0,
-      symbol: "triangle",
-      symbolSize: 10,
-      symbolRotate: s.dir === "sell" ? 180 : 0,
+      symbol: s.dir === "sell" ? "path://M 0 5 L -6 -5 L 6 -5 Z" : "triangle",
+      symbolSize: s.dir === "sell" ? 11 : 7,
+      symbolRotate: 0,
       symbolOffset: [0, pxOffset],
       itemStyle: { color: s.color },
       tooltip: { show: false },
@@ -101,7 +140,6 @@ function buildOption(bars: KlineBar[], dark: boolean, compact: boolean) {
   const axisLabelColor = dark ? "#a6adb4" : "#666";
   const axisLineColor = dark ? "#3a3f45" : "#d9d9d9";
   const splitLineColor = dark ? "#2a2e33" : "#f0f0f0";
-  const legendColor = dark ? "#c9c9c9" : "#333";
   const gridLeft = compact ? 40 : 52;
   const gridRight = compact ? 8 : 20;
 
@@ -120,16 +158,34 @@ function buildOption(bars: KlineBar[], dark: boolean, compact: boolean) {
     // "触屏长按 2s 才出十字光标"；之前试过用 setOption 切 axisPointer.show 去压制自动触发，
     // 压不住——那是在跟 echarts 内部自己的显示逻辑抢时机，不如直接关掉自动触发。
     tooltip: { trigger: "axis", triggerOn: "none", axisPointer: { type: "cross" }, showContent: false },
-    legend: {
-      top: 4,
-      data: ["K线", "MA5", "MA10", "MA20", ...SIGNALS.map((s) => s.name)],
-      textStyle: { fontSize: compact ? 11 : 12, color: legendColor },
-    },
+    legend: (() => {
+      const lStyle = { fontSize: compact ? 11 : 12, color: dark ? "#c9c9c9" : "#333" };
+      return [
+        {
+          id: "basic",
+          data: ["K线", "MA5", "MA10", "MA20"],
+          selected: Object.fromEntries(BASIC_ITEMS.map((b) => [b.name, visibility[b.key] ?? true])),
+          top: 4, left: 0, right: 0, textStyle: lStyle,
+        },
+        {
+          id: "buy",
+          data: SIGNALS.filter((s) => s.dir === "buy").map((s) => s.name),
+          selected: Object.fromEntries(SIGNALS.filter((s) => s.dir === "buy").map((s) => [s.name, visibility[s.key] ?? false])),
+          type: "scroll", show: true, top: 28, left: 9999, textStyle: lStyle,
+        },
+        {
+          id: "sell",
+          data: SIGNALS.filter((s) => s.dir === "sell").map((s) => ({ name: s.name, icon: "path://M 0 5 L -6 -5 L 6 -5 Z" })),
+          selected: Object.fromEntries(SIGNALS.filter((s) => s.dir === "sell").map((s) => [s.name, visibility[s.key] ?? false])),
+          type: "scroll", show: true, top: 52, left: 9999, textStyle: lStyle,
+        },
+      ];
+    })(),
     grid: [
-      { left: gridLeft, right: gridRight, top: 40, height: "42%" },
-      { left: gridLeft, right: gridRight, top: "50%", height: "12%" },
-      { left: gridLeft, right: gridRight, top: "66%", height: "14%" },
-      { left: gridLeft, right: gridRight, top: "83%", height: "14%" },
+      { left: gridLeft, right: gridRight, top: 78, height: "46%" },
+      { left: gridLeft, right: gridRight, top: "56%", height: "11%" },
+      { left: gridLeft, right: gridRight, top: "70%", height: "13%" },
+      { left: gridLeft, right: gridRight, top: "86%", height: "11%" },
     ],
     xAxis: [
       { type: "category", data: dates, gridIndex: 0, axisLabel: { show: false }, axisTick: { show: false }, axisLine: { lineStyle: { color: axisLineColor } } },
@@ -209,15 +265,15 @@ function SubIndicatorLabels({ bar, left }: { bar: KlineBar; left: number }) {
   });
   return (
     <>
-      <div style={style("calc(50% + 2px)")}>
+      <div style={style("calc(56% + 2px)")}>
         成交量 <span style={{ color: bar.close >= bar.open ? UP : DOWN }}>{Number(bar.volume ?? 0).toLocaleString()} 手</span>
       </div>
-      <div style={style("calc(66% + 2px)")}>
+      <div style={style("calc(70% + 2px)")}>
         DIF <span style={{ color: "#3b82f6" }}>{fmtNum(bar.dif)}</span>{" "}
         DEA <span style={{ color: "#eab308" }}>{fmtNum(bar.dea)}</span>{" "}
         MACD <span style={{ color: (bar.macd ?? 0) >= 0 ? UP : DOWN }}>{fmtNum(bar.macd)}</span>
       </div>
-      <div style={style("calc(83% + 2px)")}>
+      <div style={style("calc(86% + 2px)")}>
         K <span style={{ color: "#3b82f6" }}>{fmtNum(bar.k)}</span>{" "}
         D <span style={{ color: "#eab308" }}>{fmtNum(bar.d)}</span>{" "}
         J <span style={{ color: "#ec4899" }}>{fmtNum(bar.j)}</span>
@@ -300,7 +356,11 @@ export default function StockDetail() {
   const navigate = useNavigate();
   // location.key === "default" 表示这是直接进入的（没有站内上一页可回，如刷新/外部链接直达）
   const canGoBack = location.key !== "default";
-  const goBack = () => (canGoBack ? navigate(-1) : navigate("/screener"));
+  const goBack = () => {
+    if (location.state?.from === "screener") navigate("/screener");
+    else if (canGoBack) navigate(-1);
+    else navigate("/screener");
+  };
   const [signalParams, setSignalParams] = useState<Record<string, number>>({});
   const spForQuery = Object.keys(signalParams).length ? signalParams : undefined;
   const { data: kline, isLoading } = useKline(code, spForQuery);
@@ -315,6 +375,8 @@ export default function StockDetail() {
   const [chartReady, setChartReady] = useState(false);
   // 当前可见区间 [start,end]（百分比），双指缩放手势需要它算新窗口；随 datazoom 事件更新。
   const rangeRef = useRef({ start: 55, end: 100 });
+  // 参数变化触发重新请求时，记录上次 kline 对应的 code，用来区分"同股换参"vs"切换到新股"。
+  const prevKlineCodeRef = useRef<string>("");
 
   // ── bars：含实时报价合并，供顶部指标条 / hover 悬停显示用 ──
   const bars = useMemo(() => {
@@ -338,10 +400,65 @@ export default function StockDetail() {
 
   const dark = mode === "dark";
 
-  // ── option：只依赖 kline/dark/isMobile，不依赖 quote ──
-  // quote 实时更新不走 notMerge 全量重建（会重置 dataZoom），
-  // 而是走下面的 useEffect 直接写入 ECharts 实例，保留缩放状态。
-  const option = useMemo(() => buildOption(kline?.bars ?? [], dark, isMobile), [kline, dark, isMobile]);
+  // ── option：只依赖 kline/dark/isMobile，不依赖 quote 或 signalVisibility ──
+  // quote 实时更新、显示面板勾选变化都不走 notMerge 全量重建（会重置 dataZoom），
+  // 而是走下面的 useEffect 直接写入 ECharts 实例，保留缩放状态。legend.selected 的初始值
+  // 只需要 mount 那一刻的 visibility，之后的变化由下面单独的 effect 增量同步。
+  const initialVisibilityRef = useRef(defaultSignalVisibility(window.innerWidth < 768));
+  const [buyExpanded, setBuyExpanded] = useState(false);
+  const [sellExpanded, setSellExpanded] = useState(false);
+  const option = useMemo(
+    () => buildOption(kline?.bars ?? [], dark, isMobile, initialVisibilityRef.current),
+    [kline, dark, isMobile],
+  );
+  const toggleBuy = () => {
+    const inst = chartRef.current?.getEchartsInstance();
+    if (!inst) return;
+    const newShow = !buyExpanded;
+    const buySigs = SIGNALS.filter((s) => s.dir === "buy");
+    inst.setOption({
+      legend: [
+        {},
+        {
+          id: "buy", left: newShow ? 54 : 9999,
+          selected: Object.fromEntries(buySigs.map((s) => [s.name, newShow ? (initialVisibilityRef.current[s.key] ?? false) : false])),
+        },
+      ],
+    });
+    setBuyExpanded(newShow);
+  };
+  const toggleSell = () => {
+    const inst = chartRef.current?.getEchartsInstance();
+    if (!inst) return;
+    const newShow = !sellExpanded;
+    const sellSigs = SIGNALS.filter((s) => s.dir === "sell");
+    inst.setOption({
+      legend: [
+        {},
+        {},
+        {
+          id: "sell", left: newShow ? 54 : 9999,
+          selected: Object.fromEntries(sellSigs.map((s) => [s.name, newShow ? (initialVisibilityRef.current[s.key] ?? false) : false])),
+        },
+      ],
+    });
+    setSellExpanded(newShow);
+  };
+
+// 参数变化（同一只股票换参数）时，notMerge 会重建图表并重置 dataZoom；
+  // 检测到"同股换参"（非首次加载、非切换股票）就用 rangeRef 恢复上次的可见区间。
+  useEffect(() => {
+    if (!kline || !chartReady) return;
+    const isSameCode = prevKlineCodeRef.current === kline.code;
+    prevKlineCodeRef.current = kline.code;
+    if (!isSameCode) return;
+    const inst = chartRef.current?.getEchartsInstance();
+    if (!inst) return;
+    const t = window.setTimeout(() => {
+      inst.dispatchAction({ type: "dataZoom", start: rangeRef.current.start, end: rangeRef.current.end });
+    }, 0);
+    return () => window.clearTimeout(t);
+  }, [kline, chartReady]);
 
   // ── 实时报价轻量更新：只改 K线和成交量两条系列的最后一根数据 ──
   useEffect(() => {
@@ -573,6 +690,26 @@ export default function StockDetail() {
             <>
               {active && <InfoBar bar={active} prevClose={prevClose} />}
               <div style={{ position: "relative", marginTop: 8 }}>
+                {(["buy", "sell"] as const).map((dir) => {
+                  const expanded = dir === "buy" ? buyExpanded : sellExpanded;
+                  const toggle = dir === "buy" ? toggleBuy : toggleSell;
+                  const top = dir === "buy" ? 28 : 52;
+                  return (
+                    <div
+                      key={dir}
+                      onClick={toggle}
+                      style={{
+                        position: "absolute", top, left: 4, zIndex: 10,
+                        cursor: "pointer", userSelect: "none", fontSize: 11,
+                        color: dark ? "#c9c9c9" : "#555",
+                        background: dark ? "rgba(255,255,255,0.07)" : "rgba(0,0,0,0.05)",
+                        borderRadius: 3, padding: "1px 5px", lineHeight: "18px",
+                      }}
+                    >
+                      {dir === "buy" ? "买点" : "卖点"}{expanded ? " ▲" : " ▼"}
+                    </div>
+                  );
+                })}
                 <ReactECharts
                   ref={chartRef}
                   option={option}
@@ -587,7 +724,7 @@ export default function StockDetail() {
           ) : <Empty description="暂无K线数据（需先在后台回补历史K线）" />}
         </Spin>
         <Collapse ghost size="small" style={{ marginTop: 4 }} items={[{
-          key: "sp",
+            key: "sp",
           label: <Space size={4}><SettingOutlined />信号参数{Object.keys(signalParams).length > 0 && <Tag color="blue" style={{ marginLeft: 4 }}>已自定义</Tag>}</Space>,
           children: (
             <div>

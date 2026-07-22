@@ -2,11 +2,14 @@
 // 单靠 useState 保存不住；这个模块只要页面没整个刷新就一直存在，充当一个轻量的"记忆"。
 import type { Condition, StockRow } from "@/api/types";
 
+export type CapFilter = "all" | "small" | "mid" | "large";
+
 export interface ScreenerState {
   strategies: string[];
   strategyParams: Record<string, Record<string, number | boolean>>;
   conds: Condition[];
   nameQuery: string;
+  capFilter: CapFilter;
   mentionOn: boolean;
   mentionDays: number;
   mentionUsers: string[];
@@ -23,6 +26,7 @@ export const screenerState: ScreenerState = {
   strategyParams: {},
   conds: [],
   nameQuery: "",
+  capFilter: "all",
   mentionOn: false,
   mentionDays: 7,
   mentionUsers: [],

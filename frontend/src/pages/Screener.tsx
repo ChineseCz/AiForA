@@ -41,6 +41,7 @@ import type { Condition, SectorRankItem, StockRow } from "@/api/types";
 import MarkdownContent from "@/components/MarkdownContent";
 import { usePageContext } from "@/pageContext";
 import { screenerState } from "./screenerState";
+import type { CapFilter } from "./screenerState";
 import { fmtNum, fmtPct, fmtYi, pctClass } from "@/util";
 
 // ──────────────────────────────────────────────
@@ -117,7 +118,7 @@ function StockCard({ row }: { row: StockRow }) {
     <Card size="small" style={{ marginBottom: 8 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 6 }}>
         <Space size={6}>
-          <Link to={`/stock/${row.code}`} style={{ fontWeight: 600, fontSize: 15 }}>{row.name || row.code}</Link>
+          <Link to={`/stock/${row.code}`} state={{ from: "screener" }} style={{ fontWeight: 600, fontSize: 15 }}>{row.name || row.code}</Link>
           <span style={{ color: "var(--text-secondary)", fontSize: 12 }}>{row.code}</span>
         </Space>
         <Space size={4}>
@@ -170,6 +171,7 @@ const PRESETS: { value: string; title: string; desc: string; params?: ParamField
       { key: "cross_days", label: "金叉回望天数", default: 3 },
       { key: "rise_days", label: "涨幅统计天数", default: 5 },
       { key: "rise_pct", label: "涨幅阈值", default: 0.03, step: 0.01 },
+      { key: "first_day", label: "仅首日出现", default: false, type: "bool" },
     ],
   },
   {
@@ -181,6 +183,7 @@ const PRESETS: { value: string; title: string; desc: string; params?: ParamField
       { key: "cross_days", label: "金叉回望天数", default: 3 },
       { key: "rise_days", label: "涨幅统计天数", default: 5 },
       { key: "rise_pct", label: "涨幅阈值", default: 0.03, step: 0.01 },
+      { key: "first_day", label: "仅首日出现", default: false, type: "bool" },
     ],
   },
   {
@@ -251,6 +254,30 @@ const PRESETS: { value: string; title: string; desc: string; params?: ParamField
   {
     value: "volume_price_up", title: "量价齐升", desc: "连续N日成交量与收盘价同步递增",
     params: [{ key: "streak_days", label: "连续天数", default: 3 }],
+  },
+  {
+    value: "sell_ma_death_cross", title: "MA死叉卖点", desc: "近N日MA5下穿MA10（趋势转弱信号）",
+    params: [{ key: "cross_days", label: "死叉回望天数", default: 3 }],
+  },
+  {
+    value: "sell_break_ma20", title: "跌破均线卖点", desc: "收盘价从均线上方下穿均线（止损信号）",
+    params: [{ key: "ma_period", label: "均线周期", default: 20 }],
+  },
+  {
+    value: "sell_rsi_overbought", title: "RSI超买回落", desc: "RSI从阈值上方回落到阈值下方（高位止盈）",
+    params: [
+      { key: "period", label: "RSI周期", default: 14 },
+      { key: "threshold", label: "超买阈值", default: 70, step: 1 },
+      { key: "lookback_days", label: "回看天数", default: 2 },
+    ],
+  },
+  {
+    value: "sell_high_volume_drop", title: "高位放量阴线", desc: "均线上方+阴线+成交量>均量×倍数（出货信号）",
+    params: [
+      { key: "ma_period", label: "均线周期", default: 20 },
+      { key: "volume_lookback", label: "均量统计天数", default: 20 },
+      { key: "volume_mult", label: "放量倍数", default: 1.5, step: 0.1 },
+    ],
   },
 ];
 const OPS = [">", ">=", "<", "<=", "==", "!="];
@@ -329,6 +356,7 @@ function ScreenerTab({ pendingRun, onRunDone }: { pendingRun: boolean; onRunDone
   );
   const [conds, setConds] = useState<Condition[]>(screenerState.conds);
   const [nameQuery, setNameQuery] = useState(screenerState.nameQuery);
+  const [capFilter, setCapFilter] = useState<CapFilter>(screenerState.capFilter);
   const [mentionOn, setMentionOn] = useState(screenerState.mentionOn);
   const [mentionDays, setMentionDays] = useState(screenerState.mentionDays);
   const [mentionUsers, setMentionUsers] = useState<string[]>(screenerState.mentionUsers);
@@ -350,10 +378,10 @@ function ScreenerTab({ pendingRun, onRunDone }: { pendingRun: boolean; onRunDone
 
   useEffect(() => {
     Object.assign(screenerState, {
-      strategies, strategyParams, conds, nameQuery, mentionOn, mentionDays, mentionUsers, mentionBullishOnly,
+      strategies, strategyParams, conds, nameQuery, capFilter, mentionOn, mentionDays, mentionUsers, mentionBullishOnly,
       sectorOn, sectorMode, sectorNames, rows, tradeDate,
     });
-  }, [strategies, strategyParams, conds, nameQuery, mentionOn, mentionDays, mentionUsers, mentionBullishOnly,
+  }, [strategies, strategyParams, conds, nameQuery, capFilter, mentionOn, mentionDays, mentionUsers, mentionBullishOnly,
     sectorOn, sectorMode, sectorNames, rows, tradeDate]);
 
   const setStrategyParam = (strategyKey: string, paramKey: string, v: number | boolean) => {
@@ -370,8 +398,17 @@ function ScreenerTab({ pendingRun, onRunDone }: { pendingRun: boolean; onRunDone
     for (const s of strategies) {
       if (strategyParams[s] && Object.keys(strategyParams[s]).length) activeParams[s] = strategyParams[s];
     }
+    const mvConds: Condition[] = [];
+    if (capFilter === "small") {
+      mvConds.push({ field: "total_mv", op: "<", value: 500000 });
+    } else if (capFilter === "mid") {
+      mvConds.push({ field: "total_mv", op: ">=", value: 500000 });
+      mvConds.push({ field: "total_mv", op: "<", value: 2000000 });
+    } else if (capFilter === "large") {
+      mvConds.push({ field: "total_mv", op: ">=", value: 2000000 });
+    }
     const body: ScreenBody = {
-      strategies, conditions: conds, name_query: nameQuery, limit: 300,
+      strategies, conditions: [...conds, ...mvConds], name_query: nameQuery, limit: 300,
       strategy_params: Object.keys(activeParams).length ? activeParams : undefined,
     };
     if (mentionOn) {
@@ -401,7 +438,7 @@ function ScreenerTab({ pendingRun, onRunDone }: { pendingRun: boolean; onRunDone
 
   const columns: ColumnsType<StockRow> = [
     { title: "名称", dataIndex: "name", fixed: "left", width: 110,
-      render: (n: string, r) => <Link to={`/stock/${r.code}`}>{n || r.code}</Link> },
+      render: (n: string, r) => <Link to={`/stock/${r.code}`} state={{ from: "screener" }}>{n || r.code}</Link> },
     { title: "代码", dataIndex: "code", width: 90 },
     { title: "所属板块", dataIndex: "sectors", width: 200,
       render: (secs: string[] | undefined, r) => <CollapsibleTags items={secs} bullish={r.bullish_sectors} /> },
@@ -469,6 +506,20 @@ function ScreenerTab({ pendingRun, onRunDone }: { pendingRun: boolean; onRunDone
         <Space direction="vertical" size={16} style={{ width: "100%" }}>
           <Input placeholder="股票名称/代码/缩写，如 茅台 / 600519 / GZMT" allowClear
             value={nameQuery} onChange={(e) => setNameQuery(e.target.value)} style={{ maxWidth: 360 }} />
+
+          <div className="filter-section">
+            <div className="filter-section-title">市值规模</div>
+            <Segmented
+              value={capFilter}
+              onChange={(v) => setCapFilter(v as CapFilter)}
+              options={[
+                { label: "不限", value: "all" },
+                { label: "小盘 (<50亿)", value: "small" },
+                { label: "中盘 (50-200亿)", value: "mid" },
+                { label: "大盘 (>200亿)", value: "large" },
+              ]}
+            />
+          </div>
 
           <div className="filter-section">
             <div className="filter-section-title"><FilterOutlined /> 数值条件</div>
@@ -549,7 +600,7 @@ function ScreenerTab({ pendingRun, onRunDone }: { pendingRun: boolean; onRunDone
 
 export default function Screener() {
   const isMobile = useIsMobile();
-  const [activeTab, setActiveTab] = useState("sectors");
+  const [activeTab, setActiveTab] = useState("screener");
   const [pendingRun, setPendingRun] = useState(false);
 
   const handleGotoScreener = () => {

@@ -165,6 +165,8 @@ export interface KlineBar {
   boll_breakout_ok: boolean;
   rsi_bounce_ok: boolean;
   rsi_overbought_ok: boolean;
+  break_ma_ok: boolean;
+  high_vol_drop_ok: boolean;
 }
 
 export interface KlineView {
@@ -245,6 +247,7 @@ export interface TradeStats {
   total_sell_trades: number;
   wins: number;
   losses: number;
+  total_stocks: number;
   win_rate: number;
   avg_win: number;
   avg_loss: number;

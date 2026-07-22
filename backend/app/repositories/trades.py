@@ -77,10 +77,12 @@ async def get_trade_stats(session: AsyncSession, user_id: str) -> dict:
 
     avg_cost: dict[str, float] = {}
     hold_qty: dict[str, float] = {}
-    wins = 0
-    losses = 0
+    stock_realized: dict[str, float] = {}
+    stock_has_sell: set[str] = set()
     win_pnl_sum = 0.0
     loss_pnl_sum = 0.0
+    trade_wins = 0
+    trade_losses = 0
 
     for r in rows:
         code = r["code"]
@@ -95,23 +97,29 @@ async def get_trade_stats(session: AsyncSession, user_id: str) -> dict:
             avg_cost[code] = total / hold_qty[code] if hold_qty[code] else 0.0
         else:
             pnl = (price - avg_cost[code]) * qty
+            stock_realized[code] = stock_realized.get(code, 0.0) + pnl
+            stock_has_sell.add(code)
             if pnl > 0:
-                wins += 1
+                trade_wins += 1
                 win_pnl_sum += pnl
             else:
-                losses += 1
+                trade_losses += 1
                 loss_pnl_sum += abs(pnl)
             hold_qty[code] = max(0.0, hold_qty[code] - qty)
 
-    total_trades = wins + losses
-    win_rate = wins / total_trades if total_trades else 0.0
-    avg_win = win_pnl_sum / wins if wins else 0.0
-    avg_loss = loss_pnl_sum / losses if losses else 0.0
+    total_stocks = len(stock_has_sell)
+    win_stocks = sum(1 for c in stock_has_sell if stock_realized.get(c, 0.0) > 0)
+    lose_stocks = total_stocks - win_stocks
+    win_rate = win_stocks / total_stocks if total_stocks else 0.0
+    total_trades = trade_wins + trade_losses
+    avg_win = win_pnl_sum / trade_wins if trade_wins else 0.0
+    avg_loss = loss_pnl_sum / trade_losses if trade_losses else 0.0
     profit_factor = win_pnl_sum / loss_pnl_sum if loss_pnl_sum else None
     return {
         "total_sell_trades": total_trades,
-        "wins": wins,
-        "losses": losses,
+        "wins": win_stocks,
+        "losses": lose_stocks,
+        "total_stocks": total_stocks,
         "win_rate": round(win_rate, 4),
         "avg_win": round(avg_win, 2),
         "avg_loss": round(avg_loss, 2),

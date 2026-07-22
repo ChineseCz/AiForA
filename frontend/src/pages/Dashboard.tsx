@@ -225,17 +225,23 @@ const UP_COLOR = "#f43f5e";
 const DOWN_COLOR = "#22c55e";
 
 const INDEX_SIGNALS = [
-  { key: "strict_ok" as const, name: "严格买点", color: "#e64545", dir: "buy" as const },
-  { key: "loose_ok" as const, name: "宽松买点", color: "#3b82f6", dir: "buy" as const },
-  { key: "golden_ok" as const, name: "金叉买点", color: "#06b6d4", dir: "buy" as const },
-  { key: "mid_reverse_ok" as const, name: "中期反转", color: "#f97316", dir: "sell" as const },
-  { key: "stop_loss_ok" as const, name: "短期止损", color: "#8b5cf6", dir: "sell" as const },
+  { key: "strict_ok" as const,          name: "严格买点",     color: "#e64545", dir: "buy" as const },
+  { key: "loose_ok" as const,           name: "宽松买点",     color: "#3b82f6", dir: "buy" as const },
+  { key: "golden_ok" as const,          name: "金叉买点",     color: "#06b6d4", dir: "buy" as const },
+  { key: "volume_breakout_ok" as const, name: "放量突破",     color: "#84cc16", dir: "buy" as const },
+  { key: "boll_breakout_ok" as const,   name: "布林带突破",   color: "#a855f7", dir: "buy" as const },
+  { key: "rsi_bounce_ok" as const,      name: "RSI超卖反弹",  color: "#f59e0b", dir: "buy" as const },
+  { key: "mid_reverse_ok" as const,     name: "趋势下跌",     color: "#f97316", dir: "sell" as const },
+  { key: "stop_loss_ok" as const,       name: "短期止损",     color: "#8b5cf6", dir: "sell" as const },
+  { key: "rsi_overbought_ok" as const,  name: "RSI超买回落",  color: "#ec4899", dir: "sell" as const },
+  { key: "break_ma_ok" as const,        name: "跌破均线止损", color: "#f43f5e", dir: "sell" as const },
+  { key: "high_vol_drop_ok" as const,   name: "高位放量阴线", color: "#dc2626", dir: "sell" as const },
 ];
 const IDX_BUY_KEYS = INDEX_SIGNALS.filter((s) => s.dir === "buy").map((s) => s.key);
 const IDX_SELL_KEYS = INDEX_SIGNALS.filter((s) => s.dir === "sell").map((s) => s.key);
 const IDX_STACK_PX = 13;
 
-function buildIndexOption(bars: KlineBar[], dark: boolean, showVol: boolean, showMacd: boolean, showKdj: boolean, showSignals: boolean) {
+function buildIndexOption(bars: KlineBar[], dark: boolean, showVol: boolean, showMacd: boolean, showKdj: boolean) {
   const dates = bars.map((b) => b.trade_date);
   const axisColor = dark ? "#9aa3ad" : "#666";
   const lineColor = dark ? "#3c3c3c" : "#ddd";
@@ -244,7 +250,7 @@ function buildIndexOption(bars: KlineBar[], dark: boolean, showVol: boolean, sho
   const MAIN_H = 200;
   const SUB_H = 76;
   const GAP = 6;
-  const TOP = 8;
+  const TOP = 76;
 
   const subKeys = [
     showVol && "vol", showMacd && "macd", showKdj && "kdj",
@@ -286,9 +292,9 @@ function buildIndexOption(bars: KlineBar[], dark: boolean, showVol: boolean, sho
       type: "scatter",
       xAxisIndex: 0,
       yAxisIndex: 0,
-      symbol: "triangle",
-      symbolSize: 10,
-      symbolRotate: s.dir === "sell" ? 180 : 0,
+      symbol: s.dir === "sell" ? "path://M 0 5 L -6 -5 L 6 -5 Z" : "triangle",
+      symbolSize: s.dir === "sell" ? 11 : 10,
+      symbolRotate: 0,
       symbolOffset: [0, pxOffset],
       itemStyle: { color: s.color },
       tooltip: { show: false },
@@ -310,7 +316,7 @@ function buildIndexOption(bars: KlineBar[], dark: boolean, showVol: boolean, sho
       data: bars.map((b) => b[key]), symbol: "none", smooth: false,
       lineStyle: { width: 1, color: ["#f59e0b", "#60a5fa", "#a78bfa"][i] },
     })),
-    ...(showSignals ? signalSeries : []),
+    ...signalSeries,
   ];
 
   if (volIdx >= 0) {
@@ -336,6 +342,7 @@ function buildIndexOption(bars: KlineBar[], dark: boolean, showVol: boolean, sho
 
   const zoomStart = Math.max(0, 100 - (90 / Math.max(1, bars.length)) * 100);
   const allIdx = grids.map((_, i) => i);
+  const lStyle = { fontSize: 11, color: dark ? "#c9c9c9" : "#333" };
 
   return {
     backgroundColor: "transparent",
@@ -347,6 +354,27 @@ function buildIndexOption(bars: KlineBar[], dark: boolean, showVol: boolean, sho
       showContent: false,
     },
     axisPointer: { link: [{ xAxisIndex: "all" }] },
+    legend: [
+      {
+        id: "basic",
+        data: ["指数", "MA5", "MA10", "MA20"],
+        top: 4, left: 0, right: 0, textStyle: lStyle,
+      },
+      {
+        id: "buy",
+        data: INDEX_SIGNALS.filter((s) => s.dir === "buy").map((s) => s.name),
+        selected: Object.fromEntries(INDEX_SIGNALS.filter((s) => s.dir === "buy").map((s) => [s.name, true])),
+        type: "scroll", show: true, top: 28, left: 9999, textStyle: lStyle,
+      },
+      {
+        id: "sell",
+        data: INDEX_SIGNALS.filter((s) => s.dir === "sell").map((s) => ({
+          name: s.name, icon: "path://M 0 5 L -6 -5 L 6 -5 Z",
+        })),
+        selected: Object.fromEntries(INDEX_SIGNALS.filter((s) => s.dir === "sell").map((s) => [s.name, true])),
+        type: "scroll", show: true, top: 52, left: 9999, textStyle: lStyle,
+      },
+    ],
     grid: eGrids,
     xAxis: xAxes,
     yAxis: yAxes,
@@ -391,7 +419,7 @@ function IndexInfoBar({ bar, prevClose }: { bar: KlineBar; prevClose?: number })
 }
 
 // 副图左上角小字标注，位置对齐 buildIndexOption 的动态 grid
-const IDX_SUB_TOP0 = 8 + 200 + 6 + 4; // main_top + main_h + gap + label_offset
+const IDX_SUB_TOP0 = 76 + 200 + 6 + 4; // main_top + main_h + gap + label_offset
 const IDX_SUB_STEP = 76 + 6;           // sub_h + gap
 
 function IndexSubLabels({
@@ -446,7 +474,8 @@ function IndexChart({ dark, isMobile }: { dark: boolean; isMobile: boolean }) {
   const [showVol, setShowVol] = useState(true);
   const [showMacd, setShowMacd] = useState(false);
   const [showKdj, setShowKdj] = useState(false);
-  const [showSignals, setShowSignals] = useState(true);
+  const [buyExpanded, setBuyExpanded] = useState(false);
+  const [sellExpanded, setSellExpanded] = useState(false);
   const chartRef = useRef<ReactECharts>(null);
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
   const [chartReady, setChartReady] = useState(false);
@@ -460,11 +489,27 @@ function IndexChart({ dark, isMobile }: { dark: boolean; isMobile: boolean }) {
   const trendWeak = bars.length > 0 && bars.slice(-14).some((b) => b.mid_reverse_ok);
 
   const option = useMemo(
-    () => (bars.length ? buildIndexOption(bars, dark, showVol, showMacd, showKdj, showSignals) : {}),
-    [bars, dark, showVol, showMacd, showKdj, showSignals],
+    () => (bars.length ? buildIndexOption(bars, dark, showVol, showMacd, showKdj) : {}),
+    [bars, dark, showVol, showMacd, showKdj],
   );
-  const height = 8 + 200 + 30 /* dataZoom */
+  const height = 76 + 200 + 30 /* dataZoom */
     + (showVol ? 82 : 0) + (showMacd ? 82 : 0) + (showKdj ? 82 : 0);
+
+  const toggleBuy = () => {
+    const inst = chartRef.current?.getEchartsInstance();
+    if (!inst) return;
+    const newShow = !buyExpanded;
+    inst.setOption({ legend: [{}, { id: "buy", left: newShow ? 54 : 9999 }] });
+    setBuyExpanded(newShow);
+  };
+
+  const toggleSell = () => {
+    const inst = chartRef.current?.getEchartsInstance();
+    if (!inst) return;
+    const newShow = !sellExpanded;
+    inst.setOption({ legend: [{}, {}, { id: "sell", left: newShow ? 54 : 9999 }] });
+    setSellExpanded(newShow);
+  };
 
   const onEvents = useMemo(() => ({
     updateAxisPointer: (e: { axesInfo?: { value?: number }[] }) => {
@@ -553,7 +598,6 @@ function IndexChart({ dark, isMobile }: { dark: boolean; isMobile: boolean }) {
       style={{ marginTop: isMobile ? 8 : 16 }}
       extra={
         <Space size={4}>
-          <Tag.CheckableTag checked={showSignals} onChange={setShowSignals}>信号</Tag.CheckableTag>
           <Tag.CheckableTag checked={showVol} onChange={setShowVol}>量</Tag.CheckableTag>
           <Tag.CheckableTag checked={showMacd} onChange={setShowMacd}>MACD</Tag.CheckableTag>
           <Tag.CheckableTag checked={showKdj} onChange={setShowKdj}>KDJ</Tag.CheckableTag>
@@ -591,6 +635,26 @@ function IndexChart({ dark, isMobile }: { dark: boolean; isMobile: boolean }) {
                 showKdj={showKdj}
               />
             )}
+            {(["buy", "sell"] as const).map((dir) => {
+              const expanded = dir === "buy" ? buyExpanded : sellExpanded;
+              const toggle = dir === "buy" ? toggleBuy : toggleSell;
+              const top = dir === "buy" ? 28 : 52;
+              return (
+                <div
+                  key={dir}
+                  onClick={toggle}
+                  style={{
+                    position: "absolute", top, left: 4, zIndex: 10,
+                    cursor: "pointer", userSelect: "none", fontSize: 11,
+                    color: dark ? "#c9c9c9" : "#555",
+                    background: dark ? "rgba(255,255,255,0.07)" : "rgba(0,0,0,0.05)",
+                    borderRadius: 3, padding: "1px 5px", lineHeight: "18px",
+                  }}
+                >
+                  {dir === "buy" ? "买点" : "卖点"}{expanded ? "▲" : "▼"}
+                </div>
+              );
+            })}
           </div>
         </>
       ) : (

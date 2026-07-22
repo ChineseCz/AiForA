@@ -47,6 +47,15 @@ def get_kline_view(code: str, sp: dict | None = None) -> dict:
     rsi_ob_ok = indicators.daily_rsi_overbought_series(
         bars, int(sp.get("rsi_period", 14)), float(sp.get("rsi_sell_threshold", 70.0)),
     )
+    break_ma_ok = indicators.daily_break_ma_series(
+        bars, int(sp.get("break_ma_period", 20)),
+    )
+    hvd_ok = indicators.daily_high_volume_drop_series(
+        bars,
+        int(sp.get("hvd_ma_period", 20)),
+        int(sp.get("hvd_volume_lookback", 20)),
+        float(sp.get("hvd_volume_mult", 1.5)),
+    )
 
     out_bars = []
     for i, b in enumerate(bars):
@@ -61,6 +70,7 @@ def get_kline_view(code: str, sp: dict | None = None) -> dict:
             "mid_reverse_ok": mid_reverse_ok[i], "stop_loss_ok": stop_loss_ok[i],
             "volume_breakout_ok": vb_ok[i], "boll_breakout_ok": boll_ok[i],
             "rsi_bounce_ok": rsi_bounce_ok[i], "rsi_overbought_ok": rsi_ob_ok[i],
+            "break_ma_ok": break_ma_ok[i], "high_vol_drop_ok": hvd_ok[i],
         })
     return {"code": code, "name": name, "bars": out_bars}
 

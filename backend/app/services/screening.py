@@ -93,7 +93,7 @@ def _sorted_hits(hits: list[dict], limit: int) -> list[dict]:
     return hits[:limit]
 
 
-_MA_CROSS_DEFAULTS = {"ma_fast": 5, "ma_mid": 10, "ma_slow": 20, "cross_days": 3, "rise_days": 5, "rise_pct": 0.03}
+_MA_CROSS_DEFAULTS = {"ma_fast": 5, "ma_mid": 10, "ma_slow": 20, "cross_days": 3, "rise_days": 5, "rise_pct": 0.03, "first_day": False}
 _GOLDEN_CROSS_DEFAULTS = {"macd_fast": 12, "macd_slow": 26, "macd_signal": 9, "kdj_window": 9, "cross_days": 4, "require_both": True}
 _FUND_OK_DEFAULTS = {"net_profit_yoy_min": 0.0, "eps_min": 0.1, "roe_min": 3.0, "revenue_yoy_min": 10.0, "gross_margin_min": 10.0}
 _VOLUME_BREAKOUT_DEFAULTS = {"breakout_days": 20, "volume_mult": 1.5}
@@ -105,6 +105,10 @@ _BOLL_BREAKOUT_DEFAULTS = {"period": 20, "mult": 2.0, "squeeze_days": 60, "squee
 _RSI_BOUNCE_DEFAULTS = {"period": 14, "threshold": 30.0, "lookback_days": 2}
 _TURNOVER_SURGE_DEFAULTS = {"turnover_min": 5.0, "change_pct_min": 4.0, "change_pct_max": 9.5}
 _VOLUME_PRICE_UP_DEFAULTS = {"streak_days": 3}
+_MA_DEATH_CROSS_DEFAULTS = {"cross_days": 3}
+_BREAK_MA20_DEFAULTS = {"ma_period": 20}
+_RSI_OVERBOUGHT_DEFAULTS = {"period": 14, "threshold": 70.0, "lookback_days": 2}
+_HIGH_VOLUME_DROP_DEFAULTS = {"ma_period": 20, "volume_lookback": 20, "volume_mult": 1.5}
 
 # 每个可调参数的取值范围（int: (min, max)；float: (min, max)），供 sanitize_strategy_params 校验/裁剪，
 # 防止恶意/畸形请求传入超大周期把现算路径拖成 O(n·超大窗口) 的 DoS，或非数值类型导致后续计算抛异常。
@@ -122,8 +126,9 @@ _PARAM_BOUNDS: dict[str, tuple[float, float]] = {
     "threshold": (5.0, 90.0),
     "turnover_min": (0.0, 50.0), "change_pct_min": (-20.0, 20.0), "change_pct_max": (-20.0, 21.0),
     "streak_days": (2, 10),
+    "volume_lookback": (2, 120),
 }
-_BOOL_PARAMS = {"require_both"}
+_BOOL_PARAMS = {"require_both", "first_day"}
 
 
 def sanitize_strategy_params(strategy_key: str, raw: dict | None, defaults: dict) -> dict:
@@ -151,7 +156,8 @@ def sanitize_strategy_params(strategy_key: str, raw: dict | None, defaults: dict
 def screen_ma_cross(limit: int = 200, params: dict | None = None) -> list[dict]:
     from app.services import indicators
     p = {**_MA_CROSS_DEFAULTS, **sanitize_strategy_params("ma_cross", params, _MA_CROSS_DEFAULTS)}
-    is_default = p == _MA_CROSS_DEFAULTS
+    first_day = bool(p.get("first_day"))
+    is_default = not first_day and {k: v for k, v in p.items() if k != "first_day"} == {k: v for k, v in _MA_CROSS_DEFAULTS.items() if k != "first_day"}
 
     latest = db.get_latest_rows()
     latest_by_code = {r["code"]: r for r in latest}
@@ -173,22 +179,30 @@ def screen_ma_cross(limit: int = 200, params: dict | None = None) -> list[dict]:
             ]
             return _sorted_hits(hits, limit)
 
-    series = _load_ma_series(candidates, _calendar_days_for(max(p["ma_slow"], p["rise_days"])))
+    series = _load_ma_series(candidates, _calendar_days_for(max(p["ma_slow"], p["rise_days"])) + (3 if first_day else 0))
     max_len = max((len(v) for v in series.values()), default=0)
     if max_len < p["ma_slow"] + 3:
         raise InsufficientHistoryError("历史数据不足，请先运行历史K线回补")
 
     hits = []
     for code, bars in series.items():
-        m = indicators.ma_cross_metrics(
-            bars, p["ma_fast"], p["ma_mid"], p["ma_slow"], p["cross_days"], p["rise_days"], p["rise_pct"],
-        )
-        if not m or not (m["cross1_in_3days"] and m["cross23_in_3days"] and m["rise5"]):
-            continue
-        price_above20 = m["closes"][-1] > m["ma20"][-1]
-        duotou = m["ma5"][-1] is not None and m["ma10"][-1] is not None and m["ma5"][-1] > m["ma10"][-1] > m["ma20"][-1]
-        if price_above20 and duotou:
-            hits.append(dict(latest_by_code.get(code, {"code": code})))
+        if first_day:
+            strict_series, _ = indicators.daily_signal_series(
+                bars, p["cross_days"], p["rise_days"], p["rise_pct"],
+            )
+            if len(strict_series) < 2 or not (strict_series[-1] and not strict_series[-2]):
+                continue
+        else:
+            m = indicators.ma_cross_metrics(
+                bars, p["ma_fast"], p["ma_mid"], p["ma_slow"], p["cross_days"], p["rise_days"], p["rise_pct"],
+            )
+            if not m or not (m["cross1_in_3days"] and m["cross23_in_3days"] and m["rise5"]):
+                continue
+            price_above20 = m["closes"][-1] > m["ma20"][-1]
+            duotou = m["ma5"][-1] is not None and m["ma10"][-1] is not None and m["ma5"][-1] > m["ma10"][-1] > m["ma20"][-1]
+            if not (price_above20 and duotou):
+                continue
+        hits.append(dict(latest_by_code.get(code, {"code": code})))
 
     return _sorted_hits(hits, limit)
 
@@ -196,7 +210,8 @@ def screen_ma_cross(limit: int = 200, params: dict | None = None) -> list[dict]:
 def screen_ma_cross2(limit: int = 200, params: dict | None = None) -> list[dict]:
     from app.services import indicators
     p = {**_MA_CROSS_DEFAULTS, **sanitize_strategy_params("ma_cross2", params, _MA_CROSS_DEFAULTS)}
-    is_default = p == _MA_CROSS_DEFAULTS
+    first_day = bool(p.get("first_day"))
+    is_default = not first_day and {k: v for k, v in p.items() if k != "first_day"} == {k: v for k, v in _MA_CROSS_DEFAULTS.items() if k != "first_day"}
 
     latest = db.get_latest_rows()
     latest_by_code = {r["code"]: r for r in latest}
@@ -217,18 +232,26 @@ def screen_ma_cross2(limit: int = 200, params: dict | None = None) -> list[dict]
             ]
             return _sorted_hits(hits, limit)
 
-    series = _load_ma_series(candidates, _calendar_days_for(max(p["ma_slow"], p["rise_days"])))
+    series = _load_ma_series(candidates, _calendar_days_for(max(p["ma_slow"], p["rise_days"])) + (3 if first_day else 0))
     max_len = max((len(v) for v in series.values()), default=0)
     if max_len < p["ma_slow"] + 3:
         raise InsufficientHistoryError("历史数据不足，请先运行历史K线回补")
 
     hits = []
     for code, bars in series.items():
-        m = indicators.ma_cross_metrics(
-            bars, p["ma_fast"], p["ma_mid"], p["ma_slow"], p["cross_days"], p["rise_days"], p["rise_pct"],
-        )
-        if m and m["cross1_in_3days"] and m["cross23_in_3days"] and m["rise5"]:
-            hits.append(dict(latest_by_code.get(code, {"code": code})))
+        if first_day:
+            _, loose_series = indicators.daily_signal_series(
+                bars, p["cross_days"], p["rise_days"], p["rise_pct"],
+            )
+            if len(loose_series) < 2 or not (loose_series[-1] and not loose_series[-2]):
+                continue
+        else:
+            m = indicators.ma_cross_metrics(
+                bars, p["ma_fast"], p["ma_mid"], p["ma_slow"], p["cross_days"], p["rise_days"], p["rise_pct"],
+            )
+            if not (m and m["cross1_in_3days"] and m["cross23_in_3days"] and m["rise5"]):
+                continue
+        hits.append(dict(latest_by_code.get(code, {"code": code})))
 
     return _sorted_hits(hits, limit)
 
@@ -432,6 +455,86 @@ def screen_volume_price_up(limit: int = 200, params: dict | None = None) -> list
     return _sorted_hits(hits, limit)
 
 
+def screen_sell_ma_death_cross(limit: int = 200, params: dict | None = None) -> list[dict]:
+    """MA死叉卖点：近N日MA5下穿MA10。"""
+    from app.services import indicators
+    p = {**_MA_DEATH_CROSS_DEFAULTS, **sanitize_strategy_params("sell_ma_death_cross", params, _MA_DEATH_CROSS_DEFAULTS)}
+
+    latest = db.get_latest_rows()
+    latest_by_code = {r["code"]: r for r in latest}
+    candidates = {r["code"] for r in latest if r.get("code") and not is_st_or_s(r.get("name")) and r.get("volume")}
+    if not candidates:
+        return []
+
+    series = _load_ma_series(candidates, _calendar_days_for(10 + p["cross_days"]))
+    hits = []
+    for code, bars in series.items():
+        m = indicators.ma_death_cross_metrics(bars, p["cross_days"])
+        if m and m["death_cross"]:
+            hits.append(dict(latest_by_code.get(code, {"code": code})))
+    return _sorted_hits(hits, limit)
+
+
+def screen_sell_break_ma20(limit: int = 200, params: dict | None = None) -> list[dict]:
+    """跌破均线卖点：收盘价从均线上方穿破到下方。"""
+    from app.services import indicators
+    p = {**_BREAK_MA20_DEFAULTS, **sanitize_strategy_params("sell_break_ma20", params, _BREAK_MA20_DEFAULTS)}
+
+    latest = db.get_latest_rows()
+    latest_by_code = {r["code"]: r for r in latest}
+    candidates = {r["code"] for r in latest if r.get("code") and not is_st_or_s(r.get("name")) and r.get("volume")}
+    if not candidates:
+        return []
+
+    series = _load_ma_series(candidates, _calendar_days_for(p["ma_period"]))
+    hits = []
+    for code, bars in series.items():
+        m = indicators.break_ma_metrics(bars, p["ma_period"])
+        if m and m["broke"]:
+            hits.append(dict(latest_by_code.get(code, {"code": code})))
+    return _sorted_hits(hits, limit)
+
+
+def screen_sell_rsi_overbought(limit: int = 200, params: dict | None = None) -> list[dict]:
+    """RSI超买回落卖点：RSI由>阈值回落到<=阈值。"""
+    from app.services import indicators
+    p = {**_RSI_OVERBOUGHT_DEFAULTS, **sanitize_strategy_params("sell_rsi_overbought", params, _RSI_OVERBOUGHT_DEFAULTS)}
+
+    latest = db.get_latest_rows()
+    latest_by_code = {r["code"]: r for r in latest}
+    candidates = {r["code"] for r in latest if r.get("code") and not is_st_or_s(r.get("name")) and r.get("volume")}
+    if not candidates:
+        return []
+
+    series = _load_ma_series(candidates, _calendar_days_for(p["period"] + p["lookback_days"]))
+    hits = []
+    for code, bars in series.items():
+        m = indicators.rsi_overbought_metrics(bars, p["period"], p["threshold"], p["lookback_days"])
+        if m and m["fell"]:
+            hits.append(dict(latest_by_code.get(code, {"code": code})))
+    return _sorted_hits(hits, limit)
+
+
+def screen_sell_high_volume_drop(limit: int = 200, params: dict | None = None) -> list[dict]:
+    """高位放量阴线卖点：收盘价在均线上方 + 当日阴线 + 成交量>均量×倍数。"""
+    from app.services import indicators
+    p = {**_HIGH_VOLUME_DROP_DEFAULTS, **sanitize_strategy_params("sell_high_volume_drop", params, _HIGH_VOLUME_DROP_DEFAULTS)}
+
+    latest = db.get_latest_rows()
+    latest_by_code = {r["code"]: r for r in latest}
+    candidates = {r["code"] for r in latest if r.get("code") and not is_st_or_s(r.get("name")) and r.get("volume")}
+    if not candidates:
+        return []
+
+    series = _load_ma_series(candidates, _calendar_days_for(max(p["ma_period"], p["volume_lookback"])))
+    hits = []
+    for code, bars in series.items():
+        m = indicators.high_volume_drop_metrics(bars, p["ma_period"], p["volume_lookback"], p["volume_mult"])
+        if m and m["above_ma"] and m["bearish"] and m["high_vol"]:
+            hits.append(dict(latest_by_code.get(code, {"code": code})))
+    return _sorted_hits(hits, limit)
+
+
 _PRESET_STRATEGIES = {
     "ma_cross": screen_ma_cross,
     "ma_cross2": screen_ma_cross2,
@@ -443,6 +546,10 @@ _PRESET_STRATEGIES = {
     "rsi_oversold_bounce": screen_rsi_oversold_bounce,
     "turnover_surge": screen_turnover_surge,
     "volume_price_up": screen_volume_price_up,
+    "sell_ma_death_cross": screen_sell_ma_death_cross,
+    "sell_break_ma20": screen_sell_break_ma20,
+    "sell_rsi_overbought": screen_sell_rsi_overbought,
+    "sell_high_volume_drop": screen_sell_high_volume_drop,
 }
 
 
