@@ -153,8 +153,13 @@ async def api_generate_note(
     trades = await trades_repo.list_trades_by_date(session, user_id, body.date)
     positions = await trades_repo.get_positions(session, user_id)
     from app.services.review_gen import generate_daily_review
-    content = await run_in_threadpool(generate_daily_review, body.date, trades, positions)
-    return {"content": content, "error": ""}
+    try:
+        content = await run_in_threadpool(generate_daily_review, body.date, trades, positions)
+        return {"content": content, "error": ""}
+    except Exception as e:
+        import logging
+        logging.exception(f"AI 生成复盘笔记失败 (user={user_id}, date={body.date})")
+        raise HTTPException(502, f"AI 生成失败：{str(e)}")
 
 
 @router.delete("/notes")

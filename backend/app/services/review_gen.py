@@ -65,5 +65,6 @@ def generate_daily_review(date: str, trades: list[dict], positions: dict) -> str
         messages=[{"role": "user", "content": prompt}],
         temperature=0.4,
         max_tokens=1200,
+        timeout=60,
     )
     return resp.choices[0].message.content or ""
