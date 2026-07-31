@@ -37,6 +37,7 @@ class Settings(BaseSettings):
     relay_api_url: str = "https://www.micuapi.ai/v1"
     relay_model: str = "gpt-5.4-mini"
     vision_model: str = ""  # 空则沿用 relay_model
+    relay_api_image_key: str = ""  # 生图/视觉模型专用 key；空则回退到 relay_api_key
 
     # ===== 雪球（抓取参数，Phase 2 宿主 worker 用）=====
     xueqiu_cookie: str = ""
@@ -129,6 +130,10 @@ class Settings(BaseSettings):
     @property
     def effective_vision_model(self) -> str:
         return self.vision_model or self.relay_model
+
+    @property
+    def effective_image_key(self) -> str:
+        return self.relay_api_image_key or self.relay_api_key
 
     @property
     def database_url_sync(self) -> str:

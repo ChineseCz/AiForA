@@ -73,15 +73,18 @@ def generate_stock_analysis(code: str) -> dict:
     if prompt is None:
         return {"content": "", "error": "暂无K线数据，无法生成分析（需先在后台回补历史K线）"}
 
-    client = OpenAI(api_key=settings.relay_api_key, base_url=settings.relay_api_url)
-    resp = client.chat.completions.create(
-        model=settings.relay_model,
-        messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": prompt},
-        ],
-        temperature=0.4,
-        max_tokens=1200,
-    )
-    content = (resp.choices[0].message.content or "").strip()
+    try:
+        client = OpenAI(api_key=settings.relay_api_key, base_url=settings.relay_api_url)
+        resp = client.chat.completions.create(
+            model=settings.relay_model,
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.4,
+            max_tokens=1200,
+        )
+        content = (resp.choices[0].message.content or "").strip()
+    except Exception as e:
+        return {"content": "", "error": f"LLM 调用失败：{e}"}
     return {"content": content + "\n\n" + DISCLAIMER if content else "", "error": "" if content else "生成失败，请重试"}

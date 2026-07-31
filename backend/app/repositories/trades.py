@@ -6,31 +6,31 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
-async def list_trades(session: AsyncSession, user_id: str, code: Optional[str] = None) -> list[dict]:
+async def list_trades(session: AsyncSession, user_id: str, code: Optional[str] = None, is_paper: bool = False) -> list[dict]:
     if code:
         rows = (await session.execute(text(
-            "SELECT * FROM trade_records WHERE user_id = :uid AND code = :code ORDER BY trade_date DESC, id DESC"
-        ), {"uid": user_id, "code": code})).mappings().all()
+            "SELECT * FROM trade_records WHERE user_id = :uid AND code = :code AND is_paper = :ip ORDER BY trade_date DESC, id DESC"
+        ), {"uid": user_id, "code": code, "ip": is_paper})).mappings().all()
     else:
         rows = (await session.execute(text(
-            "SELECT * FROM trade_records WHERE user_id = :uid ORDER BY trade_date DESC, id DESC"
-        ), {"uid": user_id})).mappings().all()
+            "SELECT * FROM trade_records WHERE user_id = :uid AND is_paper = :ip ORDER BY trade_date DESC, id DESC"
+        ), {"uid": user_id, "ip": is_paper})).mappings().all()
     return [dict(r) for r in rows]
 
 
-async def list_trades_by_date(session: AsyncSession, user_id: str, trade_date: str) -> list[dict]:
+async def list_trades_by_date(session: AsyncSession, user_id: str, trade_date: str, is_paper: bool = False) -> list[dict]:
     rows = (await session.execute(text(
-        "SELECT * FROM trade_records WHERE user_id = :uid AND trade_date = :d ORDER BY id ASC"
-    ), {"uid": user_id, "d": trade_date})).mappings().all()
+        "SELECT * FROM trade_records WHERE user_id = :uid AND trade_date = :d AND is_paper = :ip ORDER BY id ASC"
+    ), {"uid": user_id, "d": trade_date, "ip": is_paper})).mappings().all()
     return [dict(r) for r in rows]
 
 
-async def get_positions(session: AsyncSession, user_id: str) -> dict[str, dict]:
+async def get_positions(session: AsyncSession, user_id: str, is_paper: bool = False) -> dict[str, dict]:
     """返回该用户所有股票的均价法持仓：{code: {name, avg_cost, hold_qty}}。"""
     rows = (await session.execute(text(
         "SELECT code, stock_name, direction, price, quantity FROM trade_records"
-        " WHERE user_id = :uid ORDER BY trade_date ASC, id ASC"
-    ), {"uid": user_id})).mappings().all()
+        " WHERE user_id = :uid AND is_paper = :ip ORDER BY trade_date ASC, id ASC"
+    ), {"uid": user_id, "ip": is_paper})).mappings().all()
     pos: dict[str, dict] = {}
     for r in rows:
         code = r["code"]
@@ -46,15 +46,15 @@ async def get_positions(session: AsyncSession, user_id: str) -> dict[str, dict]:
     return pos
 
 
-async def create_trade(session: AsyncSession, user_id: str, data: dict) -> dict:
-    data = {**data, "user_id": user_id, "created_at": int(time.time())}
+async def create_trade(session: AsyncSession, user_id: str, data: dict, is_paper: bool = False) -> dict:
+    payload = {**data, "user_id": user_id, "created_at": int(time.time()), "is_paper": is_paper}
     row = (await session.execute(text(
         """
-        INSERT INTO trade_records (code, stock_name, direction, price, quantity, trade_date, note, created_at, user_id)
-        VALUES (:code, :stock_name, :direction, :price, :quantity, :trade_date, :note, :created_at, :user_id)
+        INSERT INTO trade_records (code, stock_name, direction, price, quantity, trade_date, note, created_at, user_id, is_paper)
+        VALUES (:code, :stock_name, :direction, :price, :quantity, :trade_date, :note, :created_at, :user_id, :is_paper)
         RETURNING *
         """
-    ), data)).mappings().one()
+    ), payload)).mappings().one()
     await session.commit()
     return dict(row)
 
@@ -68,12 +68,12 @@ async def delete_trade(session: AsyncSession, user_id: str, trade_id: int) -> bo
     return result.rowcount > 0
 
 
-async def get_trade_stats(session: AsyncSession, user_id: str) -> dict:
+async def get_trade_stats(session: AsyncSession, user_id: str, is_paper: bool = False) -> dict:
     """均价法逐笔计算胜率，只统计卖出成交。"""
     rows = (await session.execute(text(
         "SELECT code, direction, price, quantity FROM trade_records"
-        " WHERE user_id = :uid ORDER BY trade_date ASC, id ASC"
-    ), {"uid": user_id})).mappings().all()
+        " WHERE user_id = :uid AND is_paper = :ip ORDER BY trade_date ASC, id ASC"
+    ), {"uid": user_id, "ip": is_paper})).mappings().all()
 
     avg_cost: dict[str, float] = {}
     hold_qty: dict[str, float] = {}
@@ -128,7 +128,7 @@ async def get_trade_stats(session: AsyncSession, user_id: str) -> dict:
     }
 
 
-async def bulk_import_trades(session: AsyncSession, user_id: str, records: list[dict]) -> int:
+async def bulk_import_trades(session: AsyncSession, user_id: str, records: list[dict], is_paper: bool = False) -> int:
     """批量导入，按 (user_id, code, trade_date, direction, price, quantity) 去重。"""
     now = int(time.time())
     imported = 0
@@ -136,14 +136,14 @@ async def bulk_import_trades(session: AsyncSession, user_id: str, records: list[
         existing = (await session.execute(text(
             """SELECT id FROM trade_records
                WHERE user_id=:uid AND code=:code AND trade_date=:trade_date
-                 AND direction=:direction AND price=:price AND quantity=:quantity"""
-        ), {**r, "uid": user_id})).first()
+                 AND direction=:direction AND price=:price AND quantity=:quantity AND is_paper=:ip"""
+        ), {**r, "uid": user_id, "ip": is_paper})).first()
         if existing:
             continue
         await session.execute(text(
-            """INSERT INTO trade_records (code, stock_name, direction, price, quantity, trade_date, note, created_at, user_id)
-               VALUES (:code, :stock_name, :direction, :price, :quantity, :trade_date, :note, :created_at, :user_id)"""
-        ), {**r, "note": r.get("note", ""), "created_at": now, "user_id": user_id})
+            """INSERT INTO trade_records (code, stock_name, direction, price, quantity, trade_date, note, created_at, user_id, is_paper)
+               VALUES (:code, :stock_name, :direction, :price, :quantity, :trade_date, :note, :created_at, :user_id, :is_paper)"""
+        ), {**r, "note": r.get("note", ""), "created_at": now, "user_id": user_id, "is_paper": is_paper})
         imported += 1
     await session.commit()
     return imported
