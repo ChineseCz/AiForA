@@ -128,13 +128,13 @@ function AuthSettingsPanel() {
           loading={save.isPending}
           onChange={(v) =>
             save.mutate({ require_login_enabled: v }, {
-              onSuccess: () => message.success(v ? "已开启，访客需登录才能查看" : "已关闭，恢复匿名访问"),
+              onSuccess: () => message.success(v ? "已开启：登录页将显示游客入口" : "已关闭：须用微信/邮箱账号登录"),
               onError: (e) => message.error(errMsg(e)),
             })
           }
         />
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-          {enabled ? "已开启：访客需登录（手机号或微信）才能访问只读页面" : "已关闭：任何人可匿名浏览只读页面"}
+          {enabled ? "已开启：游客可在登录页以游客方式进入（只读）" : "已关闭：须用微信/邮箱账号登录，无游客入口"}
         </Typography.Text>
       </Space>
     </Card>

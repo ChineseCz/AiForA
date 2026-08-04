@@ -142,6 +142,9 @@ export const useSaveAuthSettings = () => {
 export const useAuthConfig = () =>
   useQuery({ queryKey: ["auth_config"], queryFn: () => get<AuthConfigResp>("/api/auth/config") });
 
+export const useGuestLogin = () =>
+  useMutation({ mutationFn: () => post<VisitorLoginResp>("/api/user/guest-login") });
+
 export const useSendCode = () =>
   useMutation({ mutationFn: (b: { phone: string }) => post<{ error: string }>("/api/user/send-code", b) });
 

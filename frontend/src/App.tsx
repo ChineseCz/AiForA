@@ -7,7 +7,7 @@ import { useState } from "react";
 import { Navigate, Outlet, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 
 import { errMsg } from "./api/client";
-import { useAuthConfig, useSetNickname, useVisitorMe } from "./api/hooks";
+import { useSetNickname, useVisitorMe } from "./api/hooks";
 import { useAuth } from "./auth";
 import FeibiWidget from "./components/FeibiWidget";
 import { useIsMobile } from "./hooks/useIsMobile";
@@ -36,29 +36,46 @@ function RequireAdmin({ children }: { children: JSX.Element }) {
   return loggedIn ? children : <Navigate to="/admin/login" replace state={{ from: loc.pathname }} />;
 }
 
-// authConfig 没读到之前不放行子页面：否则页面组件会先发只读请求，命中开着的登录墙拿 401，
-// 界面卡在半失败状态，直到 authConfig 到位才跳转登录页，体验上像"卡住"。
+// 始终要求登录（后端 require_login 永远为 true）；token 存在即放行，后端校验有效性。
 function RequireVisitorOrAnon({ children }: { children: JSX.Element }) {
-  const { data: authConfig, isLoading } = useAuthConfig();
   const { loggedIn: adminLoggedIn } = useAuth();
   const { loggedIn: visitorLoggedIn } = useVisitorAuth();
   const loc = useLocation();
-  if (isLoading) return null;
-  if (authConfig?.require_login && !adminLoggedIn && !visitorLoggedIn) {
+  if (!adminLoggedIn && !visitorLoggedIn) {
     return <Navigate to="/login" replace state={{ from: loc.pathname }} />;
   }
   return children;
 }
 
-// 访客登录后在 header 显示账号信息 + 改昵称 + 退出登录；未登录（匿名开关关闭时）不渲染。
+// 访客登录后在 header 显示账号信息 + 改昵称 + 退出登录；游客（isGuest）只显示简单退出入口。
 function VisitorMenu() {
-  const { loggedIn, logout } = useVisitorAuth();
-  const { data: me } = useVisitorMe(loggedIn);
+  const { loggedIn, isGuest, logout } = useVisitorAuth();
+  const { data: me } = useVisitorMe(loggedIn && !isGuest);
   const setNickname = useSetNickname();
   const nav = useNavigate();
   const [editOpen, setEditOpen] = useState(false);
   const [draft, setDraft] = useState("");
   if (!loggedIn) return null;
+
+  if (isGuest) {
+    return (
+      <Dropdown
+        menu={{
+          items: [
+            { key: "info", label: "游客模式（只读）", disabled: true },
+            { type: "divider" },
+            { key: "logout", label: "退出并登录账号" },
+          ],
+          onClick: ({ key }) => {
+            if (key === "logout") { logout(); nav("/login", { replace: true }); }
+          },
+        }}
+      >
+        <Button type="text" icon={<UserOutlined />}>游客</Button>
+      </Dropdown>
+    );
+  }
+
   const label =
     me?.login_type === "phone" ? me.phone
     : me?.login_type === "email" ? (me.nickname || me.email)
@@ -80,7 +97,6 @@ function VisitorMenu() {
           items: [
             { key: "info", label: label ?? "账号", disabled: true },
             { type: "divider" },
-            // 手机号本身就是账号标识不用改昵称；微信/邮箱账号可以自己起个昵称。
             ...(me?.login_type !== "phone" ? [{ key: "edit-nickname", label: "修改昵称" }] : []),
             { key: "logout", label: "退出登录" },
           ],

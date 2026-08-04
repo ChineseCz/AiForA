@@ -13,6 +13,7 @@ import { useGroupMembers, useGroupMutations, useGroups, useDeleteNote, useFavori
 import { getToken, getVisitorToken } from "../api/client";
 import type { GroupItem, GroupMember, TradeNote, TradeRecord } from "../api/types";
 import { useIsMobile } from "../hooks/useIsMobile";
+import { useVisitorAuth } from "../visitorAuth";
 import dayjs from "dayjs";
 
 const { Text } = Typography;
@@ -1031,6 +1032,18 @@ function NotesTab({ isPaper = false }: { isPaper?: boolean }) {
 // ─── Page ────────────────────────────────────────────────────────────────────
 
 export default function My() {
+  const { isGuest } = useVisitorAuth();
+
+  if (isGuest) {
+    return (
+      <div style={{ textAlign: "center", padding: "80px 0" }}>
+        <Typography.Text type="secondary" style={{ fontSize: 15 }}>
+          游客模式不支持此功能，请<Link to="/login">登录账号</Link>后使用。
+        </Typography.Text>
+      </div>
+    );
+  }
+
   const innerItems = (isPaper: boolean) => [
     { key: "watchlist", label: "自选股", children: <WatchlistTab isPaper={isPaper} /> },
     { key: "review", label: "操作复盘", children: <ReviewTab isPaper={isPaper} /> },
