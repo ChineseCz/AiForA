@@ -12,8 +12,8 @@ from app.core.security import decode_token
 
 _bearer = HTTPBearer(auto_error=False)
 
-_REQUIRE_LOGIN_CACHE_KEY = "auth:require_login_enabled"
-_REQUIRE_LOGIN_CACHE_TTL = 30
+_VISITOR_MODE_CACHE_KEY = "auth:require_login_enabled"  # 复用同一 Redis key，DB 字段未变
+_VISITOR_MODE_CACHE_TTL = 30
 
 
 async def db_session() -> AsyncGenerator[AsyncSession, None]:
@@ -25,16 +25,16 @@ def cache() -> CacheService:
     return get_cache()
 
 
-async def _is_login_required(c: CacheService, db: AsyncSession) -> bool:
-    """读 auth_settings.require_login_enabled，短 TTL 缓存（与 dataver 无关）。"""
-    cached = await c.client.get(_REQUIRE_LOGIN_CACHE_KEY)
+async def _is_visitor_mode_enabled(c: CacheService, db: AsyncSession) -> bool:
+    """读 auth_settings.require_login_enabled（语义变更为：访客模式是否开启）。"""
+    cached = await c.client.get(_VISITOR_MODE_CACHE_KEY)
     if cached is not None:
         return cached == "1"
     row = (
         await db.execute(text("SELECT require_login_enabled FROM auth_settings ORDER BY id LIMIT 1"))
     ).first()
-    enabled = bool(row[0]) if row else False
-    await c.client.set(_REQUIRE_LOGIN_CACHE_KEY, "1" if enabled else "0", ex=_REQUIRE_LOGIN_CACHE_TTL)
+    enabled = bool(row[0]) if row else True
+    await c.client.set(_VISITOR_MODE_CACHE_KEY, "1" if enabled else "0", ex=_VISITOR_MODE_CACHE_TTL)
     return enabled
 
 
@@ -61,7 +61,7 @@ async def require_admin(
 async def require_visitor(
     creds: HTTPAuthorizationCredentials | None = Depends(_bearer),
 ) -> str:
-    """校验访客 JWT（typ=visitor）；返回手机号/openid/email（sub）。无效 → 401。"""
+    """校验访客 JWT（typ=visitor）；游客(sty=guest)不允许操作个人数据，返回 403。"""
     payload = _decode_bearer(creds)
     if not payload or not payload.get("sub") or payload.get("typ") != "visitor":
         raise HTTPException(
@@ -69,13 +69,15 @@ async def require_visitor(
             detail="需要登录",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    if payload.get("sty") == "guest":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="游客模式不支持此功能，请登录账号")
     return str(payload["sub"])
 
 
 async def require_visitor_payload(
     creds: HTTPAuthorizationCredentials | None = Depends(_bearer),
 ) -> dict:
-    """校验访客 JWT 并返回完整 payload（含 sty 字段，供 /me 路由避免串行 DB 查询）。无效 → 401。"""
+    """校验访客 JWT 并返回完整 payload；游客(sty=guest)不允许操作个人数据，返回 403。"""
     payload = _decode_bearer(creds)
     if not payload or not payload.get("sub") or payload.get("typ") != "visitor":
         raise HTTPException(
@@ -83,6 +85,8 @@ async def require_visitor_payload(
             detail="需要登录",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    if payload.get("sty") == "guest":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="游客模式不支持此功能，请登录账号")
     return payload
 
 
@@ -91,14 +95,18 @@ async def require_visitor_or_anonymous(
     c: CacheService = Depends(cache),
     db: AsyncSession = Depends(db_session),
 ) -> str | None:
-    """匿名开关关闭时放行；开启时要求有效的访客或管理员 token。"""
-    if not await _is_login_required(c, db):
-        return None
+    """始终要求登录；游客 JWT(sty=guest) 仅在访客模式开启时放行只读请求。"""
     payload = _decode_bearer(creds)
     if not payload or not payload.get("sub") or payload.get("typ", "admin") not in ("admin", "visitor"):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="需要登录",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    if payload.get("sty") == "guest" and not await _is_visitor_mode_enabled(c, db):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="访客模式已关闭，请登录账号",
             headers={"WWW-Authenticate": "Bearer"},
         )
     return str(payload["sub"])

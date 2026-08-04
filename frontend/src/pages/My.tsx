@@ -13,6 +13,7 @@ import { useGroupMembers, useGroupMutations, useGroups, useDeleteNote, useFavori
 import { getToken, getVisitorToken } from "../api/client";
 import type { GroupItem, GroupMember, TradeNote, TradeRecord } from "../api/types";
 import { useIsMobile } from "../hooks/useIsMobile";
+import { useVisitorAuth } from "../visitorAuth";
 import dayjs from "dayjs";
 
 const { Text } = Typography;
@@ -21,15 +22,15 @@ const AUTO_GROUP_NAMES = new Set(["持仓", "清仓"]);
 
 // ─── 自选股 ──────────────────────────────────────────────────────────────────
 
-function WatchlistTab() {
+function WatchlistTab({ isPaper = false }: { isPaper?: boolean }) {
   const isMobile = useIsMobile();
   const { token } = theme.useToken();
-  const { data: groupsData, isLoading: loadingGroups } = useGroups();
+  const { data: groupsData, isLoading: loadingGroups } = useGroups(isPaper);
   const groups = (groupsData?.groups ?? []) as GroupItem[];
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const { data: membersData, isLoading: loadingMembers } = useGroupMembers(selectedId);
   const members = (membersData?.items ?? []) as GroupMember[];
-  const muts = useGroupMutations();
+  const muts = useGroupMutations(isPaper);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [newName, setNewName] = useState("");
@@ -105,7 +106,7 @@ function WatchlistTab() {
       key: "del",
       width: 50,
       render: (code: string) => {
-        const isAuto = AUTO_GROUP_NAMES.has(selectedGroup?.name ?? "");
+        const isAuto = !isPaper && AUTO_GROUP_NAMES.has(selectedGroup?.name ?? "");
         if (isAuto) return null;
         return (
           <Popconfirm title="移除该股票？" onConfirm={() =>
@@ -139,7 +140,7 @@ function WatchlistTab() {
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             {groups.map((g) => {
               const active = selectedId === g.id;
-              const isAuto = AUTO_GROUP_NAMES.has(g.name ?? "");
+              const isAuto = !isPaper && AUTO_GROUP_NAMES.has(g.name ?? "");
               return (
                 <div
                   key={g.id}
@@ -194,7 +195,7 @@ function WatchlistTab() {
           <>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
               <Text strong>{selectedGroup?.name ?? "成员列表"}</Text>
-              {!AUTO_GROUP_NAMES.has(selectedGroup?.name ?? "") && (
+              {(!isPaper && !AUTO_GROUP_NAMES.has(selectedGroup?.name ?? "")) && (
                 <Button size="small" icon={<PlusOutlined />} onClick={() => setAddOpen(true)}>添加股票</Button>
               )}
             </div>
@@ -205,7 +206,7 @@ function WatchlistTab() {
               loading={loadingMembers}
               size="small"
               pagination={false}
-              locale={{ emptyText: AUTO_GROUP_NAMES.has(selectedGroup?.name ?? "") ? "暂无数据（交易记录同步后自动更新）" : "暂无成员，点击「添加股票」" }}
+              locale={{ emptyText: (!isPaper && AUTO_GROUP_NAMES.has(selectedGroup?.name ?? "")) ? "暂无数据（交易记录同步后自动更新）" : "暂无成员，点击「添加股票」" }}
               scroll={{ x: isMobile ? 360 : undefined }}
             />
           </>
@@ -285,20 +286,21 @@ function pnlSummary(trades: TradeRecord[]) {
     }));
 }
 
-function StatsCards() {
+function StatsCards({ isPaper = false }: { isPaper?: boolean }) {
   const { token } = theme.useToken();
-  const { data } = useTradeStats();
+  const { data } = useTradeStats(isPaper);
   const s = data?.stats;
   if (!s || s.total_sell_trades === 0) return null;
   const pnlColor = s.total_realized_pnl > 0 ? token.colorError : s.total_realized_pnl < 0 ? token.colorSuccess : undefined;
+  const prefix = isPaper ? "(模拟)" : "";
   return (
     <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 16 }}>
       {[
-        { label: "胜率", value: `${(s.win_rate * 100).toFixed(1)}%`, sub: `${s.wins}只盈利 ${s.losses}只亏损 / ${s.total_stocks ?? s.wins + s.losses}只股票` },
+        { label: `${prefix}胜率`, value: `${(s.win_rate * 100).toFixed(1)}%`, sub: `${s.wins}只盈利 ${s.losses}只亏损 / ${s.total_stocks ?? s.wins + s.losses}只股票` },
         { label: "平均盈", value: `+${s.avg_win.toFixed(0)}`, sub: "元/笔", color: token.colorError },
         { label: "平均亏", value: `-${s.avg_loss.toFixed(0)}`, sub: "元/笔", color: token.colorSuccess },
         { label: "盈亏比", value: s.profit_factor != null ? s.profit_factor.toFixed(2) : "–", sub: "盈/亏" },
-        { label: "总已实现盈亏", value: `${s.total_realized_pnl > 0 ? "+" : ""}${s.total_realized_pnl.toFixed(0)}`, sub: "元", color: pnlColor },
+        { label: `${prefix}总已实现盈亏`, value: `${s.total_realized_pnl > 0 ? "+" : ""}${s.total_realized_pnl.toFixed(0)}`, sub: "元", color: pnlColor },
       ].map(({ label, value, sub, color }) => (
         <div key={label} style={{
           background: token.colorFillQuaternary,
@@ -313,13 +315,13 @@ function StatsCards() {
   );
 }
 
-function ReviewTab() {
+function ReviewTab({ isPaper = false }: { isPaper?: boolean }) {
   const isMobile = useIsMobile();
   const { token } = theme.useToken();
   const [filterCode, setFilterCode] = useState<string | undefined>(undefined);
-  const { data, isLoading } = useTrades(filterCode);
+  const { data, isLoading } = useTrades(filterCode, isPaper);
   const trades = (data?.items ?? []) as TradeRecord[];
-  const muts = useTradeMutations();
+  const muts = useTradeMutations(isPaper);
 
   const [addOpen, setAddOpen] = useState(false);
   const [form] = Form.useForm();
@@ -391,7 +393,7 @@ function ReviewTab() {
 
   return (
     <>
-      <StatsCards />
+      <StatsCards isPaper={isPaper} />
       <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
         <Input.Search
           placeholder="按代码筛选"
@@ -403,18 +405,20 @@ function ReviewTab() {
         <Button icon={<PlusOutlined />} type="primary" onClick={() => setAddOpen(true)}>
           添加记录
         </Button>
-        <Upload
-          accept=".txt"
-          showUploadList={false}
-          customRequest={({ file }) => {
-            muts.importTxt.mutate(file as File, {
-              onSuccess: (res) => message.success(`导入 ${res.imported} 条（共识别 ${res.total} 条）`),
-              onError: (e) => message.error(errMsg(e, "导入失败")),
-            });
-          }}
-        >
-          <Button icon={<UploadOutlined />} loading={muts.importTxt.isPending}>导入TXT</Button>
-        </Upload>
+        {!isPaper && (
+          <Upload
+            accept=".txt"
+            showUploadList={false}
+            customRequest={({ file }) => {
+              muts.importTxt.mutate(file as File, {
+                onSuccess: (res) => message.success(`导入 ${res.imported} 条（共识别 ${res.total} 条）`),
+                onError: (e) => message.error(errMsg(e, "导入失败")),
+              });
+            }}
+          >
+            <Button icon={<UploadOutlined />} loading={muts.importTxt.isPending}>导入TXT</Button>
+          </Upload>
+        )}
       </div>
 
       <Table
@@ -632,7 +636,7 @@ function renderNoteContent(
   );
 }
 
-function NotesTab() {
+function NotesTab({ isPaper = false }: { isPaper?: boolean }) {
   const isMobile = useIsMobile();
   const { token } = theme.useToken();
   const today = dayjs().format("YYYY-MM-DD");
@@ -656,6 +660,7 @@ function NotesTab() {
     page,
     PAGE_SIZE,
     favoriteOnly,
+    isPaper,
   );
   const noteList = (listData?.items ?? []) as TradeNote[];
   const noteTotal = listData?.total ?? 0;
@@ -669,11 +674,11 @@ function NotesTab() {
     setSearchRange(v);
     setPage(1);
   };
-  const { data: noteData } = useNote(selectedDate);
-  const saveMut = useNoteMutation();
-  const genMut = useGenerateNote();
-  const deleteMut = useDeleteNote();
-  const favoriteMut = useFavoriteNote();
+  const { data: noteData } = useNote(selectedDate, isPaper);
+  const saveMut = useNoteMutation(isPaper);
+  const genMut = useGenerateNote(isPaper);
+  const deleteMut = useDeleteNote(isPaper);
+  const favoriteMut = useFavoriteNote(isPaper);
   const qc = useQueryClient();
   const batchAbortRef = useRef<AbortController | null>(null);
   const regenAbortRef = useRef<AbortController | null>(null);
@@ -696,6 +701,7 @@ function NotesTab() {
         body: JSON.stringify({
           start_date: batchRange[0].format("YYYY-MM-DD"),
           end_date: batchRange[1].format("YYYY-MM-DD"),
+          is_paper: isPaper,
         }),
       });
       if (!resp.ok) {
@@ -750,7 +756,7 @@ function NotesTab() {
     regenAbortRef.current = ac;
     try {
       const token = getToken() || getVisitorToken();
-      const resp = await fetch("/api/notes/regen-all", {
+      const resp = await fetch(`/api/notes/regen-all${isPaper ? "?is_paper=true" : ""}`, {
         method: "POST",
         signal: ac.signal,
         headers: token ? { Authorization: `Bearer ${token}` } : {},
@@ -1026,14 +1032,42 @@ function NotesTab() {
 // ─── Page ────────────────────────────────────────────────────────────────────
 
 export default function My() {
+  const { isGuest } = useVisitorAuth();
+
+  if (isGuest) {
+    return (
+      <div style={{ textAlign: "center", padding: "80px 0" }}>
+        <Typography.Text type="secondary" style={{ fontSize: 15 }}>
+          游客模式不支持此功能，请<Link to="/login">登录账号</Link>后使用。
+        </Typography.Text>
+      </div>
+    );
+  }
+
+  const innerItems = (isPaper: boolean) => [
+    { key: "watchlist", label: "自选股", children: <WatchlistTab isPaper={isPaper} /> },
+    { key: "review", label: "操作复盘", children: <ReviewTab isPaper={isPaper} /> },
+    { key: "notes", label: "复盘笔记", children: <NotesTab isPaper={isPaper} /> },
+  ];
   return (
     <Tabs
-      defaultActiveKey="watchlist"
+      defaultActiveKey="real"
       destroyInactiveTabPane
       items={[
-        { key: "watchlist", label: "自选股", children: <WatchlistTab /> },
-        { key: "review", label: "操作复盘", children: <ReviewTab /> },
-        { key: "notes", label: "复盘笔记", children: <NotesTab /> },
+        {
+          key: "real",
+          label: "实盘",
+          children: (
+            <Tabs defaultActiveKey="watchlist" destroyInactiveTabPane items={innerItems(false)} />
+          ),
+        },
+        {
+          key: "paper",
+          label: "模拟盘",
+          children: (
+            <Tabs defaultActiveKey="watchlist" destroyInactiveTabPane items={innerItems(true)} />
+          ),
+        },
       ]}
     />
   );

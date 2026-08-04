@@ -1,11 +1,12 @@
 import { ArrowLeftOutlined, MobileOutlined, SettingOutlined } from "@ant-design/icons";
-import { Button, Card, Col, Collapse, Descriptions, Empty, InputNumber, List, Row, Space, Spin, Tag, Tooltip, Typography, message } from "antd";
+import { Button, Card, Col, Collapse, DatePicker, Descriptions, Empty, Form, Input, InputNumber, List, Modal, Row, Select, Space, Spin, Tag, Tooltip, Typography, message } from "antd";
+import dayjs from "dayjs";
 import ReactECharts from "echarts-for-react";
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 
 import { errMsg } from "@/api/client";
-import { useFundamentals, useGenerateStockAiAnalysis, useKline, useNews, useQuote, useStockAiAnalysis } from "@/api/hooks";
+import { useFundamentals, useGenerateStockAiAnalysis, useKline, useNews, useQuote, useStockAiAnalysis, useTradeMutations } from "@/api/hooks";
 import type { KlineBar } from "@/api/types";
 import MarkdownContent from "@/components/MarkdownContent";
 import { useIsMobile } from "@/hooks/useIsMobile";
@@ -378,6 +379,11 @@ export default function StockDetail() {
   // 参数变化触发重新请求时，记录上次 kline 对应的 code，用来区分"同股换参"vs"切换到新股"。
   const prevKlineCodeRef = useRef<string>("");
 
+  const [tradeOpen, setTradeOpen] = useState(false);
+  const [tradeDir, setTradeDir] = useState<"buy" | "sell">("buy");
+  const [tradeForm] = Form.useForm();
+  const tradeMuts = useTradeMutations(true);
+
   // ── bars：含实时报价合并，供顶部指标条 / hover 悬停显示用 ──
   const bars = useMemo(() => {
     const raw = kline?.bars ?? [];
@@ -723,6 +729,42 @@ export default function StockDetail() {
             </>
           ) : <Empty description="暂无K线数据（需先在后台回补历史K线）" />}
         </Spin>
+        <Space style={{ marginTop: 8, marginBottom: 4 }}>
+          <Button
+            size="small"
+            style={{ color: "#e64545", borderColor: "#e64545" }}
+            onClick={() => {
+              setTradeDir("buy");
+              tradeForm.setFieldsValue({
+                direction: "buy",
+                price: active?.close ?? undefined,
+                trade_date: active?.trade_date ? dayjs(active.trade_date) : dayjs(),
+                quantity: undefined,
+                note: "",
+              });
+              setTradeOpen(true);
+            }}
+          >
+            模拟买入
+          </Button>
+          <Button
+            size="small"
+            style={{ color: "#2ba471", borderColor: "#2ba471" }}
+            onClick={() => {
+              setTradeDir("sell");
+              tradeForm.setFieldsValue({
+                direction: "sell",
+                price: active?.close ?? undefined,
+                trade_date: active?.trade_date ? dayjs(active.trade_date) : dayjs(),
+                quantity: undefined,
+                note: "",
+              });
+              setTradeOpen(true);
+            }}
+          >
+            模拟卖出
+          </Button>
+        </Space>
         <Collapse ghost size="small" style={{ marginTop: 4 }} items={[{
             key: "sp",
           label: <Space size={4}><SettingOutlined />信号参数{Object.keys(signalParams).length > 0 && <Tag color="blue" style={{ marginLeft: 4 }}>已自定义</Tag>}</Space>,
@@ -811,6 +853,66 @@ export default function StockDetail() {
       </Row>
 
       {code && <AiAnalysisCard code={code} />}
+
+      <Modal
+        title={tradeDir === "buy" ? "模拟买入" : "模拟卖出"}
+        open={tradeOpen}
+        onCancel={() => setTradeOpen(false)}
+        confirmLoading={tradeMuts.create.isPending}
+        onOk={() => {
+          tradeForm.validateFields().then((vals) => {
+            tradeMuts.create.mutate(
+              {
+                code,
+                stock_name: kline?.name ?? code,
+                direction: vals.direction,
+                price: vals.price,
+                quantity: vals.quantity,
+                trade_date: vals.trade_date.format("YYYY-MM-DD"),
+                note: vals.note ?? "",
+              },
+              {
+                onSuccess: () => {
+                  message.success(`模拟${vals.direction === "buy" ? "买入" : "卖出"}已记录`);
+                  setTradeOpen(false);
+                  tradeForm.resetFields();
+                },
+                onError: (e) => message.error(errMsg(e, "记录失败")),
+              },
+            );
+          });
+        }}
+      >
+        <Form form={tradeForm} layout="vertical" style={{ marginTop: 8 }}>
+          <Form.Item name="direction" label="方向" rules={[{ required: true }]}>
+            <Select
+              onChange={(v) => setTradeDir(v)}
+              options={[
+                { value: "buy", label: "买入" },
+                { value: "sell", label: "卖出" },
+              ]}
+            />
+          </Form.Item>
+          <Row gutter={12}>
+            <Col span={12}>
+              <Form.Item name="price" label="成交价" rules={[{ required: true, message: "必填" }]}>
+                <InputNumber min={0.01} precision={2} style={{ width: "100%" }} placeholder="元" />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="quantity" label="数量（股）" rules={[{ required: true, message: "必填" }]}>
+                <InputNumber min={1} step={100} style={{ width: "100%" }} />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Form.Item name="trade_date" label="交易日期" rules={[{ required: true, message: "必填" }]}>
+            <DatePicker style={{ width: "100%" }} format="YYYY-MM-DD" />
+          </Form.Item>
+          <Form.Item name="note" label="备注">
+            <Input.TextArea rows={2} maxLength={200} placeholder="选填" />
+          </Form.Item>
+        </Form>
+      </Modal>
     </Space>
   );
 }

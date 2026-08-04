@@ -279,6 +279,7 @@ export interface AuthSettingsCfg {
 
 export interface AuthConfigResp {
   require_login: boolean;
+  visitor_mode: boolean;
 }
 
 export interface VisitorLoginResp {

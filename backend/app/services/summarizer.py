@@ -121,7 +121,7 @@ def describe_images(image_urls: list[str]) -> str:
     data_urls = [u for u in (_image_to_data_url(url) for url in image_urls) if u]
     if not data_urls:
         return ""
-    client = get_client()
+    client = OpenAI(api_key=settings.effective_image_key, base_url=settings.relay_api_url)
     content = [{
         "type": "text",
         "text": "请客观描述这张/这些图片的内容（如截图里的文字、图表数据、K线形态等），"

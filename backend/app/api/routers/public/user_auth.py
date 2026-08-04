@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse, PlainTextResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.concurrency import run_in_threadpool
 
-from app.api.deps import _is_login_required, cache, db_session, require_visitor, require_visitor_payload
+from app.api.deps import _is_visitor_mode_enabled, cache, db_session, require_visitor, require_visitor_payload
 from app.core.cache import CacheService
 from app.core.config import settings
 from app.core.ratelimit import limiter
@@ -326,6 +326,18 @@ async def wechat_poll(scene_key: str, c: CacheService = Depends(cache)):
 
 @auth_config_router.get("/config")
 async def auth_config(c: CacheService = Depends(cache), session: AsyncSession = Depends(db_session)):
-    """前端启动时查询：是否要求登录才能访问只读接口。不加守卫，必须开放。"""
-    return {"require_login": await _is_login_required(c, session)}
+    """前端启动时查询：访客模式是否开启（始终要求登录）。不加守卫，必须开放。"""
+    visitor_mode = await _is_visitor_mode_enabled(c, session)
+    return {"require_login": True, "visitor_mode": visitor_mode}
+
+
+# ===== 游客一键登录 =====
+
+@router.post("/guest-login")
+async def guest_login(c: CacheService = Depends(cache), session: AsyncSession = Depends(db_session)):
+    """游客一键登录：仅在访客模式开启时可用，发放只读 JWT（sty=guest，TTL=24h）。"""
+    if not await _is_visitor_mode_enabled(c, session):
+        return JSONResponse({"error": "访客模式已关闭，请使用账号登录"}, status_code=403)
+    token = create_access_token("guest", typ="visitor", expire_minutes=60 * 24, sty="guest")
+    return {"access_token": token, "token_type": "bearer"}
 

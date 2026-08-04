@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
 import { errMsg } from "@/api/client";
-import { useEmailLogin, useEmailRegister, useSendEmailCode, useWechatCodeLogin } from "@/api/hooks";
+import { useAuthConfig, useEmailLogin, useEmailRegister, useGuestLogin, useSendEmailCode, useWechatCodeLogin } from "@/api/hooks";
 import { useVisitorAuth } from "@/visitorAuth";
 
 const RESEND_SECONDS = 60;
@@ -171,6 +171,20 @@ function EmailRegisterTab() {
 }
 
 export default function VisitorLogin() {
+  const nav = useNavigate();
+  const loc = useLocation();
+  const { login } = useVisitorAuth();
+  const from: string = (loc.state as { from?: string } | null)?.from ?? "/";
+  const { data: authConfig } = useAuthConfig();
+  const guestLogin = useGuestLogin();
+
+  const handleGuestLogin = () => {
+    guestLogin.mutate(undefined, {
+      onSuccess: (d) => { login(d.access_token, true); nav(from, { replace: true }); },
+      onError: (e) => message.error(errMsg(e, "访客登录失败")),
+    });
+  };
+
   return (
     <Row justify="center" style={{ marginTop: "min(64px, 6vh)", padding: "0 12px" }}>
       <div style={{ width: "100%", maxWidth: 360 }}>
@@ -188,6 +202,13 @@ export default function VisitorLogin() {
               { key: "email-register", label: "邮箱注册", children: <EmailRegisterTab /> },
             ]}
           />
+          {authConfig?.visitor_mode && (
+            <div style={{ textAlign: "center", marginTop: 16, paddingTop: 12, borderTop: "1px solid var(--ant-line)" }}>
+              <Button type="link" onClick={handleGuestLogin} loading={guestLogin.isPending}>
+                以游客方式登录（只读）
+              </Button>
+            </div>
+          )}
         </Card>
       </div>
     </Row>

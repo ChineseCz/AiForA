@@ -5,7 +5,7 @@ from app.core.config import settings
 
 
 def _get_client() -> OpenAI:
-    return OpenAI(api_key=settings.relay_api_key, base_url=settings.relay_api_url)
+    return OpenAI(api_key=settings.relay_api_key, base_url=settings.relay_api_url, max_retries=3)
 
 
 def generate_daily_review(date: str, trades: list[dict], positions: dict) -> str:
@@ -65,5 +65,6 @@ def generate_daily_review(date: str, trades: list[dict], positions: dict) -> str
         messages=[{"role": "user", "content": prompt}],
         temperature=0.4,
         max_tokens=1200,
+        timeout=120,
     )
     return resp.choices[0].message.content or ""

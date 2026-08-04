@@ -76,8 +76,8 @@ export const useQuote = (code: string) =>
 export const useSectorRank = () =>
   useQuery({ queryKey: ["sectors_rank"], queryFn: () => get<SectorRankResp>("/api/sectors/rank") });
 
-export const useGroups = () =>
-  useQuery({ queryKey: ["groups"], queryFn: () => get<{ groups: GroupItem[] }>("/api/groups") });
+export const useGroups = (isPaper = false) =>
+  useQuery({ queryKey: ["groups", isPaper], queryFn: () => get<{ groups: GroupItem[] }>("/api/groups", { is_paper: isPaper || undefined }) });
 
 export interface ScreenBody {
   strategies?: string[];
@@ -142,6 +142,9 @@ export const useSaveAuthSettings = () => {
 export const useAuthConfig = () =>
   useQuery({ queryKey: ["auth_config"], queryFn: () => get<AuthConfigResp>("/api/auth/config") });
 
+export const useGuestLogin = () =>
+  useMutation({ mutationFn: () => post<VisitorLoginResp>("/api/user/guest-login") });
+
 export const useSendCode = () =>
   useMutation({ mutationFn: (b: { phone: string }) => post<{ error: string }>("/api/user/send-code", b) });
 
@@ -187,12 +190,12 @@ export const useWechatPoll = (sceneKey: string) =>
     enabled: !!sceneKey,
     refetchInterval: (query) => (query.state.data?.status === "scanned" ? false : 2000),
   });
-export const useGroupMutations = () => {
+export const useGroupMutations = (isPaper = false) => {
   const qc = useQueryClient();
   const inval = () => qc.invalidateQueries({ queryKey: ["groups"] });
   const invalMembers = (id: number) => qc.invalidateQueries({ queryKey: ["group_members", id] });
   return {
-    create: useMutation({ mutationFn: (name: string) => post("/api/groups", { name }), onSuccess: inval }),
+    create: useMutation({ mutationFn: (name: string) => post("/api/groups", { name, is_paper: isPaper }), onSuccess: inval }),
     remove: useMutation({ mutationFn: (id: number) => api.delete(`/api/groups/${id}`).then((r) => r.data), onSuccess: inval }),
     addMembers: useMutation({
       mutationFn: (v: { id: number; stocks: { code: string; name: string }[] }) =>
@@ -214,32 +217,42 @@ export const useGroupMembers = (groupId: number | null) =>
     enabled: groupId !== null,
   });
 
-export const useTrades = (code?: string) =>
+export const useTrades = (code?: string, isPaper = false) =>
   useQuery({
-    queryKey: ["trades", code ?? "all"],
-    queryFn: () => get<{ items: TradeRecord[] }>("/api/trades", code ? { code } : undefined),
+    queryKey: ["trades", code ?? "all", isPaper],
+    queryFn: () => get<{ items: TradeRecord[] }>("/api/trades", { ...(code ? { code } : {}), is_paper: isPaper || undefined }),
   });
 
-export const useTradeMutations = () => {
+export const useTradeMutations = (isPaper = false) => {
   const qc = useQueryClient();
   const inval = () => qc.invalidateQueries({ queryKey: ["trades"] });
   return {
-    create: useMutation({ mutationFn: (body: Omit<TradeRecord, "id" | "created_at">) => post("/api/trades", body), onSuccess: inval }),
-    remove: useMutation({ mutationFn: (id: number) => api.delete(`/api/trades/${id}`).then((r) => r.data), onSuccess: inval }),
+    create: useMutation({
+      mutationFn: (body: Omit<TradeRecord, "id" | "created_at">) => post("/api/trades", { ...body, is_paper: isPaper }),
+      onSuccess: inval,
+    }),
+    remove: useMutation({
+      mutationFn: (id: number) => api.delete(`/api/trades/${id}`, { params: { is_paper: isPaper || undefined } }).then((r) => r.data),
+      onSuccess: inval,
+    }),
     importTxt: useMutation({
       mutationFn: (file: File) => {
         const fd = new FormData();
         fd.append("file", file);
-        return api.post<{ imported: number; total: number; error: string }>("/api/trades/import", fd).then((r) => r.data);
+        return api.post<{ imported: number; total: number; error: string }>(
+          "/api/trades/import",
+          fd,
+          { params: { is_paper: isPaper || undefined } },
+        ).then((r) => r.data);
       },
       onSuccess: inval,
     }),
   };
 };
 
-export const useNoteList = (startDate?: string, endDate?: string, page = 1, pageSize = 20, favoriteOnly = false) =>
+export const useNoteList = (startDate?: string, endDate?: string, page = 1, pageSize = 20, favoriteOnly = false, isPaper = false) =>
   useQuery({
-    queryKey: ["notes", startDate ?? null, endDate ?? null, page, pageSize, favoriteOnly],
+    queryKey: ["notes", startDate ?? null, endDate ?? null, page, pageSize, favoriteOnly, isPaper],
     queryFn: () =>
       get<{ items: TradeNote[]; total: number }>("/api/notes", {
         start_date: startDate,
@@ -247,50 +260,53 @@ export const useNoteList = (startDate?: string, endDate?: string, page = 1, page
         page,
         page_size: pageSize,
         favorite_only: favoriteOnly || undefined,
+        is_paper: isPaper || undefined,
       }),
   });
 
-export const useFavoriteNote = () => {
+export const useFavoriteNote = (isPaper = false) => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (date: string) => api.patch<{ note: TradeNote }>(`/api/notes/${date}/favorite`).then((r) => r.data),
+    mutationFn: (date: string) =>
+      api.patch<{ note: TradeNote }>(`/api/notes/${date}/favorite`, null, { params: { is_paper: isPaper || undefined } }).then((r) => r.data),
     onSuccess: (_data, date) => {
       qc.invalidateQueries({ queryKey: ["notes"] });
-      qc.invalidateQueries({ queryKey: ["note", date] });
+      qc.invalidateQueries({ queryKey: ["note", date, isPaper] });
     },
   });
 };
 
-export const useNote = (date: string | null) =>
+export const useNote = (date: string | null, isPaper = false) =>
   useQuery({
-    queryKey: ["note", date],
-    queryFn: () => get<{ note: TradeNote | null }>("/api/notes", { date }),
+    queryKey: ["note", date, isPaper],
+    queryFn: () => get<{ note: TradeNote | null }>("/api/notes", { date, is_paper: isPaper || undefined }),
     enabled: date !== null,
   });
 
-export const useNoteMutation = () => {
+export const useNoteMutation = (isPaper = false) => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (body: { date: string; content: string }) => post<{ note: TradeNote }>("/api/notes", body),
+    mutationFn: (body: { date: string; content: string }) => post<{ note: TradeNote }>("/api/notes", { ...body, is_paper: isPaper }),
     onSuccess: (_data, vars) => {
       qc.invalidateQueries({ queryKey: ["notes"] });
-      qc.invalidateQueries({ queryKey: ["note", vars.date] });
+      qc.invalidateQueries({ queryKey: ["note", vars.date, isPaper] });
     },
   });
 };
 
-export const useGenerateNote = () =>
+export const useGenerateNote = (isPaper = false) =>
   useMutation({
-    mutationFn: (date: string) => post<{ content: string }>("/api/notes/generate", { date }),
+    mutationFn: (date: string) => post<{ content: string }>("/api/notes/generate", { date, is_paper: isPaper }),
   });
 
-export const useDeleteNote = () => {
+export const useDeleteNote = (isPaper = false) => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (date: string) => api.delete(`/api/notes?date=${date}`).then((r) => r.data),
+    mutationFn: (date: string) =>
+      api.delete(`/api/notes`, { params: { date, is_paper: isPaper || undefined } }).then((r) => r.data),
     onSuccess: (_data, date) => {
       qc.invalidateQueries({ queryKey: ["notes"] });
-      qc.invalidateQueries({ queryKey: ["note", date] });
+      qc.invalidateQueries({ queryKey: ["note", date, isPaper] });
     },
   });
 };
@@ -304,10 +320,10 @@ export const useBatchGenerateNotes = () => {
   });
 };
 
-export const useTradeStats = () =>
+export const useTradeStats = (isPaper = false) =>
   useQuery({
-    queryKey: ["trade_stats"],
-    queryFn: () => get<{ stats: TradeStats }>("/api/trades/stats"),
+    queryKey: ["trade_stats", isPaper],
+    queryFn: () => get<{ stats: TradeStats }>("/api/trades/stats", { is_paper: isPaper || undefined }),
   });
 
 export const useStockAiAnalysis = (code: string, enabled: boolean) =>

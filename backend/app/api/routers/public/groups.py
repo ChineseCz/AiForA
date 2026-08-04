@@ -15,11 +15,13 @@ _RESERVED = {"持仓", "清仓"}
 
 @router.get("/groups")
 async def api_groups(
+    is_paper: bool = False,
     user_id: str = Depends(require_visitor),
     session: AsyncSession = Depends(db_session),
 ):
-    await groups_repo.sync_auto_groups(session, user_id)
-    return {"groups": await groups_repo.list_groups(session, user_id), "error": ""}
+    if not is_paper:
+        await groups_repo.sync_auto_groups(session, user_id)
+    return {"groups": await groups_repo.list_groups(session, user_id, is_paper), "error": ""}
 
 
 @router.get("/groups/{group_id}/members")
@@ -33,6 +35,7 @@ async def api_group_members(
 
 class CreateGroupBody(BaseModel):
     name: str
+    is_paper: bool = False
 
 
 @router.post("/groups")
@@ -44,9 +47,9 @@ async def api_create_group(
     name = body.name.strip()
     if not name:
         raise HTTPException(400, "name required")
-    if name in _RESERVED:
+    if name in _RESERVED and not body.is_paper:
         raise HTTPException(400, f"「{name}」为系统保留分组名，不可手动创建")
-    group = await groups_repo.create_group(session, name, user_id)
+    group = await groups_repo.create_group(session, name, user_id, body.is_paper)
     if group is None:
         raise HTTPException(400, "分组名已存在")
     return {"group": group, "error": ""}

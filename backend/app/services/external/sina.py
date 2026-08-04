@@ -207,7 +207,8 @@ _NEWS_ITEM_RE = re.compile(
 def sina_symbol(code: str) -> str:
     if code.startswith(("4", "8")) or code.startswith("92"):
         return "bj" + code
-    if code.startswith(("6", "9")):
+    # 6/9 开头 A 股 + 5 开头上交所 ETF/基金 + 11 开头可转债 → sh
+    if code.startswith(("6", "9", "5", "11")):
         return "sh" + code
     return "sz" + code
 

@@ -4,6 +4,7 @@
 services:
   postgres:
     image: postgres:16
+    restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-natapp}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-natapp}
@@ -24,6 +25,7 @@ services:
   # asyncpg 经事务池需 statement_cache_size=0（已在 app/core/db.py 设置）。
   pgbouncer:
     image: edoburu/pgbouncer:latest
+    restart: unless-stopped
     environment:
       DB_HOST: postgres
       DB_PORT: "5432"
@@ -42,6 +44,7 @@ services:
 
   redis:
     image: redis:7
+    restart: unless-stopped
     command: ["redis-server", "--appendonly", "yes"]
     ports:
       - "6380:6379"          # 宿主 6380（本机 6379 已被其它项目占用）
@@ -55,6 +58,7 @@ services:
 
   api:
     build: .
+    restart: unless-stopped
     depends_on:
       postgres:
         condition: service_healthy
@@ -71,6 +75,7 @@ services:
   # ===== Phase 2：容器化 worker + beat（消费 default/llm 队列）=====
   worker:
     build: .
+    restart: unless-stopped
     command: celery -A app.workers.celery_app worker -Q default,llm --concurrency=4 --loglevel=info
     depends_on:
       postgres:
@@ -86,6 +91,7 @@ services:
 
   beat:
     build: .
+    restart: unless-stopped
     command: celery -A app.workers.celery_app beat --loglevel=info
     depends_on:
       redis:
@@ -104,6 +110,7 @@ services:
   # ===== Phase 4：前端（Nginx 托管静态产物 + 同源反代 /api → api:8000）=====
   frontend:
     build: ../frontend
+    restart: unless-stopped
     depends_on:
       - api
     ports:
