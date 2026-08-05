@@ -286,6 +286,7 @@ export interface VisitorLoginResp {
   access_token: string;
   phone?: string;
   email?: string;
+  admin_token?: string;
 }
 
 export interface WechatQrcodeResp {

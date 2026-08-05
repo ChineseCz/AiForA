@@ -5,6 +5,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 
 import { errMsg } from "@/api/client";
 import { useAuthConfig, useEmailLogin, useEmailRegister, useGuestLogin, useSendEmailCode, useWechatCodeLogin } from "@/api/hooks";
+import { useAuth } from "@/auth";
 import { useVisitorAuth } from "@/visitorAuth";
 
 const RESEND_SECONDS = 60;
@@ -56,6 +57,7 @@ function EmailLoginTab() {
   const nav = useNavigate();
   const loc = useLocation();
   const { login } = useVisitorAuth();
+  const auth = useAuth();
   const from: string = (loc.state as { from?: string } | null)?.from ?? "/";
   const emailLogin = useEmailLogin();
 
@@ -63,7 +65,11 @@ function EmailLoginTab() {
     emailLogin.mutate(
       { email: values.email.trim().toLowerCase(), password: values.password },
       {
-        onSuccess: (d) => { login(d.access_token); nav(from, { replace: true }); },
+        onSuccess: (d) => {
+          login(d.access_token);
+          if (d.admin_token) auth.login(d.admin_token);
+          nav(from, { replace: true });
+        },
         onError: (e) => message.error(errMsg(e, "登录失败")),
       },
     );

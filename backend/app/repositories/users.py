@@ -55,7 +55,7 @@ async def get_or_create_by_openid(session: AsyncSession, openid: str) -> dict:
 
 async def get_by_email(session: AsyncSession, email: str) -> dict | None:
     row = (await session.execute(
-        text("SELECT id, email, password_hash, nickname, created_at FROM users WHERE email = :e"),
+        text("SELECT id, email, password_hash, nickname, is_admin, created_at FROM users WHERE email = :e"),
         {"e": email},
     )).mappings().first()
     return dict(row) if row else None

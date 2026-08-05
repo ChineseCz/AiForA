@@ -14,4 +14,5 @@ class User(Base):
     email: Mapped[str | None] = mapped_column(String, nullable=True, unique=True)
     password_hash: Mapped[str | None] = mapped_column(String, nullable=True)
     nickname: Mapped[str | None] = mapped_column(String, nullable=True)
+    is_admin: Mapped[bool] = mapped_column(default=False, nullable=False, server_default="false")
     created_at: Mapped[int | None] = mapped_column(BigInteger)
