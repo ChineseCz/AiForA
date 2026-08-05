@@ -33,7 +33,7 @@ const NAV = [
 function RequireAdmin({ children }: { children: JSX.Element }) {
   const { loggedIn } = useAuth();
   const loc = useLocation();
-  return loggedIn ? children : <Navigate to="/admin/login" replace state={{ from: loc.pathname }} />;
+  return loggedIn ? children : <Navigate to="/login" replace state={{ from: loc.pathname }} />;
 }
 
 // 始终要求登录（后端 require_login 永远为 true）；token 存在即放行，后端校验有效性。
@@ -230,8 +230,7 @@ export default function App() {
         }}>
           <Routes>
             <Route path="/login" element={<VisitorLogin />} />
-            {/* 管理员登录/后台不受访客登录墙控制：管理员要能随时进来，且不出现在访客可见的导航里 */}
-            <Route path="/admin/login" element={<Admin login />} />
+            {/* 管理员后台：管理员登录入口已移至 /login 页（IP 限制显示），此处无需独立登录路由 */}
             <Route path="/admin" element={<RequireAdmin><Admin /></RequireAdmin>} />
             <Route element={<RequireVisitorOrAnon><Outlet /></RequireVisitorOrAnon>}>
               <Route path="/" element={<Dashboard />} />

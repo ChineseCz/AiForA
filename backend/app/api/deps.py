@@ -63,7 +63,7 @@ async def require_visitor(
 ) -> str:
     """校验访客 JWT（typ=visitor）；游客(sty=guest)不允许操作个人数据，返回 403。"""
     payload = _decode_bearer(creds)
-    if not payload or not payload.get("sub") or payload.get("typ") != "visitor":
+    if not payload or not payload.get("sub") or payload.get("typ") not in ("visitor", "admin"):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="需要登录",
@@ -79,7 +79,7 @@ async def require_visitor_payload(
 ) -> dict:
     """校验访客 JWT 并返回完整 payload；游客(sty=guest)不允许操作个人数据，返回 403。"""
     payload = _decode_bearer(creds)
-    if not payload or not payload.get("sub") or payload.get("typ") != "visitor":
+    if not payload or not payload.get("sub") or payload.get("typ") not in ("visitor", "admin"):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="需要登录",

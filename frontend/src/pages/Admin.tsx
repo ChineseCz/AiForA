@@ -4,44 +4,13 @@ import {
 } from "antd";
 import dayjs, { type Dayjs } from "dayjs";
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
 
 import { api, errMsg } from "@/api/client";
 import {
-  useAuthSettings, useJobStatus, useLogin, useSaveAuthSettings, useSaveSchedule, useSchedule, useUsers,
+  useAuthSettings, useJobStatus, useSaveAuthSettings, useSaveSchedule, useSchedule, useUsers,
 } from "@/api/hooks";
 import { useAuth } from "@/auth";
 import { useIsMobile } from "@/hooks/useIsMobile";
-
-// ---- 登录表单 ----
-function LoginForm() {
-  const login = useLogin();
-  const auth = useAuth();
-  const nav = useNavigate();
-  return (
-    <Row justify="center" style={{ marginTop: "min(80px, 8vh)", padding: "0 12px" }}>
-      <Card title="管理员登录" style={{ width: "100%", maxWidth: 360 }}>
-        <Form
-          layout="vertical"
-          onFinish={(v) =>
-            login.mutate(v, {
-              onSuccess: (d) => { auth.login(d.access_token); message.success("登录成功"); nav("/admin"); },
-              onError: (e) => message.error(errMsg(e, "登录失败")),
-            })
-          }
-        >
-          <Form.Item name="username" label="用户名" rules={[{ required: true }]}>
-            <Input autoComplete="username" />
-          </Form.Item>
-          <Form.Item name="password" label="密码" rules={[{ required: true }]}>
-            <Input.Password autoComplete="current-password" />
-          </Form.Item>
-          <Button type="primary" htmlType="submit" block loading={login.isPending}>登录</Button>
-        </Form>
-      </Card>
-    </Row>
-  );
-}
 
 // ---- 单个后台任务面板：触发 + 轮询状态 ----
 function JobPanel({ title, desc, kind, triggerPath, statusPath, body }: {
@@ -186,10 +155,9 @@ function JobPanelInline(p: { kind: string; triggerPath: string; statusPath: stri
   );
 }
 
-export default function Admin({ login }: { login?: boolean }) {
-  const { loggedIn, logout } = useAuth();
+export default function Admin() {
+  const { logout } = useAuth();
   const isMobile = useIsMobile();
-  if (login || !loggedIn) return <LoginForm />;
 
   return (
     <Space direction="vertical" size={isMobile ? 12 : 16} style={{ width: "100%" }}>

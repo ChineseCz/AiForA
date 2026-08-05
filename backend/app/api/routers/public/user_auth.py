@@ -198,7 +198,10 @@ async def email_register(request: Request, c: CacheService = Depends(cache), ses
     if not user:
         return JSONResponse({"error": "该邮箱已注册，请直接登录"}, status_code=400)
     token = create_access_token(email, typ="visitor", expire_minutes=settings.visitor_jwt_expire_minutes, sty="email")
-    return {"access_token": token, "token_type": "bearer", "email": email}
+    resp: dict = {"access_token": token, "token_type": "bearer", "email": email}
+    if user.get("is_admin"):
+        resp["admin_token"] = create_access_token(email, typ="admin", expire_minutes=settings.jwt_expire_minutes)
+    return resp
 
 
 @router.post("/email/login")
@@ -215,7 +218,10 @@ async def email_login(request: Request, session: AsyncSession = Depends(db_sessi
         return JSONResponse({"error": "邮箱或密码错误"}, status_code=401)
 
     token = create_access_token(email, typ="visitor", expire_minutes=settings.visitor_jwt_expire_minutes, sty="email")
-    return {"access_token": token, "token_type": "bearer", "email": email}
+    resp: dict = {"access_token": token, "token_type": "bearer", "email": email}
+    if user.get("is_admin"):
+        resp["admin_token"] = create_access_token(email, typ="admin", expire_minutes=settings.jwt_expire_minutes)
+    return resp
 
 
 # ===== 微信扫码 =====
@@ -323,6 +329,16 @@ async def wechat_poll(scene_key: str, c: CacheService = Depends(cache)):
 
 
 # ===== auth/config =====
+
+def _get_client_ip(request: Request) -> str:
+    forwarded = request.headers.get("X-Forwarded-For")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    real_ip = request.headers.get("X-Real-IP")
+    if real_ip:
+        return real_ip.strip()
+    return request.client.host if request.client else ""
+
 
 @auth_config_router.get("/config")
 async def auth_config(c: CacheService = Depends(cache), session: AsyncSession = Depends(db_session)):
