@@ -54,7 +54,7 @@ export const useKline = (code: string, sp?: Record<string, number | boolean>) =>
 };
 
 export const useIndexKline = (code: string) =>
-  useQuery({ queryKey: ["index_kline", code], queryFn: () => get<KlineView>("/api/index/kline", { code }), enabled: !!code, refetchInterval: 60_000 });
+  useQuery({ queryKey: ["index_kline", code], queryFn: () => get<KlineView>("/api/index/kline", { code }), enabled: !!code, refetchInterval: 10_000 });
 
 export const useFundamentals = (code: string) =>
   useQuery({ queryKey: ["fundamentals", code], queryFn: () => get<Fundamentals>("/api/stock/fundamentals", { code }), enabled: !!code });
@@ -225,7 +225,10 @@ export const useTrades = (code?: string, isPaper = false) =>
 
 export const useTradeMutations = (isPaper = false) => {
   const qc = useQueryClient();
-  const inval = () => qc.invalidateQueries({ queryKey: ["trades"] });
+  const inval = () => {
+    qc.invalidateQueries({ queryKey: ["trades"] });
+    if (isPaper) qc.invalidateQueries({ queryKey: ["paper_account"] });
+  };
   return {
     create: useMutation({
       mutationFn: (body: Omit<TradeRecord, "id" | "created_at">) => post("/api/trades", { ...body, is_paper: isPaper }),
@@ -324,6 +327,56 @@ export const useTradeStats = (isPaper = false) =>
   useQuery({
     queryKey: ["trade_stats", isPaper],
     queryFn: () => get<{ stats: TradeStats }>("/api/trades/stats", { is_paper: isPaper || undefined }),
+  });
+
+// ===== 用户级与系统级设置 =====
+export const useUserSettings = (key: string, enabled = true) =>
+  useQuery({
+    queryKey: ["user_settings", key],
+    queryFn: () => get<{ key: string; value: unknown; error: string }>("/api/user/settings", { key }),
+    enabled,
+    staleTime: 5 * 60 * 1000,
+  });
+
+export const useSaveUserSettings = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { key: string; value: unknown }) =>
+      api.put<{ error: string }>("/api/user/settings", body).then((r) => r.data),
+    onSuccess: (_d, vars) => qc.invalidateQueries({ queryKey: ["user_settings", vars.key] }),
+  });
+};
+
+export const useSettingsDefaults = (key: string) =>
+  useQuery({
+    queryKey: ["settings_defaults", key],
+    queryFn: () => get<{ key: string; value: unknown; error: string }>("/api/settings/defaults", { key }),
+    staleTime: 5 * 60 * 1000,
+  });
+
+export const useSaveAdminSettingDefaults = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { key: string; value: unknown }) =>
+      api.put<{ error: string }>("/api/admin/settings/defaults", body).then((r) => r.data),
+    onSuccess: (_d, vars) => qc.invalidateQueries({ queryKey: ["settings_defaults", vars.key] }),
+  });
+};
+
+export const useDeleteAdminSettingDefaults = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (key: string) =>
+      api.delete<{ error: string }>("/api/admin/settings/defaults", { params: { key } }).then((r) => r.data),
+    onSuccess: (_d, key) => qc.invalidateQueries({ queryKey: ["settings_defaults", key] }),
+  });
+};
+
+// ===== 模拟盘资金账户 =====
+export const usePaperAccount = () =>
+  useQuery({
+    queryKey: ["paper_account"],
+    queryFn: () => get<{ balance: number; error: string }>("/api/trades/paper-account"),
   });
 
 export const useStockAiAnalysis = (code: string, enabled: boolean) =>

@@ -34,8 +34,8 @@ function CollapsibleTags({ items, bullish, color }: { items?: string[]; bullish?
   );
 }
 
-import { errMsg } from "@/api/client";
-import { useGenerateStockAiAnalysis, useScreen, useScreenFields, useSectorRank, useSectors, useStockAiAnalysis, useUsers } from "@/api/hooks";
+import { errMsg, getToken, getVisitorToken } from "@/api/client";
+import { useDeleteAdminSettingDefaults, useGenerateStockAiAnalysis, useSaveAdminSettingDefaults, useSaveUserSettings, useScreen, useScreenFields, useSectorRank, useSectors, useSettingsDefaults, useStockAiAnalysis, useUserSettings, useUsers } from "@/api/hooks";
 import type { ScreenBody } from "@/api/hooks";
 import type { Condition, SectorRankItem, StockRow } from "@/api/types";
 import MarkdownContent from "@/components/MarkdownContent";
@@ -350,10 +350,19 @@ function ScreenerTab({ pendingRun, onRunDone }: { pendingRun: boolean; onRunDone
   const loc = useLocation();
   const nav = useNavigate();
 
+  const isLoggedIn = !!(getToken() || getVisitorToken());
+  const isAdmin = !!getToken();
+  const { data: userSettingsData } = useUserSettings("screen_params", isLoggedIn);
+  const { data: sysDefaultsData } = useSettingsDefaults("screen_params");
+  const saveUserSettings = useSaveUserSettings();
+  const saveAdminDefaults = useSaveAdminSettingDefaults();
+  const deleteAdminDefaults = useDeleteAdminSettingDefaults();
+
   const [strategies, setStrategies] = useState<string[]>(screenerState.strategies);
   const [strategyParams, setStrategyParams] = useState<Record<string, Record<string, number | boolean>>>(
     screenerState.strategyParams,
   );
+  const [paramsLoaded, setParamsLoaded] = useState(false);
   const [conds, setConds] = useState<Condition[]>(screenerState.conds);
   const [nameQuery, setNameQuery] = useState(screenerState.nameQuery);
   const [capFilter, setCapFilter] = useState<CapFilter>(screenerState.capFilter);
@@ -366,6 +375,20 @@ function ScreenerTab({ pendingRun, onRunDone }: { pendingRun: boolean; onRunDone
   const [sectorNames, setSectorNames] = useState<string[]>(screenerState.sectorNames);
   const [rows, setRows] = useState<StockRow[]>(screenerState.rows);
   const [tradeDate, setTradeDate] = useState<string | null>(screenerState.tradeDate);
+
+  useEffect(() => {
+    if (paramsLoaded) return;
+    const value = (userSettingsData?.value ?? sysDefaultsData?.value) as
+      | Record<string, Record<string, number | boolean>>
+      | null
+      | undefined;
+    if (value && typeof value === "object") {
+      setStrategyParams(value);
+      setParamsLoaded(true);
+    } else if (userSettingsData !== undefined && sysDefaultsData !== undefined) {
+      setParamsLoaded(true);
+    }
+  }, [userSettingsData, sysDefaultsData, paramsLoaded]);
 
   usePageContext(
     `用户在"选股"页。已选策略：${strategies.length ? strategies.join("、") : "无"}；` +
@@ -386,6 +409,33 @@ function ScreenerTab({ pendingRun, onRunDone }: { pendingRun: boolean; onRunDone
 
   const setStrategyParam = (strategyKey: string, paramKey: string, v: number | boolean) => {
     setStrategyParams((prev) => ({ ...prev, [strategyKey]: { ...prev[strategyKey], [paramKey]: v } }));
+  };
+
+  const handleSaveParams = () => {
+    saveUserSettings.mutate(
+      { key: "screen_params", value: strategyParams },
+      {
+        onSuccess: () => message.success("参数已保存"),
+        onError: (e) => message.error(errMsg(e, "保存失败")),
+      },
+    );
+  };
+
+  const handleSaveAdminDefaults = () => {
+    saveAdminDefaults.mutate(
+      { key: "screen_params", value: strategyParams },
+      {
+        onSuccess: () => message.success("全局默认已更新"),
+        onError: (e) => message.error(errMsg(e, "保存失败")),
+      },
+    );
+  };
+
+  const handleResetAdminDefaults = () => {
+    deleteAdminDefaults.mutate("screen_params", {
+      onSuccess: () => message.success("全局默认已恢复（重置为内置值）"),
+      onError: (e) => message.error(errMsg(e, "重置失败")),
+    });
   };
 
   const addCond = () => setConds([...conds, { field: "change_pct", op: ">", value: 0 }]);
@@ -463,7 +513,19 @@ function ScreenerTab({ pendingRun, onRunDone }: { pendingRun: boolean; onRunDone
 
   return (
     <Space direction="vertical" size={isMobile ? 12 : 16} style={{ width: "100%" }}>
-      <Card title={isMobile ? "预设策略" : "预设策略（可多选，取交集；不选也可以，靠下面的条件/提及/板块筛选）"} size="small">
+      <Card title={isMobile ? "预设策略" : "预设策略（可多选，取交集；不选也可以，靠下面的条件/提及/板块筛选）"} size="small"
+        extra={isLoggedIn && (
+          <Space size={4}>
+            <Button size="small" loading={saveUserSettings.isPending} onClick={handleSaveParams}>保存参数</Button>
+            {isAdmin && (
+              <>
+                <Button size="small" type="primary" ghost loading={saveAdminDefaults.isPending} onClick={handleSaveAdminDefaults}>修改全局默认</Button>
+                <Button size="small" danger loading={deleteAdminDefaults.isPending} onClick={handleResetAdminDefaults}>恢复默认</Button>
+              </>
+            )}
+          </Space>
+        )}
+      >
         <div className="preset-grid">
           {PRESETS.map((p) => {
             const active = strategies.includes(p.value);
@@ -482,6 +544,7 @@ function ScreenerTab({ pendingRun, onRunDone }: { pendingRun: boolean; onRunDone
                   <div onClick={(e) => e.stopPropagation()}>
                     <Collapse
                       size="small" ghost
+                      defaultActiveKey={isMobile ? ["params"] : []}
                       items={[{
                         key: "params",
                         label: "参数（默认值即原策略行为）",

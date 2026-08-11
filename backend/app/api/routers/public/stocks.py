@@ -79,7 +79,7 @@ async def api_index_kline(code: str = Query(default="sh000001"), c: CacheService
         return hit
     view = await run_in_threadpool(views.get_index_kline_view, code)
     view["error"] = ""
-    await c.set_json(key, view, 60)
+    await c.set_json(key, view, 10)
     return view
 
 

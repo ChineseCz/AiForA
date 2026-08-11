@@ -4,10 +4,12 @@ import json
 from fastapi import APIRouter, Depends, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import cache
+from app.api.deps import cache, db_session
 from app.core.cache import CacheService
 from app.repositories import sync_data as db
+from app.repositories import settings as settings_repo
 from app.services.external import wechat
 from app.core.config import settings
 
@@ -122,3 +124,46 @@ async def create_wechat_menu(c: CacheService = Depends(cache)):
     if result.get("errcode", 0) != 0:
         return JSONResponse({"error": f"微信接口返回: {result}"}, status_code=502)
     return {"error": "", "detail": result}
+
+
+# ================= 全局默认设置（选股参数等）=================
+_ALLOWED_SETTING_KEYS = {"screen_params"}
+
+
+@router.get("/admin/settings/defaults")
+async def get_setting_defaults(
+    key: str,
+    session: AsyncSession = Depends(db_session),
+):
+    if key not in _ALLOWED_SETTING_KEYS:
+        return JSONResponse({"error": f"不支持的 key: {key}"}, status_code=400)
+    raw = await settings_repo.get_system_setting(session, key)
+    value = json.loads(raw) if raw else None
+    return {"key": key, "value": value, "error": ""}
+
+
+@router.put("/admin/settings/defaults")
+async def save_setting_defaults(
+    request: Request,
+    session: AsyncSession = Depends(db_session),
+):
+    body = await _json_body(request)
+    key = body.get("key", "")
+    value = body.get("value")
+    if key not in _ALLOWED_SETTING_KEYS:
+        return JSONResponse({"error": f"不支持的 key: {key}"}, status_code=400)
+    if value is None:
+        return JSONResponse({"error": "value 不能为空"}, status_code=400)
+    await settings_repo.upsert_system_setting(session, key, json.dumps(value, ensure_ascii=False))
+    return {"error": ""}
+
+
+@router.delete("/admin/settings/defaults")
+async def delete_setting_defaults(
+    key: str,
+    session: AsyncSession = Depends(db_session),
+):
+    if key not in _ALLOWED_SETTING_KEYS:
+        return JSONResponse({"error": f"不支持的 key: {key}"}, status_code=400)
+    await settings_repo.delete_system_setting(session, key)
+    return {"error": ""}

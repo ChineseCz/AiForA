@@ -1,15 +1,18 @@
 """操作复盘记录接口。"""
 import re
+from decimal import Decimal
 from datetime import date
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from pydantic import BaseModel
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import db_session, require_visitor
 from app.repositories import groups as groups_repo
 from app.repositories import trades as trades_repo
+from app.repositories import paper_accounts as paper_repo
 
 router = APIRouter(prefix="/api")
 
@@ -115,6 +118,12 @@ async def api_create_trade(
 ):
     if body.direction not in ("buy", "sell"):
         raise HTTPException(400, "direction must be buy or sell")
+    if body.is_paper:
+        amount = Decimal(str(body.price)) * body.quantity
+        if body.direction == "buy":
+            await paper_repo.debit(session, user_id, amount)
+        else:
+            await paper_repo.credit(session, user_id, amount)
     data = body.model_dump(exclude={"is_paper"})
     trade = await trades_repo.create_trade(session, user_id, data, body.is_paper)
     if not body.is_paper:
@@ -129,12 +138,38 @@ async def api_delete_trade(
     user_id: str = Depends(require_visitor),
     session: AsyncSession = Depends(db_session),
 ):
+    if is_paper:
+        row = await session.execute(
+            text(
+                "SELECT direction, price, quantity FROM trade_records "
+                "WHERE id=:id AND user_id=:u AND is_paper=true"
+            ),
+            {"id": trade_id, "u": user_id},
+        )
+        orig = row.mappings().first()
+    else:
+        orig = None
     ok = await trades_repo.delete_trade(session, user_id, trade_id)
     if not ok:
         raise HTTPException(404, "trade not found")
+    if is_paper and orig:
+        amount = Decimal(str(orig["price"])) * orig["quantity"]
+        if orig["direction"] == "buy":
+            await paper_repo.credit(session, user_id, amount)
+        else:
+            await paper_repo.debit(session, user_id, amount)
     if not is_paper:
         await groups_repo.sync_auto_groups(session, user_id)
     return {"error": ""}
+
+
+@router.get("/trades/paper-account")
+async def api_paper_account(
+    user_id: str = Depends(require_visitor),
+    session: AsyncSession = Depends(db_session),
+):
+    account = await paper_repo.get_or_create(session, user_id)
+    return {"balance": account["balance"], "error": ""}
 
 
 @router.post("/trades/import")
