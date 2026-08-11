@@ -45,6 +45,7 @@ class Settings(BaseSettings):
     fetch_full_text: bool = True
     request_delay: float = 1.5
     headless: bool = False
+    browser_channel: str = "msedge"  # Linux 服务器设为空字符串以使用 Chromium
     # 帖子正文超过这个字数才在抓取后自动生成一句话总结（brief），短帖子直接全文展示不用调LLM
     post_brief_min_length: int = 200
 

@@ -55,7 +55,7 @@ def backfill_history(days: int = 60, delay: float = 0.5) -> tuple[int, int]:
     with sync_playwright() as p:
         ctx = p.chromium.launch_persistent_context(
             user_data_dir=profile_dir,
-            channel="msedge",
+            channel=settings.browser_channel or None,
             headless=settings.headless,
             locale="zh-CN",
             viewport=None,
