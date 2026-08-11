@@ -92,6 +92,21 @@ def get_index_kline_view(code: str) -> dict:
     golden_ok = indicators.daily_golden_signal_series(dif, dea, k, d)
     mid_reverse_ok, stop_loss_ok = indicators.daily_sell_signal_series(closes, ma5, ma10, dif, dea)
 
+    # 用实时行情覆盖最后一根 bar 的 OHLCV，让盘中数据近实时更新
+    try:
+        qt = sina.fetch_realtime_quote(code)
+        if qt and qt.get("close"):
+            last = bars[-1]
+            last["close"] = qt["close"]
+            if qt.get("high"):
+                last["high"] = max(last["high"], qt["high"])
+            if qt.get("low"):
+                last["low"] = min(last["low"], qt["low"])
+            if qt.get("volume"):
+                last["volume"] = qt["volume"]
+    except Exception:  # noqa: BLE001
+        pass
+
     out_bars = []
     for i, b in enumerate(bars):
         out_bars.append({

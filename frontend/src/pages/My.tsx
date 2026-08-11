@@ -8,8 +8,8 @@ import { useState, useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
 
 import { errMsg, api } from "../api/client";
-import { useQueryClient } from "@tanstack/react-query";
-import { useGroupMembers, useGroupMutations, useGroups, useDeleteNote, useFavoriteNote, useGenerateNote, useNote, useNoteList, useNoteMutation, useTradeMutations, useTrades, useTradeStats } from "../api/hooks";
+import { useQueryClient, useQueries } from "@tanstack/react-query";
+import { useGroupMembers, useGroupMutations, useGroups, useDeleteNote, useFavoriteNote, useGenerateNote, useNote, useNoteList, useNoteMutation, usePaperAccount, useTradeMutations, useTrades, useTradeStats } from "../api/hooks";
 import { getToken, getVisitorToken } from "../api/client";
 import type { GroupItem, GroupMember, TradeNote, TradeRecord } from "../api/types";
 import { useIsMobile } from "../hooks/useIsMobile";
@@ -322,6 +322,37 @@ function ReviewTab({ isPaper = false }: { isPaper?: boolean }) {
   const { data, isLoading } = useTrades(filterCode, isPaper);
   const trades = (data?.items ?? []) as TradeRecord[];
   const muts = useTradeMutations(isPaper);
+  const { data: accountData } = usePaperAccount();
+
+  const summary = !filterCode ? pnlSummary(trades) : [];
+  const activeCodes = summary.map((p) => p.code);
+
+  const quoteResults = useQueries({
+    queries: activeCodes.map((code) => ({
+      queryKey: ["quote", code],
+      queryFn: () =>
+        (async () => {
+          const { api: axiosApi } = await import("../api/client");
+          return axiosApi.get<import("../api/types").Quote>("/api/stock/quote", { params: { code } }).then((r) => r.data);
+        })(),
+      refetchInterval: 10_000,
+      staleTime: 0,
+    })),
+  });
+  const quotes: Record<string, number | null> = Object.fromEntries(
+    activeCodes.map((code, i) => [code, quoteResults[i]?.data?.close ?? null]),
+  );
+
+  const totalMktValue = summary.reduce((acc, p) => {
+    const price = quotes[p.code];
+    return acc + (price != null ? price * p.netQty : p.avgCost * p.netQty);
+  }, 0);
+  const totalFloatPnl = summary.reduce((acc, p) => {
+    const price = quotes[p.code];
+    return acc + (price != null ? (price - p.avgCost) * p.netQty : 0);
+  }, 0);
+  const balance = accountData?.balance ?? null;
+  const totalAssets = balance != null ? balance + totalMktValue : null;
 
   const [addOpen, setAddOpen] = useState(false);
   const [form] = Form.useForm();
@@ -389,11 +420,31 @@ function ReviewTab({ isPaper = false }: { isPaper?: boolean }) {
     },
   ];
 
-  const summary = !filterCode ? pnlSummary(trades) : [];
-
   return (
     <>
       <StatsCards isPaper={isPaper} />
+      {isPaper && balance != null && (
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 16 }}>
+          {[
+            { label: "可用资金", value: balance.toFixed(0), color: undefined },
+            { label: "持仓市值", value: totalMktValue.toFixed(0), color: undefined },
+            { label: "总资产", value: totalAssets != null ? totalAssets.toFixed(0) : "–", color: undefined },
+            {
+              label: "浮动盈亏",
+              value: `${totalFloatPnl > 0 ? "+" : ""}${totalFloatPnl.toFixed(0)}`,
+              color: totalFloatPnl > 0 ? token.colorError : totalFloatPnl < 0 ? token.colorSuccess : undefined,
+            },
+          ].map(({ label, value, color }) => (
+            <div key={label} style={{
+              background: token.colorFillQuaternary,
+              borderRadius: 8, padding: "8px 14px", minWidth: 100, flex: "1 0 auto",
+            }}>
+              <div style={{ fontSize: 11, color: token.colorTextSecondary }}>{label}</div>
+              <div style={{ fontSize: 18, fontWeight: 600, color }}>{value}</div>
+            </div>
+          ))}
+        </div>
+      )}
       <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
         <Input.Search
           placeholder="按代码筛选"
@@ -450,6 +501,27 @@ function ReviewTab({ isPaper = false }: { isPaper?: boolean }) {
                 dataIndex: "avgCost",
                 width: 100,
                 render: (v: number | null) => v != null ? v.toFixed(2) : "–",
+              },
+              {
+                title: "现价",
+                key: "quote",
+                width: 80,
+                render: (_: unknown, row: { code: string }) => {
+                  const q = quotes[row.code];
+                  return q != null ? q.toFixed(2) : <Text type="secondary">–</Text>;
+                },
+              },
+              {
+                title: "浮动盈亏",
+                key: "floatPnl",
+                width: 110,
+                render: (_: unknown, row: { code: string; avgCost: number; netQty: number }) => {
+                  const q = quotes[row.code];
+                  if (q == null) return <Text type="secondary">–</Text>;
+                  const pnl = (q - row.avgCost) * row.netQty;
+                  const color = pnl > 0 ? token.colorError : pnl < 0 ? token.colorSuccess : undefined;
+                  return <Text style={{ color }}>{pnl > 0 ? "+" : ""}{pnl.toFixed(0)}</Text>;
+                },
               },
               {
                 title: "持仓股数",
