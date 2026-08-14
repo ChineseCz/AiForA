@@ -2,7 +2,7 @@
 FROM node:20-slim AS build
 WORKDIR /app
 COPY package.json package-lock.json* ./
-RUN npm ci
+RUN npm ci --registry=https://registry.npmmirror.com
 COPY . .
 RUN npm run build
 

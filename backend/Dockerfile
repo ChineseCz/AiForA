@@ -9,7 +9,7 @@ WORKDIR /app
 
 # 先装依赖，利用层缓存
 COPY requirements.txt ./
-RUN pip install -r requirements.txt
+RUN pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple --trusted-host pypi.tuna.tsinghua.edu.cn
 
 # 拷贝代码
 COPY app ./app
