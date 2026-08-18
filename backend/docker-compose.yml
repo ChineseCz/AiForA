@@ -114,7 +114,9 @@ services:
   #   然后取消注释下方 browser-worker 服务，执行：docker compose up -d browser-worker
 
   browser-worker:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile.browser
     restart: unless-stopped
     command: celery -A app.workers.celery_app worker -Q browser --pool=solo --loglevel=info
     depends_on:
