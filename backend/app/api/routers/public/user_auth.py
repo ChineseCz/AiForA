@@ -200,7 +200,7 @@ async def email_register(request: Request, c: CacheService = Depends(cache), ses
     token = create_access_token(email, typ="visitor", expire_minutes=settings.visitor_jwt_expire_minutes, sty="email")
     resp: dict = {"access_token": token, "token_type": "bearer", "email": email}
     if user.get("is_admin"):
-        resp["admin_token"] = create_access_token(email, typ="admin", expire_minutes=settings.jwt_expire_minutes)
+        resp["admin_token"] = create_access_token(email, typ="admin", expire_minutes=settings.jwt_expire_minutes, sty="email")
     return resp
 
 
@@ -220,7 +220,7 @@ async def email_login(request: Request, session: AsyncSession = Depends(db_sessi
     token = create_access_token(email, typ="visitor", expire_minutes=settings.visitor_jwt_expire_minutes, sty="email")
     resp: dict = {"access_token": token, "token_type": "bearer", "email": email}
     if user.get("is_admin"):
-        resp["admin_token"] = create_access_token(email, typ="admin", expire_minutes=settings.jwt_expire_minutes)
+        resp["admin_token"] = create_access_token(email, typ="admin", expire_minutes=settings.jwt_expire_minutes, sty="email")
     return resp
 
 
