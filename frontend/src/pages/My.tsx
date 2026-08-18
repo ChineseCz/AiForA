@@ -199,7 +199,7 @@ function WatchlistTab({ isPaper = false }: { isPaper?: boolean }) {
                 <Button size="small" icon={<PlusOutlined />} onClick={() => setAddOpen(true)}>添加股票</Button>
               )}
             </div>
-            <Table
+            <Table<GroupMember>
               dataSource={members}
               columns={memberCols}
               rowKey="code"
@@ -488,7 +488,7 @@ function ReviewTab({ isPaper = false }: { isPaper?: boolean }) {
           <div style={{ marginTop: 20, marginBottom: 8 }}>
             <Text strong>持仓概览</Text>
           </div>
-          <Table
+          <Table<ReturnType<typeof pnlSummary>[number]>
             dataSource={summary}
             rowKey="code"
             size="small"
