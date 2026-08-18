@@ -1,6 +1,6 @@
 # 统一镜像：API + Worker（含 browser 队列）。
 # 基于 Playwright 官方镜像（含 Chromium + 系统依赖），browser-worker 需要；API/worker/beat 复用无影响。
-FROM microsoft/playwright-python:v1.48.0-jammy
+FROM mcr.microsoft.com/playwright/python:v1.48-jammy
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
