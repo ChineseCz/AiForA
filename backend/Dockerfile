@@ -1,5 +1,6 @@
-# API 镜像：只装 API 依赖，绝不含 playwright/浏览器。
-FROM python:3.11-slim
+# 统一镜像：API + Worker（含 browser 队列）。
+# 基于 Playwright 官方镜像（含 Chromium + 系统依赖），browser-worker 需要；API/worker/beat 复用无影响。
+FROM mcr.microsoft.com/playwright/python:v1.48-jammy
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -11,15 +12,14 @@ WORKDIR /app
 COPY requirements.txt ./
 RUN pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple --trusted-host pypi.tuna.tsinghua.edu.cn
 
+# 装 playwright python 包（浏览器二进制已在基础镜像里）
+RUN pip install "playwright>=1.40" -i https://pypi.tuna.tsinghua.edu.cn/simple --trusted-host pypi.tuna.tsinghua.edu.cn
+
 # 拷贝代码
 COPY app ./app
 COPY alembic ./alembic
 COPY alembic.ini ./
 COPY scripts ./scripts
-
-# 非 root 运行
-RUN useradd -m appuser && chown -R appuser:appuser /app
-USER appuser
 
 EXPOSE 8000
 
