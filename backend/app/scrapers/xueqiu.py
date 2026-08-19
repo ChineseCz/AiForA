@@ -152,16 +152,15 @@ def open_context(playwright, headless: bool | None = None):
             args=["--disable-blink-features=AutomationControlled", "--start-maximized"],
         )
     else:
-        # 服务器模式：Chromium 无头 + persistent profile（Edge profile 格式兼容 Chromium）
-        profile = _profile_dir()
-        os.makedirs(profile, exist_ok=True)
-        ctx = playwright.chromium.launch_persistent_context(
-            user_data_dir=profile,
-            channel=None,           # 不指定 channel，使用 Chromium
+        # 服务器模式：Chromium 无头 + storage state 文件（由本机导出后上传）
+        state_file = os.path.join(settings.data_dir, "xueqiu-state.json")
+        browser = playwright.chromium.launch(
             headless=_headless,
-            locale="zh-CN",
-            viewport=None,
             args=["--disable-blink-features=AutomationControlled"],
+        )
+        ctx = browser.new_context(
+            locale="zh-CN",
+            storage_state=state_file if os.path.exists(state_file) else None,
         )
 
     ctx.add_init_script(STEALTH_JS)
