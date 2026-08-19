@@ -1,5 +1,5 @@
 import {
-  Alert, Button, Card, Checkbox, Col, DatePicker, Form, Input, InputNumber,
+  Button, Card, Checkbox, Col, DatePicker, Form, Input, InputNumber,
   Row, Select, Space, Switch, Tag, Typography, message,
 } from "antd";
 import dayjs, { type Dayjs } from "dayjs";
@@ -166,9 +166,6 @@ export default function Admin() {
         <Button onClick={logout} size={isMobile ? "small" : "middle"}>退出登录</Button>
       </Row>
 
-      <Alert type="info"
-        message="抓取 / 历史K线回补依赖真实浏览器，需在 Windows 宿主的 browser 队列 worker 上运行；此处触发的这两项会进入队列等待宿主 worker 消费。" />
-
       <Row gutter={[isMobile ? 8 : 16, isMobile ? 8 : 16]}>
         <Col xs={24} md={12}>
           <Typography.Title level={5}>数据同步</Typography.Title>
@@ -180,14 +177,14 @@ export default function Admin() {
             triggerPath="/api/stock/sync-sectors" statusPath="/api/stock/sync-sectors/status" />
           <JobPanel title="板块成分股全量同步" desc="供个股「所属板块」反查完整覆盖" kind="sector_members_sync"
             triggerPath="/api/stock/sync-sector-members" statusPath="/api/stock/sync-sector-members/status" />
-          <JobPanel title="历史K线回补（宿主队列）" desc="均线类策略依赖，需宿主 worker" kind="stock_backfill"
+          <JobPanel title="历史K线回补" desc="均线类策略依赖，回补近60日数据" kind="stock_backfill"
             triggerPath="/api/stock/backfill" statusPath="/api/stock/backfill/status" body={{ days: 60 }} />
-          <JobPanel title="雪球板块同步（宿主队列）" desc="申万134个行业（含半导体/软件开发等），需宿主 worker，耗时较长" kind="sync_xueqiu_sectors"
+          <JobPanel title="雪球板块同步" desc="申万134个行业（含半导体/软件开发等），耗时较长" kind="sync_xueqiu_sectors"
             triggerPath="/api/stock/sync-xueqiu-sectors" statusPath="/api/stock/sync-xueqiu-sectors/status" />
         </Col>
         <Col xs={24} md={12}>
           <Typography.Title level={5}>采集与总结</Typography.Title>
-          <JobPanel title="雪球采集（宿主队列）" desc="抓取大V新帖，需宿主 worker（真实 Edge）" kind="crawl"
+          <JobPanel title="雪球采集" desc="抓取大V新帖（Playwright+Chromium）" kind="crawl"
             triggerPath="/api/crawl" statusPath="/api/crawl/status" body={{ summarize: true }} />
           <SummarizePanel />
           <SchedulePanel />

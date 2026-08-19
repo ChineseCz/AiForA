@@ -63,8 +63,9 @@ def _to_state(row) -> dict:
     def fmt(ts):
         if not ts:
             return ""
-        from datetime import datetime
-        return datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M:%S")
+        from datetime import datetime, timezone, timedelta
+        tz_cst = timezone(timedelta(hours=8))
+        return datetime.fromtimestamp(ts, tz=tz_cst).strftime("%Y-%m-%d %H:%M:%S")
 
     return {
         "running": row["status"] == "running",
