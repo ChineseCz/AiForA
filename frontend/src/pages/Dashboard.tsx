@@ -7,7 +7,7 @@ import ReactECharts from "echarts-for-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
-import { useIndexKline, useOverview, useUsers } from "@/api/hooks";
+import { useIndexKline, useOverview, useQuote, useUsers } from "@/api/hooks";
 import type { BullishHeatBoard, BullishHeatItem, KlineBar } from "@/api/types";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { usePageContext } from "@/pageContext";
@@ -471,6 +471,7 @@ const INDICES = [
 function IndexChart({ dark, isMobile }: { dark: boolean; isMobile: boolean }) {
   const [selectedCode, setSelectedCode] = useState("sh000001");
   const { data, isLoading } = useIndexKline(selectedCode);
+  const { data: quote } = useQuote(selectedCode);
   const [showVol, setShowVol] = useState(true);
   const [showMacd, setShowMacd] = useState(false);
   const [showKdj, setShowKdj] = useState(false);
@@ -480,7 +481,47 @@ function IndexChart({ dark, isMobile }: { dark: boolean; isMobile: boolean }) {
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
   const [chartReady, setChartReady] = useState(false);
 
-  const bars = data?.bars ?? [];
+  // 与个股详情页保持一致：前端合并实时报价
+  // - 日期相同（收盘后历史接口已包含当日）：覆盖最后一根 bar 的 OHLCV
+  // - 日期不同且 quote 更新（盘中/盘前当日无历史 bar）：追加一根今日 bar
+  const bars = useMemo(() => {
+    const raw = data?.bars ?? [];
+    if (!quote || quote.error || !raw.length) return raw;
+    const last = raw[raw.length - 1];
+    if (last.trade_date === quote.trade_date) {
+      // 同一天：覆盖 OHLCV
+      const merged = {
+        ...last,
+        close: quote.close,
+        high: Math.max(last.high, quote.high),
+        low: Math.min(last.low, quote.low),
+        volume: quote.volume ?? last.volume,
+      };
+      return [...raw.slice(0, -1), merged];
+    }
+    if (quote.trade_date > last.trade_date) {
+      // 新交易日：历史接口还没有今日 bar，追加一根（指标字段置 null/false）
+      const todayBar: KlineBar = {
+        trade_date: quote.trade_date,
+        open: quote.open ?? quote.close,
+        high: quote.high ?? quote.close,
+        low: quote.low ?? quote.close,
+        close: quote.close,
+        volume: quote.volume ?? 0,
+        ma5: null, ma10: null, ma20: null,
+        dif: 0, dea: 0, macd: 0,
+        k: 0, d: 0, j: 0,
+        strict_ok: false, loose_ok: false, golden_ok: false,
+        mid_reverse_ok: false, stop_loss_ok: false,
+        volume_breakout_ok: false, boll_breakout_ok: false,
+        rsi_bounce_ok: false, rsi_overbought_ok: false,
+        break_ma_ok: false, high_vol_drop_ok: false,
+      };
+      return [...raw, todayBar];
+    }
+    return raw;
+  }, [data, quote]);
+
   const activeIdx = hoverIdx != null && bars[hoverIdx] ? hoverIdx : bars.length - 1;
   const active = bars[activeIdx];
   const prevClose = activeIdx > 0 ? bars[activeIdx - 1]?.close : undefined;

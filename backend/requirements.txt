@@ -1,4 +1,4 @@
-# API 容器依赖（browser-worker 所需的 playwright 已由官方镜像预装，无需在此声明）
+# API 容器依赖
 fastapi>=0.111
 python-multipart>=0.0.9
 uvicorn[standard]>=0.30
@@ -14,6 +14,7 @@ beautifulsoup4>=4.12          # markdown.py 标的名称标蓝解析
 requests>=2.31               # /api/stock/news 实时抓取
 pypinyin>=0.50               # 板块名拼音缩写
 openai>=1.40                 # summarizer（Phase 2 worker 用）
+playwright>=1.40               # browser-worker 抓取/K线回补（官方镜像未预装，需显式声明）
 celery>=5.4                  # worker/queues（Phase 2）
 PyJWT>=2.8                   # 管理员 JWT（Phase 3）
 bcrypt>=4.1                  # 管理员密码哈希（Phase 3）
