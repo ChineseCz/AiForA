@@ -1,5 +1,4 @@
-# API 容器依赖（Phase 7+ 增加 playwright 支持服务器容器化 browser-worker）
-playwright>=1.40
+# API 容器依赖（browser-worker 所需的 playwright 已由官方镜像预装，无需在此声明）
 fastapi>=0.111
 python-multipart>=0.0.9
 uvicorn[standard]>=0.30
