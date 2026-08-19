@@ -1,5 +1,6 @@
-# API 镜像：只装 API 依赖，绝不含 playwright/浏览器。
-FROM python:3.11-slim
+# 统一镜像：API + Worker（含 browser 队列）。
+# 基于 Playwright 官方镜像（含 Chromium + 系统依赖），browser-worker 需要；API/worker/beat 复用无影响。
+FROM mcr.microsoft.com/playwright/python:v1.62.0-noble
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -16,10 +17,6 @@ COPY app ./app
 COPY alembic ./alembic
 COPY alembic.ini ./
 COPY scripts ./scripts
-
-# 非 root 运行
-RUN useradd -m appuser && chown -R appuser:appuser /app
-USER appuser
 
 EXPOSE 8000
 

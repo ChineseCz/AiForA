@@ -103,9 +103,35 @@ services:
     env_file:
       - .env
 
-  # 浏览器队列 worker 不在这里 —— 依赖真实可见 Edge，在 Windows 宿主机运行（连本 compose 发布的 5433/6380）：
+  # 浏览器队列 worker 有两种运行方式（二选一）：
+  #
+  # 方式一：本机 Windows 宿主（BROWSER_CHANNEL=msedge，Edge + persistent profile）
   #   cd backend && pip install -r requirements-host.txt
   #   celery -A app.workers.celery_app worker -Q browser --pool=solo --loglevel=info
+  #
+  # 方式二：服务器容器化（BROWSER_CHANNEL= 留空，Chromium + storage state）
+  #   先在本机执行：python export_xueqiu_state.py 导出 data/xueqiu-state.json 并上传
+  #   然后取消注释下方 browser-worker 服务，执行：docker compose up -d browser-worker
+
+  browser-worker:
+    build: .
+    restart: unless-stopped
+    command: celery -A app.workers.celery_app worker -Q browser --pool=solo --loglevel=info
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-natapp}:${POSTGRES_PASSWORD:-natapp}@postgres:5432/${POSTGRES_DB:-natapp}
+      REDIS_URL: redis://redis:6379/0
+      BROWSER_CHANNEL: ""     # 留空使用 Chromium（服务器模式）
+      HEADLESS: "true"
+      TZ: Asia/Shanghai
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data      # 挂载 xueqiu-state.json 所在目录
 
   # ===== Phase 4：前端（Nginx 托管静态产物 + 同源反代 /api → api:8000）=====
   frontend:

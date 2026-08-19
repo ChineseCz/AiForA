@@ -137,16 +137,32 @@ def extract_images(status: dict) -> list[str]:
 
 
 def open_context(playwright, headless: bool | None = None):
-    profile = _profile_dir()
-    os.makedirs(profile, exist_ok=True)
-    ctx = playwright.chromium.launch_persistent_context(
-        user_data_dir=profile,
-        channel=settings.browser_channel or None,
-        headless=settings.headless if headless is None else headless,
-        locale="zh-CN",
-        viewport=None,
-        args=["--disable-blink-features=AutomationControlled", "--start-maximized"],
-    )
+    _headless = settings.headless if headless is None else headless
+
+    if settings.browser_channel:
+        # 本机模式：Edge + persistent profile 目录，登录态自动持久
+        profile = _profile_dir()
+        os.makedirs(profile, exist_ok=True)
+        ctx = playwright.chromium.launch_persistent_context(
+            user_data_dir=profile,
+            channel=settings.browser_channel,
+            headless=_headless,
+            locale="zh-CN",
+            viewport=None,
+            args=["--disable-blink-features=AutomationControlled", "--start-maximized"],
+        )
+    else:
+        # 服务器模式：Chromium 无头 + storage state 文件（由本机导出后上传）
+        state_file = os.path.join(settings.data_dir, "xueqiu-state.json")
+        browser = playwright.chromium.launch(
+            headless=_headless,
+            args=["--disable-blink-features=AutomationControlled"],
+        )
+        ctx = browser.new_context(
+            locale="zh-CN",
+            storage_state=state_file if os.path.exists(state_file) else None,
+        )
+
     ctx.add_init_script(STEALTH_JS)
     return ctx
 

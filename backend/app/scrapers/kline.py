@@ -51,18 +51,29 @@ def backfill_history(days: int = 60, delay: float = 0.5) -> tuple[int, int]:
         print("⚠️ 还没有行情快照，请先运行行情同步")
         return 0, 0
 
-    profile_dir = os.path.join(settings.data_dir, "edge_profile_stock")
     with sync_playwright() as p:
-        ctx = p.chromium.launch_persistent_context(
-            user_data_dir=profile_dir,
-            channel=settings.browser_channel or None,
-            headless=settings.headless,
-            locale="zh-CN",
-            viewport=None,
-            args=["--disable-blink-features=AutomationControlled"],
-        )
-        try:
+        if settings.browser_channel:
+            # 本机模式：Edge + persistent profile（K 线不需要登录态，只借浏览器指纹）
+            profile_dir = os.path.join(settings.data_dir, "edge_profile_stock")
+            os.makedirs(profile_dir, exist_ok=True)
+            ctx = p.chromium.launch_persistent_context(
+                user_data_dir=profile_dir,
+                channel=settings.browser_channel,
+                headless=settings.headless,
+                locale="zh-CN",
+                viewport=None,
+                args=["--disable-blink-features=AutomationControlled"],
+            )
             page = ctx.new_page()
+        else:
+            # 服务器模式：Chromium 无头，新浪 K 线无需登录态，只需真实浏览器指纹绕反爬
+            browser = p.chromium.launch(
+                headless=True,
+                args=["--disable-blink-features=AutomationControlled"],
+            )
+            ctx = browser.new_context(locale="zh-CN")
+            page = ctx.new_page()
+        try:
             page.goto(_history_api_url(codes[0], days), wait_until="domcontentloaded")
             page.wait_for_timeout(1000)
 
