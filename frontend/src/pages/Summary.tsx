@@ -13,6 +13,29 @@ const TABS = [
   { key: "yearly", label: "年" }, { key: "highlights", label: "精华" },
 ];
 
+function weekDateRange(key: string): string {
+  const m = key.match(/^(\d{4})-W(\d{2})$/);
+  if (!m) return key;
+  const year = parseInt(m[1]);
+  const week = parseInt(m[2]);
+  // ISO week 1 contains Jan 4
+  const jan4 = new Date(year, 0, 4);
+  const dow = jan4.getDay() || 7;
+  const week1Mon = new Date(jan4);
+  week1Mon.setDate(jan4.getDate() - (dow - 1));
+  const mon = new Date(week1Mon);
+  mon.setDate(week1Mon.getDate() + (week - 1) * 7);
+  const sun = new Date(mon);
+  sun.setDate(mon.getDate() + 6);
+  const fmt = (d: Date) =>
+    `${d.getMonth() + 1}/${d.getDate()}`;
+  return `第${week}周（${fmt(mon)}~${fmt(sun)}）`;
+}
+
+function displayKey(type: string, key: string): string {
+  return type === "weekly" ? weekDateRange(key) : key;
+}
+
 export default function Summary() {
   const { token } = theme.useToken();
   const isMobile = useIsMobile();
@@ -74,7 +97,7 @@ export default function Summary() {
         onChange={(k) => setListOpen((k as string[]).includes("dates"))}
         items={[{
           key: "dates",
-          label: key ? `日期：${key}` : "选择日期",
+          label: key ? `日期：${displayKey(type, key)}` : "选择日期",
           children: (
             <List
               size="small" style={{ maxHeight: 360, overflow: "auto" }}
@@ -85,7 +108,7 @@ export default function Summary() {
                   onClick={() => { setKey(k); setListOpen(false); }}
                   style={{ cursor: "pointer", background: k === key ? token.colorPrimaryBg : undefined }}
                 >
-                  {k}
+                  {displayKey(type, k)}
                 </List.Item>
               )}
             />

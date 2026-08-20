@@ -45,21 +45,46 @@ def sync_sector_catalog() -> int:
 
 
 def sync_all_sector_members() -> int:
-    """全量同步所有板块成分股。个别板块偶发失败跳过并继续（沿用旧 per-item 容错）。"""
+    """全量同步所有板块成分股（并发拉取新浪接口）。个别板块偶发失败跳过并继续（沿用旧 per-item 容错）。"""
+    import concurrent.futures
+
     catalog = db.get_sector_catalog()
     if not catalog:
         raise ValueError("还没有板块名单，请先运行板块名单同步")
-    total = len(catalog)
+
+    # 过滤掉雪球板块（需浏览器，单独任务处理）
+    sina_sectors = [s for s in catalog if not s["board_code"].startswith("xq_")]
+    xq_count = len(catalog) - len(sina_sectors)
+
+    total = len(sina_sectors)
     n_codes = 0
     n_failed = 0
-    for i, sec in enumerate(catalog, 1):
+    completed = 0
+
+    def fetch_one(sec: dict) -> tuple[str, list[str]] | None:
+        """返回 (sector_name, codes) 或 None"""
         try:
             codes = matching.get_sector_members(sec["name"])
-            n_codes += len(codes)
+            return (sec["name"], codes)
         except Exception as e:  # noqa: BLE001
-            n_failed += 1
-            print(f"⚠️ 板块「{sec['name']}」同步失败，跳过：{e}")
-        if i % 20 == 0 or i == total:
-            print(f"… 已同步 {i}/{total} 个板块的成分股 …")
-    print(f"✅ 板块成分股全量同步完成：{total} 个板块（失败 {n_failed} 个），共 {n_codes} 条关系")
+            print(f"⚠️ 板块「{sec['name']}」同步失败：{e}")
+            return None
+
+    # 并发拉取（限制10并发，避免打爆上游）
+    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+        futures = [executor.submit(fetch_one, sec) for sec in sina_sectors]
+        for future in concurrent.futures.as_completed(futures):
+            result = future.result()
+            if result:
+                n_codes += len(result[1])
+            else:
+                n_failed += 1
+            completed += 1
+            if completed % 50 == 0 or completed == total:
+                print(f"… 已同步 {completed}/{total} 个板块的成分股 …")
+
+    msg_parts = [f"{total}个新浪板块（失败{n_failed}个）", f"共{n_codes}条关系"]
+    if xq_count:
+        msg_parts.insert(0, f"跳过{xq_count}个雪球板块")
+    print(f"✅ 板块成分股全量同步完成：{' / '.join(msg_parts)}")
     return total

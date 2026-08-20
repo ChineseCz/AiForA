@@ -1,12 +1,12 @@
-import { ArrowLeftOutlined, MobileOutlined, SettingOutlined } from "@ant-design/icons";
-import { Button, Card, Col, Collapse, DatePicker, Descriptions, Empty, Form, Input, InputNumber, List, Modal, Row, Select, Space, Spin, Tag, Tooltip, Typography, message } from "antd";
+import { ArrowLeftOutlined, MobileOutlined, SettingOutlined, StarOutlined } from "@ant-design/icons";
+import { Button, Card, Col, Collapse, DatePicker, Descriptions, Dropdown, Empty, Form, Input, InputNumber, List, Modal, Row, Select, Space, Spin, Tag, Tooltip, Typography, message } from "antd";
 import dayjs from "dayjs";
 import ReactECharts from "echarts-for-react";
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 
 import { errMsg } from "@/api/client";
-import { useFundamentals, useGenerateStockAiAnalysis, useKline, useNews, useQuote, useStockAiAnalysis, useTradeMutations } from "@/api/hooks";
+import { useFundamentals, useGenerateStockAiAnalysis, useGroupMutations, useGroups, useKline, useNews, useQuote, useStockAiAnalysis, useTradeMutations } from "@/api/hooks";
 import type { KlineBar } from "@/api/types";
 import MarkdownContent from "@/components/MarkdownContent";
 import { useIsMobile } from "@/hooks/useIsMobile";
@@ -384,6 +384,32 @@ export default function StockDetail() {
   const [tradeForm] = Form.useForm();
   const tradeMuts = useTradeMutations(true);
 
+  // 实盘和模拟盘分组查询
+  const realGroups = useGroups(false);
+  const paperGroups = useGroups(true);
+  const realGroupMuts = useGroupMutations(false);
+  const paperGroupMuts = useGroupMutations(true);
+
+  // 加入自选分组处理函数
+  const handleAddToGroup = (groupId: number, groupName: string, isPaper: boolean) => {
+    if (!kline?.name) {
+      message.error("股票信息加载中，请稍后再试");
+      return;
+    }
+    const muts = isPaper ? paperGroupMuts : realGroupMuts;
+    muts.addMembers.mutate(
+      { id: groupId, stocks: [{ code, name: kline.name }] },
+      {
+        onSuccess: () => {
+          message.success(`已加入${isPaper ? "模拟盘" : "实盘"}分组「${groupName}」`);
+        },
+        onError: (e) => {
+          message.error(errMsg(e, "加入失败"));
+        },
+      },
+    );
+  };
+
   // ── bars：含实时报价合并，供顶部指标条 / hover 悬停显示用 ──
   const bars = useMemo(() => {
     const raw = kline?.bars ?? [];
@@ -729,7 +755,7 @@ export default function StockDetail() {
             </>
           ) : <Empty description="暂无K线数据（需先在后台回补历史K线）" />}
         </Spin>
-        <Space style={{ marginTop: 8, marginBottom: 4 }}>
+        <Space style={{ marginTop: 8, marginBottom: 4 }} wrap>
           <Button
             size="small"
             style={{ color: "#e64545", borderColor: "#e64545" }}
@@ -764,6 +790,37 @@ export default function StockDetail() {
           >
             模拟卖出
           </Button>
+          <Dropdown
+            menu={{
+              items: [
+                {
+                  key: "real",
+                  label: "实盘分组",
+                  type: "group",
+                  children: realGroups.data?.groups?.map((g) => ({
+                    key: `real-${g.id}`,
+                    label: g.name,
+                    onClick: () => handleAddToGroup(g.id, g.name, false),
+                  })) ?? [],
+                },
+                {
+                  key: "paper",
+                  label: "模拟盘分组",
+                  type: "group",
+                  children: paperGroups.data?.groups?.map((g) => ({
+                    key: `paper-${g.id}`,
+                    label: g.name,
+                    onClick: () => handleAddToGroup(g.id, g.name, true),
+                  })) ?? [],
+                },
+              ],
+            }}
+            trigger={["click"]}
+          >
+            <Button size="small" icon={<StarOutlined />}>
+              加入自选
+            </Button>
+          </Dropdown>
         </Space>
         <Collapse ghost size="small" style={{ marginTop: 4 }} items={[{
             key: "sp",

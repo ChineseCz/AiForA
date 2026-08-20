@@ -445,19 +445,28 @@ def scrape_industry_members(page, ind_code: str, ind_name: str, max_pages: int =
     from urllib.parse import quote
 
     url = f"{HOME}/hq/detail?market=CN&first_name=0&second_name=2&indCode={ind_code}&indName={quote(ind_name)}"
-    page.goto(url, wait_until="networkidle")
+    page.goto(url, wait_until="domcontentloaded")
     if not _wait_waf(page, f"行业 {ind_name}"):
         return []
-    page.wait_for_timeout(1500)
+
+    # 等待表格容器出现（雪球用 React，DOM 要等 JS 挂载）
+    try:
+        page.wait_for_selector("table", timeout=5000)
+    except Exception:
+        return []
 
     def read_codes() -> list[str]:
+        # 优化：只扫描 table 内的文本节点，避免全文档遍历
         raw = page.eval_on_selector_all(
-            "*",
+            "table *",
             """els => {
                 const re = /^(SH|SZ|BJ)\\d{6}$/;
                 const out = [];
                 for (const e of els) {
-                    if (e.children.length === 0 && re.test((e.innerText||'').trim())) out.push(e.innerText.trim());
+                    if (e.children.length === 0) {
+                        const t = (e.innerText||'').trim();
+                        if (re.test(t)) out.push(t);
+                    }
                 }
                 return [...new Set(out)];
             }""",
@@ -466,7 +475,7 @@ def scrape_industry_members(page, ind_code: str, ind_name: str, max_pages: int =
 
     try:
         page.click("text=90", timeout=3000)
-        page.wait_for_timeout(1200)
+        page.wait_for_load_state("networkidle", timeout=3000)
     except Exception:
         pass  # 成分股不足一页时可能没有"90"选项，用默认页大小也行
 
@@ -477,9 +486,9 @@ def scrape_industry_members(page, ind_code: str, ind_name: str, max_pages: int =
             if "disabled" in (btn.get_attribute("outerHTML") or ""):
                 break
             btn.click(timeout=3000)
+            page.wait_for_load_state("networkidle", timeout=3000)
         except Exception:
             break
-        page.wait_for_timeout(1200)
         new_codes = set(read_codes()) - seen
         if not new_codes:
             break

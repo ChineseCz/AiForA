@@ -51,7 +51,7 @@ async def crawl(request: Request, session: AsyncSession = Depends(db_session)):
 
 @router.get("/crawl/status")
 async def crawl_status(session: AsyncSession = Depends(db_session)):
-    return await jobs.get_latest_state(session, "crawl")
+    return await jobs.get_job_status(session, "crawl")
 
 
 # ================= 总结生成 =================
@@ -63,7 +63,7 @@ async def summarize(request: Request, session: AsyncSession = Depends(db_session
     if ptype not in PERIOD_TYPES:
         return {"started": False, "error": "未知的总结类型"}
     if await jobs.any_running(session, "summarize"):
-        return {"started": False, "running": True}
+        return {"started": False, "running": True, "error": "已有任务正在运行，请稍后再试"}
     job_id = await run_in_threadpool(jobs.create_job, "summarize", "手动")
     task_summarize.delay(
         ptype, str(body.get("start", "")), str(body.get("end", "")),
@@ -74,7 +74,7 @@ async def summarize(request: Request, session: AsyncSession = Depends(db_session
 
 @router.get("/summarize/status")
 async def summarize_status(session: AsyncSession = Depends(db_session)):
-    return await jobs.get_latest_state(session, "summarize")
+    return await jobs.get_job_status(session, "summarize")
 
 
 @router.post("/feibi/ask")
@@ -130,7 +130,7 @@ async def stock_sync(session: AsyncSession = Depends(db_session)):
 
 @router.get("/stock/sync/status")
 async def stock_sync_status(session: AsyncSession = Depends(db_session)):
-    return await jobs.get_latest_state(session, "stock_sync")
+    return await jobs.get_job_status(session, "stock_sync")
 
 
 @router.post("/stock/backfill")
@@ -150,7 +150,7 @@ async def stock_backfill(request: Request, session: AsyncSession = Depends(db_se
 
 @router.get("/stock/backfill/status")
 async def stock_backfill_status(session: AsyncSession = Depends(db_session)):
-    return await jobs.get_latest_state(session, "stock_backfill")
+    return await jobs.get_job_status(session, "stock_backfill")
 
 
 @router.post("/stock/finance_sync")
@@ -161,7 +161,7 @@ async def finance_sync(session: AsyncSession = Depends(db_session)):
 
 @router.get("/stock/finance_sync/status")
 async def finance_sync_status(session: AsyncSession = Depends(db_session)):
-    return await jobs.get_latest_state(session, "finance_sync")
+    return await jobs.get_job_status(session, "finance_sync")
 
 
 @router.post("/stock/sync-sectors")
@@ -172,7 +172,7 @@ async def sync_sectors(session: AsyncSession = Depends(db_session)):
 
 @router.get("/stock/sync-sectors/status")
 async def sync_sectors_status(session: AsyncSession = Depends(db_session)):
-    return await jobs.get_latest_state(session, "sector_sync")
+    return await jobs.get_job_status(session, "sector_sync")
 
 
 @router.post("/stock/sync-sector-members")
@@ -183,7 +183,7 @@ async def sync_sector_members(session: AsyncSession = Depends(db_session)):
 
 @router.get("/stock/sync-sector-members/status")
 async def sync_sector_members_status(session: AsyncSession = Depends(db_session)):
-    return await jobs.get_latest_state(session, "sector_members_sync")
+    return await jobs.get_job_status(session, "sector_members_sync")
 
 
 @router.post("/stock/sync-xueqiu-sectors")
@@ -194,4 +194,26 @@ async def sync_xueqiu_sectors(session: AsyncSession = Depends(db_session)):
 
 @router.get("/stock/sync-xueqiu-sectors/status")
 async def sync_xueqiu_sectors_status(session: AsyncSession = Depends(db_session)):
-    return await jobs.get_latest_state(session, "sync_xueqiu_sectors")
+    return await jobs.get_job_status(session, "sync_xueqiu_sectors")
+
+
+# ================= 僵尸任务清理 =================
+@router.post("/jobs/cleanup-zombie")
+async def cleanup_zombie(session: AsyncSession = Depends(db_session)):
+    """清理僵尸任务（超过 2 小时仍在 running 的任务）。"""
+    import time
+    from sqlalchemy import text
+
+    now = int(time.time())
+    timeout_seconds = 2 * 3600  # 2 小时
+
+    result = await session.execute(text(
+        """
+        UPDATE job_runs
+        SET status = 'error', finished_at = :now, error = '任务超时，手动清理'
+        WHERE status = 'running' AND started_at < :threshold
+        """
+    ), {"now": now, "threshold": now - timeout_seconds})
+    await session.commit()
+
+    return {"cleaned": result.rowcount}

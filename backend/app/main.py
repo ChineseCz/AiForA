@@ -21,8 +21,24 @@ from app.core.ratelimit import limiter
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     bootstrap_admin()  # admins 表空 + env 配置了账号则自动建号
+    await _cleanup_zombie_jobs()
     yield
     await cache_mod.close()
+
+
+async def _cleanup_zombie_jobs():
+    """清理上次崩溃留下的僵尸任务（status=running 但 worker 已不在）。"""
+    import time
+    from sqlalchemy import text
+    from app.core.db import async_session_maker
+    async with async_session_maker() as s:
+        result = await s.execute(text(
+            "UPDATE job_runs SET status='error', finished_at=:now, error='worker重启，任务中断' "
+            "WHERE status='running'"
+        ), {"now": int(time.time())})
+        await s.commit()
+        if result.rowcount:
+            print(f"🧹 清理僵尸任务 {result.rowcount} 条")
 
 
 def create_app() -> FastAPI:
