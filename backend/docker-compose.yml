@@ -71,6 +71,8 @@ services:
       - .env
     ports:
       - "8088:8000"          # 宿主 8088（8000 已被其它项目的 portainer 占用）
+    volumes:
+      - ./app:/app/app:ro    # 挂载代码目录（只读），开发时改代码只需 restart
 
   # ===== Phase 2：容器化 worker + beat（消费 default/llm 队列）=====
   worker:
@@ -88,6 +90,8 @@ services:
       TZ: Asia/Shanghai
     env_file:
       - .env
+    volumes:
+      - ./app:/app/app:ro    # 挂载代码目录（只读）
 
   beat:
     build: .
@@ -102,6 +106,8 @@ services:
       TZ: Asia/Shanghai
     env_file:
       - .env
+    volumes:
+      - ./app:/app/app:ro    # 挂载代码目录（只读）
 
   # 浏览器队列 worker 有两种运行方式（二选一）：
   #

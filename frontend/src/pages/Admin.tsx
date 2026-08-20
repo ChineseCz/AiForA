@@ -23,8 +23,11 @@ function JobPanel({ title, desc, kind, triggerPath, statusPath, body }: {
 
   const trigger = () => {
     api.post(triggerPath, body ?? {}).then((r) => {
-      if (r.data?.started === false && r.data?.running) message.info("任务已在运行中");
-      else message.success("已触发");
+      if (r.data?.started === false && r.data?.running) {
+        message.warning(r.data?.error || "任务已在运行中，请稍后再试");
+      } else {
+        message.success("已触发");
+      }
       setPolling(true);
     }).catch((e) => message.error(errMsg(e)));
   };
@@ -144,7 +147,14 @@ function JobPanelInline(p: { kind: string; triggerPath: string; statusPath: stri
   const { data: status } = useJobStatus(p.kind, p.statusPath, polling);
   useEffect(() => { setPolling(!!status?.running); }, [status?.running]);
   const trigger = () => api.post(p.triggerPath, p.body)
-    .then(() => { message.success("已触发"); setPolling(true); })
+    .then((r) => {
+      if (r.data?.started === false && r.data?.running) {
+        message.warning(r.data?.error || "任务已在运行中，请稍后再试");
+      } else {
+        message.success("已触发");
+      }
+      setPolling(true);
+    })
     .catch((e) => message.error(errMsg(e)));
   return (
     <Space>
@@ -159,12 +169,33 @@ export default function Admin() {
   const { logout } = useAuth();
   const isMobile = useIsMobile();
 
+  const cleanupZombie = () => {
+    api.post("/api/jobs/cleanup-zombie").then((r) => {
+      if (r.data.cleaned === 0) {
+        message.info("没有僵尸任务需要清理");
+      } else {
+        message.success(`已清理 ${r.data.cleaned} 个僵尸任务`);
+      }
+    }).catch((e) => message.error(errMsg(e)));
+  };
+
   return (
     <Space direction="vertical" size={isMobile ? 12 : 16} style={{ width: "100%" }}>
       <Row justify="space-between" align="middle">
         <Typography.Title level={isMobile ? 5 : 4} style={{ margin: 0 }}>管理后台</Typography.Title>
         <Button onClick={logout} size={isMobile ? "small" : "middle"}>退出登录</Button>
       </Row>
+
+      <Card size="small" style={{ marginBottom: 12 }}>
+        <Space>
+          <Button danger onClick={cleanupZombie}>
+            清理僵尸任务
+          </Button>
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            如果任务卡住超过 2 小时，点击清理后可重新触发
+          </Typography.Text>
+        </Space>
+      </Card>
 
       <Row gutter={[isMobile ? 8 : 16, isMobile ? 8 : 16]}>
         <Col xs={24} md={12}>

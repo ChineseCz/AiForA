@@ -19,7 +19,9 @@ async def api_groups(
     user_id: str = Depends(require_visitor),
     session: AsyncSession = Depends(db_session),
 ):
-    if not is_paper:
+    if is_paper:
+        await groups_repo.sync_paper_auto_groups(session, user_id)
+    else:
         await groups_repo.sync_auto_groups(session, user_id)
     return {"groups": await groups_repo.list_groups(session, user_id, is_paper), "error": ""}
 

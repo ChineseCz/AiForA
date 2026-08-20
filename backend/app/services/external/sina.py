@@ -127,19 +127,24 @@ def fetch_index_kline(code: str, datalen: int = 500) -> list[dict]:
 _SINA_QFQ_URL = "https://finance.sina.com.cn/realstock/company"
 
 
-def fetch_qfq_factors(code: str) -> list[dict]:
+def fetch_qfq_factors(code: str, max_retries: int = 3) -> list[dict]:
     """前复权调整因子表：[{"d": "2026-05-25", "f": 1.0}, ...]，按日期倒序，只列出发生过除权
     除息的那些日期（稀疏表）。纯 requests，不用过 kline.py 那套反爬的浏览器流程。
     失败/未上市/没有除权记录一律返回空列表，调用方按"没有因子=不用调整"处理，不抛异常。
     """
     url = f"{_SINA_QFQ_URL}/{sina_symbol(code)}/qfq.js"
-    try:
-        r = requests.get(url, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
-        r.raise_for_status()
-        body = r.text
-    except Exception as e:  # noqa: BLE001
-        print(f"⚠️ 复权因子拉取失败 {code}：{e}")
-        return []
+    body = ""
+    for attempt in range(max_retries):
+        try:
+            r = requests.get(url, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
+            r.raise_for_status()
+            body = r.text
+            break
+        except Exception as e:  # noqa: BLE001
+            if attempt == max_retries - 1:
+                print(f"⚠️ 复权因子拉取失败 {code}（已重试{max_retries}次）：{e}")
+                return []
+            time.sleep(0.5 * (2 ** attempt))
     comment_at = body.find("/*")
     if comment_at >= 0:
         body = body[:comment_at]

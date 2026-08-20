@@ -379,6 +379,19 @@ export const usePaperAccount = () =>
     queryFn: () => get<{ balance: number; error: string }>("/api/trades/paper-account"),
   });
 
+export const useResetPaperAccount = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (capital: number) =>
+      api.post<{ balance: number; error: string }>("/api/trades/paper-account/reset", { capital }).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["paper_account"] });
+      qc.invalidateQueries({ queryKey: ["trades"] });
+      qc.invalidateQueries({ queryKey: ["groups"] });
+    },
+  });
+};
+
 export const useStockAiAnalysis = (code: string, enabled: boolean) =>
   useQuery({
     queryKey: ["stock_ai_analysis", code],

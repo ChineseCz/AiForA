@@ -126,7 +126,9 @@ async def api_create_trade(
             await paper_repo.credit(session, user_id, amount)
     data = body.model_dump(exclude={"is_paper"})
     trade = await trades_repo.create_trade(session, user_id, data, body.is_paper)
-    if not body.is_paper:
+    if body.is_paper:
+        await groups_repo.sync_paper_auto_groups(session, user_id)
+    else:
         await groups_repo.sync_auto_groups(session, user_id)
     return {"trade": trade, "error": ""}
 
@@ -158,7 +160,9 @@ async def api_delete_trade(
             await paper_repo.credit(session, user_id, amount)
         else:
             await paper_repo.debit(session, user_id, amount)
-    if not is_paper:
+    if is_paper:
+        await groups_repo.sync_paper_auto_groups(session, user_id)
+    else:
         await groups_repo.sync_auto_groups(session, user_id)
     return {"error": ""}
 
@@ -170,6 +174,35 @@ async def api_paper_account(
 ):
     account = await paper_repo.get_or_create(session, user_id)
     return {"balance": account["balance"], "error": ""}
+
+
+class ResetPaperBody(BaseModel):
+    capital: float = 100000
+
+
+@router.post("/trades/paper-account/reset")
+async def api_reset_paper_account(
+    body: ResetPaperBody,
+    user_id: str = Depends(require_visitor),
+    session: AsyncSession = Depends(db_session),
+):
+    """清空模拟盘交易记录并重置初始资金。"""
+    if body.capital <= 0:
+        raise HTTPException(400, "capital 必须大于 0")
+    await session.execute(
+        text("DELETE FROM trade_records WHERE user_id=:u AND is_paper=true"),
+        {"u": user_id},
+    )
+    await session.execute(
+        text(
+            "INSERT INTO paper_accounts (user_id, balance, created_at) VALUES (:u, :b, :t) "
+            "ON CONFLICT (user_id) DO UPDATE SET balance=:b"
+        ),
+        {"u": user_id, "b": Decimal(str(body.capital)), "t": int(__import__("time").time() * 1000)},
+    )
+    await groups_repo.sync_paper_auto_groups(session, user_id)
+    await session.commit()
+    return {"balance": body.capital, "error": ""}
 
 
 @router.post("/trades/import")
@@ -187,7 +220,9 @@ async def api_import_trades(
     if not records:
         raise HTTPException(400, "未识别到任何成交记录，请确认文件格式")
     imported = await trades_repo.bulk_import_trades(session, user_id, records, is_paper)
-    if not is_paper:
+    if is_paper:
+        await groups_repo.sync_paper_auto_groups(session, user_id)
+    else:
         await groups_repo.sync_auto_groups(session, user_id)
     return {"imported": imported, "total": len(records), "error": ""}
 

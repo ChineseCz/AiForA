@@ -36,7 +36,7 @@ class _JobLogWriter:
 
     def flush_db(self):
         if self.buf:
-            jobs.append_log(self.job_id, self.buf)
+            jobs.append_log(self.job_id, "\n".join(self.buf))
             self.buf = []
             self.last_flush = time.time()
 

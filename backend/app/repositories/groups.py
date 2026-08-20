@@ -103,45 +103,57 @@ async def _replace_members(session: AsyncSession, group_id: int, stocks: list[di
         ), {"gid": group_id, "code": s["code"], "name": s.get("name", ""), "ts": now})
 
 
+async def _sync_auto_groups_for(session: AsyncSession, user_id: str, is_paper: bool) -> None:
+    rows = (await session.execute(text(
+        "SELECT code, stock_name, direction, quantity, trade_date"
+        " FROM trade_records WHERE user_id = :uid AND is_paper = :ip ORDER BY trade_date ASC, id ASC"
+    ), {"uid": user_id, "ip": is_paper})).mappings().all()
+
+    hold_qty: dict[str, int] = {}
+    stock_name: dict[str, str] = {}
+    cleared: dict[str, str] = {}
+
+    for r in rows:
+        code = r["code"]
+        hold_qty.setdefault(code, 0)
+        stock_name.setdefault(code, r["stock_name"])
+        if r["direction"] == "buy":
+            hold_qty[code] += r["quantity"]
+        else:
+            new_qty = max(0, hold_qty[code] - r["quantity"])
+            if hold_qty[code] > 0 and new_qty == 0:
+                cleared[code] = r["trade_date"]
+            hold_qty[code] = new_qty
+
+    cutoff = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
+
+    held = [{"code": c, "name": stock_name[c]} for c, q in hold_qty.items() if q > 0]
+    recently_cleared = [
+        {"code": c, "name": stock_name[c]}
+        for c, d in cleared.items()
+        if hold_qty.get(c, 0) == 0 and d >= cutoff
+    ]
+
+    hold_gid = await _get_or_create_group_id(session, user_id, "持仓", is_paper=is_paper)
+    await _replace_members(session, hold_gid, held)
+
+    clear_gid = await _get_or_create_group_id(session, user_id, "清仓", is_paper=is_paper)
+    await _replace_members(session, clear_gid, recently_cleared)
+
+    await session.commit()
+
+
 async def sync_auto_groups(session: AsyncSession, user_id: str) -> None:
-    """按实盘 trade_records 自动同步「持仓」和「清仓」分组（仅针对 is_paper=False）。"""
+    """按实盘 trade_records 自动同步「持仓」和「清仓」分组。"""
     try:
-        rows = (await session.execute(text(
-            "SELECT code, stock_name, direction, quantity, trade_date"
-            " FROM trade_records WHERE user_id = :uid AND is_paper = FALSE ORDER BY trade_date ASC, id ASC"
-        ), {"uid": user_id})).mappings().all()
-
-        hold_qty: dict[str, int] = {}
-        stock_name: dict[str, str] = {}
-        cleared: dict[str, str] = {}
-
-        for r in rows:
-            code = r["code"]
-            hold_qty.setdefault(code, 0)
-            stock_name.setdefault(code, r["stock_name"])
-            if r["direction"] == "buy":
-                hold_qty[code] += r["quantity"]
-            else:
-                new_qty = max(0, hold_qty[code] - r["quantity"])
-                if hold_qty[code] > 0 and new_qty == 0:
-                    cleared[code] = r["trade_date"]
-                hold_qty[code] = new_qty
-
-        cutoff = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
-
-        held = [{"code": c, "name": stock_name[c]} for c, q in hold_qty.items() if q > 0]
-        recently_cleared = [
-            {"code": c, "name": stock_name[c]}
-            for c, d in cleared.items()
-            if hold_qty.get(c, 0) == 0 and d >= cutoff
-        ]
-
-        hold_gid = await _get_or_create_group_id(session, user_id, "持仓", is_paper=False)
-        await _replace_members(session, hold_gid, held)
-
-        clear_gid = await _get_or_create_group_id(session, user_id, "清仓", is_paper=False)
-        await _replace_members(session, clear_gid, recently_cleared)
-
-        await session.commit()
+        await _sync_auto_groups_for(session, user_id, is_paper=False)
     except Exception as e:  # noqa: BLE001
         print(f"[sync_auto_groups] 自动分组同步出错，user={user_id}: {e}")
+
+
+async def sync_paper_auto_groups(session: AsyncSession, user_id: str) -> None:
+    """按模拟盘 trade_records 自动同步「持仓」和「清仓」分组。"""
+    try:
+        await _sync_auto_groups_for(session, user_id, is_paper=True)
+    except Exception as e:  # noqa: BLE001
+        print(f"[sync_paper_auto_groups] 自动分组同步出错，user={user_id}: {e}")

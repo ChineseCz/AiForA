@@ -376,6 +376,23 @@ function ScreenerTab({ pendingRun, onRunDone }: { pendingRun: boolean; onRunDone
   const [rows, setRows] = useState<StockRow[]>(screenerState.rows);
   const [tradeDate, setTradeDate] = useState<string | null>(screenerState.tradeDate);
 
+  // 组件 mount 时从 screenerState 同步状态（从板块行情跳转时需要）
+  useEffect(() => {
+    setStrategies(screenerState.strategies);
+    setConds(screenerState.conds);
+    setNameQuery(screenerState.nameQuery);
+    setCapFilter(screenerState.capFilter);
+    setMentionOn(screenerState.mentionOn);
+    setMentionDays(screenerState.mentionDays);
+    setMentionUsers(screenerState.mentionUsers);
+    setMentionBullishOnly(screenerState.mentionBullishOnly);
+    setSectorOn(screenerState.sectorOn);
+    setSectorMode(screenerState.sectorMode);
+    setSectorNames(screenerState.sectorNames);
+    setRows(screenerState.rows);
+    setTradeDate(screenerState.tradeDate);
+  }, []);
+
   useEffect(() => {
     if (paramsLoaded) return;
     const value = (userSettingsData?.value ?? sysDefaultsData?.value) as

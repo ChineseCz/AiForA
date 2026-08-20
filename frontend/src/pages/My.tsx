@@ -9,7 +9,7 @@ import { Link } from "react-router-dom";
 
 import { errMsg, api } from "../api/client";
 import { useQueryClient, useQueries } from "@tanstack/react-query";
-import { useGroupMembers, useGroupMutations, useGroups, useDeleteNote, useFavoriteNote, useGenerateNote, useNote, useNoteList, useNoteMutation, usePaperAccount, useTradeMutations, useTrades, useTradeStats } from "../api/hooks";
+import { useGroupMembers, useGroupMutations, useGroups, useDeleteNote, useFavoriteNote, useGenerateNote, useNote, useNoteList, useNoteMutation, usePaperAccount, useResetPaperAccount, useTradeMutations, useTrades, useTradeStats } from "../api/hooks";
 import { getToken, getVisitorToken } from "../api/client";
 import type { GroupItem, GroupMember, TradeNote, TradeRecord } from "../api/types";
 import { useIsMobile } from "../hooks/useIsMobile";
@@ -106,7 +106,7 @@ function WatchlistTab({ isPaper = false }: { isPaper?: boolean }) {
       key: "del",
       width: 50,
       render: (code: string) => {
-        const isAuto = !isPaper && AUTO_GROUP_NAMES.has(selectedGroup?.name ?? "");
+        const isAuto = AUTO_GROUP_NAMES.has(selectedGroup?.name ?? "");
         if (isAuto) return null;
         return (
           <Popconfirm title="移除该股票？" onConfirm={() =>
@@ -140,7 +140,7 @@ function WatchlistTab({ isPaper = false }: { isPaper?: boolean }) {
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             {groups.map((g) => {
               const active = selectedId === g.id;
-              const isAuto = !isPaper && AUTO_GROUP_NAMES.has(g.name ?? "");
+              const isAuto = AUTO_GROUP_NAMES.has(g.name ?? "");
               return (
                 <div
                   key={g.id}
@@ -195,7 +195,7 @@ function WatchlistTab({ isPaper = false }: { isPaper?: boolean }) {
           <>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
               <Text strong>{selectedGroup?.name ?? "成员列表"}</Text>
-              {(!isPaper && !AUTO_GROUP_NAMES.has(selectedGroup?.name ?? "")) && (
+              {(!AUTO_GROUP_NAMES.has(selectedGroup?.name ?? "")) && (
                 <Button size="small" icon={<PlusOutlined />} onClick={() => setAddOpen(true)}>添加股票</Button>
               )}
             </div>
@@ -206,7 +206,7 @@ function WatchlistTab({ isPaper = false }: { isPaper?: boolean }) {
               loading={loadingMembers}
               size="small"
               pagination={false}
-              locale={{ emptyText: (!isPaper && AUTO_GROUP_NAMES.has(selectedGroup?.name ?? "")) ? "暂无数据（交易记录同步后自动更新）" : "暂无成员，点击「添加股票」" }}
+              locale={{ emptyText: AUTO_GROUP_NAMES.has(selectedGroup?.name ?? "") ? "暂无数据（交易记录同步后自动更新）" : "暂无成员，点击「添加股票」" }}
               scroll={{ x: isMobile ? 360 : undefined }}
             />
           </>
@@ -323,6 +323,9 @@ function ReviewTab({ isPaper = false }: { isPaper?: boolean }) {
   const trades = (data?.items ?? []) as TradeRecord[];
   const muts = useTradeMutations(isPaper);
   const { data: accountData } = usePaperAccount();
+  const resetPaper = useResetPaperAccount();
+  const [resetOpen, setResetOpen] = useState(false);
+  const [resetCapital, setResetCapital] = useState(100000);
 
   const summary = !filterCode ? pnlSummary(trades) : [];
   const activeCodes = summary.map((p) => p.code);
@@ -385,7 +388,9 @@ function ReviewTab({ isPaper = false }: { isPaper?: boolean }) {
   const tradeCols = [
     { title: "日期", dataIndex: "trade_date", width: 100 },
     { title: "代码", dataIndex: "code", width: 80 },
-    { title: "名称", dataIndex: "stock_name", ellipsis: true },
+    { title: "名称", dataIndex: "stock_name", ellipsis: true,
+      render: (name: string, r: TradeRecord) => <Link to={`/stock/${r.code}`}>{name}</Link>,
+    },
     {
       title: "方向",
       dataIndex: "direction",
@@ -424,26 +429,58 @@ function ReviewTab({ isPaper = false }: { isPaper?: boolean }) {
     <>
       <StatsCards isPaper={isPaper} />
       {isPaper && balance != null && (
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 16 }}>
-          {[
-            { label: "可用资金", value: balance.toFixed(0), color: undefined },
-            { label: "持仓市值", value: totalMktValue.toFixed(0), color: undefined },
-            { label: "总资产", value: totalAssets != null ? totalAssets.toFixed(0) : "–", color: undefined },
-            {
-              label: "浮动盈亏",
-              value: `${totalFloatPnl > 0 ? "+" : ""}${totalFloatPnl.toFixed(0)}`,
-              color: totalFloatPnl > 0 ? token.colorError : totalFloatPnl < 0 ? token.colorSuccess : undefined,
-            },
-          ].map(({ label, value, color }) => (
-            <div key={label} style={{
-              background: token.colorFillQuaternary,
-              borderRadius: 8, padding: "8px 14px", minWidth: 100, flex: "1 0 auto",
-            }}>
-              <div style={{ fontSize: 11, color: token.colorTextSecondary }}>{label}</div>
-              <div style={{ fontSize: 18, fontWeight: 600, color }}>{value}</div>
-            </div>
-          ))}
-        </div>
+        <>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 8 }}>
+            {[
+              { label: "可用资金", value: balance.toFixed(0), color: undefined },
+              { label: "持仓市值", value: totalMktValue.toFixed(0), color: undefined },
+              { label: "总资产", value: totalAssets != null ? totalAssets.toFixed(0) : "–", color: undefined },
+              {
+                label: "浮动盈亏",
+                value: `${totalFloatPnl > 0 ? "+" : ""}${totalFloatPnl.toFixed(0)}`,
+                color: totalFloatPnl > 0 ? token.colorError : totalFloatPnl < 0 ? token.colorSuccess : undefined,
+              },
+            ].map(({ label, value, color }) => (
+              <div key={label} style={{
+                background: token.colorFillQuaternary,
+                borderRadius: 8, padding: "8px 14px", minWidth: 100, flex: "1 0 auto",
+              }}>
+                <div style={{ fontSize: 11, color: token.colorTextSecondary }}>{label}</div>
+                <div style={{ fontSize: 18, fontWeight: 600, color }}>{value}</div>
+              </div>
+            ))}
+          </div>
+          <div style={{ marginBottom: 12 }}>
+            <Button size="small" danger onClick={() => { setResetCapital(100000); setResetOpen(true); }}>重置模拟盘</Button>
+          </div>
+          <Modal
+            title="重置模拟盘"
+            open={resetOpen}
+            onCancel={() => setResetOpen(false)}
+            onOk={() => {
+              resetPaper.mutate(resetCapital, {
+                onSuccess: () => { message.success("模拟盘已重置"); setResetOpen(false); },
+                onError: (e) => message.error(errMsg(e, "重置失败")),
+              });
+            }}
+            confirmLoading={resetPaper.isPending}
+            okText="确认重置"
+            okButtonProps={{ danger: true }}
+          >
+            <p>将清空全部模拟盘交易记录，并重置初始资金。</p>
+            <Space>
+              <Text>初始资金：</Text>
+              <InputNumber
+                min={1000} max={100000000} step={10000}
+                value={resetCapital}
+                onChange={(v) => setResetCapital(v ?? 100000)}
+                formatter={(v) => `${v}`.replace(/\B(?=(\d{3})+(?!\d))/g, ",")}
+                style={{ width: 160 }}
+              />
+              <Text type="secondary">元</Text>
+            </Space>
+          </Modal>
+        </>
       )}
       <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
         <Input.Search

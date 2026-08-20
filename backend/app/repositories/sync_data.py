@@ -195,11 +195,13 @@ def get_board_code(name: str) -> str | None:
 def get_sector_members_cached(sector: str, max_age_days: int = 7) -> list[str] | None:
     with sync_session() as s:
         row = s.execute(text(
-            "SELECT updated_at FROM stock_sector WHERE sector = :s ORDER BY updated_at DESC LIMIT 1"
+            "SELECT board_code, updated_at FROM stock_sector WHERE sector = :s ORDER BY updated_at DESC LIMIT 1"
         ), {"s": sector}).first()
         if not row:
             return None
-        if int(time.time()) - (row[0] or 0) > max_age_days * 86400:
+        # 雪球板块只能由已登录浏览器同步，不能在请求路径临时回源；保留上次
+        # 成功同步的成分股，直到下次浏览器同步覆盖它们。
+        if not str(row[0] or "").startswith("xq_") and int(time.time()) - (row[1] or 0) > max_age_days * 86400:
             return None
         codes = s.execute(text("SELECT code FROM stock_sector WHERE sector = :s"), {"s": sector}).all()
         return [c[0] for c in codes]
@@ -217,22 +219,23 @@ def get_sector_members_cached_batch(sectors: list[str], max_age_days: int = 7) -
     with sync_session() as s:
         rows = s.execute(text(
             """
-            SELECT sector, code, updated_at
+            SELECT sector, code, board_code, updated_at
             FROM stock_sector
             WHERE sector = ANY(:sectors)
             """
         ), {"sectors": sectors}).all()
     cutoff = int(time.time()) - max_age_days * 86400
-    by_sector: dict[str, list[tuple[str, int]]] = {}
-    for sector, code, updated_at in rows:
-        by_sector.setdefault(sector, []).append((code, updated_at or 0))
+    by_sector: dict[str, list[tuple[str, str, int]]] = {}
+    for sector, code, board_code, updated_at in rows:
+        by_sector.setdefault(sector, []).append((code, board_code or "", updated_at or 0))
     out: dict[str, list[str]] = {}
     for sector, items in by_sector.items():
         # 与单只版本一致：取该板块下最新一次写入的时间判断新鲜度（save_sector_members 同批写入的
         # updated_at 本应相同，这里取 max 兼容历史脏数据/曾经的部分失败重试）。
-        if max(u for _, u in items) < cutoff:
+        is_xueqiu = any(board_code.startswith("xq_") for _, board_code, _ in items)
+        if not is_xueqiu and max(u for _, _, u in items) < cutoff:
             continue
-        out[sector] = [c for c, _ in items]
+        out[sector] = [code for code, _, _ in items]
     return out
 
 
@@ -254,26 +257,31 @@ def save_sector_members(sector: str, board_code: str, codes: list[str]) -> int:
 
 
 def save_xueqiu_sectors(items: list[dict]) -> tuple[int, int]:
-    """写入雪球板块抓取结果：先落 sector_catalog（供 save_sector_catalog 处理撞名跳过），
-    再对每个真正落地的行业落 stock_sector 成分股（沿用 save_sector_members 的整体替换语义）。
+    """写入雪球板块抓取结果：先落 sector_catalog（处理新增板块+撞名跳过），
+    再对每个板块更新 stock_sector 成分股（无论板块是否新增，成分股都需要更新）。
     items 形如 [{"board_code": "xq_S2701", "name": "半导体", "kind": "industry", "codes": [...]}, ...]。
-    返回 (落地的行业数, 成分股关系总数)。
+    返回 (更新的行业数, 成分股关系总数)。
     """
-    saved_names = save_sector_catalog([
+    # 先落板块目录（撞名的不会入库，但 board_code 已存在的板块仍然需要更新成分股）
+    save_sector_catalog([
         {"board_code": it["board_code"], "name": it["name"], "kind": it["kind"]} for it in items
     ])
-    if not saved_names:
-        return 0, 0
+
+    # 查询本批次 board_code 在库里实际对应的 name（可能和本批次传入的 name 不同——
+    # 如果之前雪球"半导体"已入库，后来新浪也新增了"半导体"，save_sector_catalog 会跳过更新，
+    # 库里的 xq_S2701 仍然对应"半导体"，但我们要用库里实际存的 name 去更新成分股）
     with sync_session() as s:
-        landed = {row[0] for row in s.execute(text(
-            "SELECT name FROM sector_catalog WHERE board_code = ANY(:codes)"
+        landed = {row[0]: row[1] for row in s.execute(text(
+            "SELECT board_code, name FROM sector_catalog WHERE board_code = ANY(:codes)"
         ), {"codes": [it["board_code"] for it in items]}).all()}
+
     n_sectors = 0
     n_codes = 0
     for it in items:
-        if it["name"] not in landed:
-            continue  # 撞名被跳过，不写成分股（避免覆盖已有同名板块的成分股关系）
-        n = save_sector_members(it["name"], it["board_code"], it.get("codes") or [])
+        actual_name = landed.get(it["board_code"])
+        if not actual_name:
+            continue  # board_code 不在库里（被 save_sector_catalog 的撞名逻辑完全跳过了）
+        n = save_sector_members(actual_name, it["board_code"], it.get("codes") or [])
         n_sectors += 1
         n_codes += n
     return n_sectors, n_codes
@@ -549,6 +557,27 @@ def save_snapshot(trade_date: str, rows: list[dict]) -> int:
     return len(payload)
 
 
+def has_missing_bars(code: str, days: int = 60) -> bool:
+    """检查该股票最近 N 天是否有缺失（与市场交易日历对比）。
+
+    简化版：不依赖外部交易日历，直接看该股票的 K线条数是否明显少于预期。
+    60 天约 42 个交易日（去除周末），允许 10% 容差（节假日/临时停牌），< 38 天视为缺失。
+    """
+    with sync_session() as s:
+        latest_date = s.execute(text("SELECT MAX(trade_date) FROM stock_daily")).scalar()
+        if not latest_date:
+            return True  # 没有任何数据，肯定需要补
+        # 计算 N 天前的日期
+        from datetime import datetime, timedelta
+        latest = datetime.fromisoformat(latest_date)
+        cutoff = (latest - timedelta(days=days)).isoformat()
+        count = s.execute(text(
+            "SELECT COUNT(*) FROM stock_daily WHERE code = :code AND trade_date >= :cutoff"
+        ), {"code": code, "cutoff": cutoff}).scalar() or 0
+        # 60天约42个交易日，允许10%容差（节假日），低于38天视为有缺失
+        return count < 38
+
+
 def save_history_bars(rows: list[dict]) -> int:
     """冲突时整行覆盖 OHLC/volume（不再是"只补空 open"）。
 
@@ -576,6 +605,39 @@ def save_history_bars(rows: list[dict]) -> int:
             """
         ), payload)
     return len(payload)
+
+
+def save_history_bars_batch(stock_bars: list[tuple[str, list[dict]]]) -> int:
+    """批量写多只股票的K线数据。stock_bars 为 [(code, bars), ...] 列表，合并成一次数据库事务。
+
+    用于 K线回补批次优化：累积若干只股票的数据后一次性提交，减少事务开销。
+    """
+    if not stock_bars:
+        return 0
+    now = int(time.time())
+    payload = []
+    for code, bars in stock_bars:
+        for r in bars:
+            payload.append({
+                "trade_date": r.get("trade_date"), "code": r.get("code"), "name": r.get("name"),
+                "close": r.get("close"), "high": r.get("high"), "low": r.get("low"),
+                "open": r.get("open"), "volume": r.get("volume"), "fetched_at": now,
+            })
+    if not payload:
+        return 0
+    with sync_session() as s:
+        s.execute(text(
+            """
+            INSERT INTO stock_daily
+            (trade_date, code, name, close, high, low, open, volume, fetched_at)
+            VALUES (:trade_date, :code, :name, :close, :high, :low, :open, :volume, :fetched_at)
+            ON CONFLICT (trade_date, code) DO UPDATE SET
+                close = EXCLUDED.close, high = EXCLUDED.high, low = EXCLUDED.low,
+                open = EXCLUDED.open, volume = EXCLUDED.volume, fetched_at = EXCLUDED.fetched_at
+            """
+        ), payload)
+    return len(payload)
+
 
 
 def save_finance(rows: list[dict]) -> int:
@@ -644,7 +706,7 @@ def save_sector_catalog(rows: list[dict]) -> int:
     with sync_session() as s:
         existing = {
             row[0] for row in s.execute(text(
-                "SELECT name FROM sector_catalog WHERE board_code != ANY(:codes)"
+                "SELECT name FROM sector_catalog WHERE NOT (board_code = ANY(:codes))"
             ), {"codes": [p["board_code"] for p in payload]}).all()
         }
         payload = [p for p in payload if p["name"] not in existing]
