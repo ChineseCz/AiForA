@@ -35,6 +35,11 @@ celery_app.conf.update(
             "task": "summarize.weekly_tick",
             "schedule": crontab(hour=20, minute=0, day_of_week="0,3"),
         },
+        # 雪球板块同步：每月1号 02:00 刷新雪球申万行业成分股缓存（90天有效期，提前刷新防止过期）
+        "monthly-sync-xueqiu-sectors": {
+            "task": "browser.sync_xueqiu_sectors",
+            "schedule": crontab(hour=2, minute=0, day_of_month=1),
+        },
     },
 )
 

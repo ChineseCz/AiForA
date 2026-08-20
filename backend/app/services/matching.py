@@ -154,10 +154,12 @@ def get_sector_members(sector: str) -> list[str]:
     只能由宿主 browser 队列的 sync_xueqiu_sectors 任务批量预抓；这里读不到缓存就直接返回空，
     不去现拉（现算路径只对新浪来源有效）。
     """
-    codes = db.get_sector_members_cached(sector)
+    board_code = db.get_board_code(sector)
+    # 雪球板块用 90 天缓存有效期（成分股变化不频繁，且无法实时拉取），新浪板块用默认 7 天
+    max_age = 90 if board_code and board_code.startswith("xq_") else 7
+    codes = db.get_sector_members_cached(sector, max_age_days=max_age)
     if codes is not None:
         return codes
-    board_code = db.get_board_code(sector)
     if not board_code or board_code.startswith("xq_"):
         return []
     codes = sina.fetch_board_members(board_code)
@@ -171,10 +173,25 @@ def match_sector(candidates: list[dict], sector_names: list[str]) -> list[dict]:
     "看多板块"模式常常一次给出上百个板块/概念名（derive_bullish_sectors 的结果），逐个调用
     get_sector_members 会变成 N 次×2条查询的往返；先用 get_sector_members_cached_batch 一次
     查询拿到绝大多数已缓存的，只有真正缺失的少数板块名才走原来的单个懒加载路径。
+
+    批量查询雪球板块时用 90 天缓存有效期（与单个查询逻辑一致）。
     """
     if not candidates or not sector_names:
         return []
-    cached = db.get_sector_members_cached_batch(sector_names)
+    # 先查所有板块的 board_code，判断哪些是雪球来源
+    board_codes = {name: db.get_board_code(name) for name in sector_names}
+    is_xueqiu = {name: (code and code.startswith("xq_")) for name, code in board_codes.items()}
+
+    # 雪球板块用 90 天，新浪板块用 7 天——分两批查询
+    xq_names = [n for n in sector_names if is_xueqiu.get(n)]
+    sina_names = [n for n in sector_names if not is_xueqiu.get(n)]
+
+    cached = {}
+    if xq_names:
+        cached.update(db.get_sector_members_cached_batch(xq_names, max_age_days=90))
+    if sina_names:
+        cached.update(db.get_sector_members_cached_batch(sina_names, max_age_days=7))
+
     codes: set[str] = set()
     for names in cached.values():
         codes.update(names)
