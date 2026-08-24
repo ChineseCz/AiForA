@@ -1,5 +1,5 @@
 import { ArrowLeftOutlined, MobileOutlined, SettingOutlined, StarOutlined } from "@ant-design/icons";
-import { Button, Card, Col, Collapse, DatePicker, Descriptions, Dropdown, Empty, Form, Input, InputNumber, List, Modal, Row, Select, Space, Spin, Tag, Tooltip, Typography, message } from "antd";
+import { Button, Card, Col, Collapse, DatePicker, Descriptions, Dropdown, Empty, Form, Input, InputNumber, List, Modal, Row, Segmented, Select, Space, Spin, Tag, Tooltip, Typography, message } from "antd";
 import dayjs from "dayjs";
 import ReactECharts from "echarts-for-react";
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
@@ -727,6 +727,23 @@ export default function StockDetail() {
       </Space>
 
       <Card styles={{ body: { padding: isMobile ? 6 : 12 } }}>
+        <Space size={8} style={{ marginBottom: 6 }}>
+          <Typography.Text strong style={{ fontSize: 13 }}>K线周期</Typography.Text>
+          <Segmented
+            size="small"
+            value={period}
+            onChange={(v) => {
+              setPeriod(v as "day" | "week" | "month");
+              setHoverIdx(null);
+              rangeRef.current = { start: 55, end: 100 };
+            }}
+            options={[
+              { value: "day", label: "日线" },
+              { value: "week", label: "周线" },
+              { value: "month", label: "月线" },
+            ]}
+          />
+        </Space>
         <Spin spinning={isLoading}>
           {bars.length ? (
             <>
@@ -766,21 +783,6 @@ export default function StockDetail() {
           ) : <Empty description="暂无K线数据（需先在后台回补历史K线）" />}
         </Spin>
         <Space style={{ marginTop: 8, marginBottom: 4 }} wrap>
-          <Select
-            size="small"
-            value={period}
-            onChange={(v: "day" | "week" | "month") => {
-              setPeriod(v);
-              setHoverIdx(null);
-              rangeRef.current = { start: 55, end: 100 };
-            }}
-            options={[
-              { value: "day", label: "日线" },
-              { value: "week", label: "周线" },
-              { value: "month", label: "月线" },
-            ]}
-            style={{ width: 76 }}
-          />
           <Button
             size="small"
             style={{ color: "#e64545", borderColor: "#e64545" }}
