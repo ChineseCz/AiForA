@@ -3,6 +3,8 @@ import json
 import logging
 import re
 import secrets
+import base64
+import html
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse, PlainTextResponse
@@ -45,6 +47,27 @@ def _email_code_key(email: str) -> str:
 
 def _email_resend_key(email: str) -> str:
     return f"emailcode:resend:{email}"
+
+
+def _reset_code_key(email: str) -> str:
+    return f"passwordreset:{email}"
+
+
+def _reset_resend_key(email: str) -> str:
+    return f"passwordreset:resend:{email}"
+
+
+def _captcha_key(purpose: str, challenge_id: str) -> str:
+    return f"captcha:{purpose}:{challenge_id}"
+
+
+def _captcha_svg(left: int, op: str, right: int) -> str:
+    expression = f"{left} {op} {right} = ?"
+    return f'''<svg xmlns="http://www.w3.org/2000/svg" width="144" height="48" viewBox="0 0 144 48">
+<rect width="144" height="48" rx="6" fill="#f5f7fa"/>
+<path d="M5 13 C34 3 55 24 79 12 S119 7 139 19 M3 38 C29 27 55 44 86 31 S119 29 141 40" fill="none" stroke="#d9e2ec" stroke-width="1.5"/>
+<text x="72" y="32" text-anchor="middle" font-family="Arial,sans-serif" font-size="19" font-weight="700" fill="#1f2937">{html.escape(expression)}</text>
+</svg>'''
 
 
 async def _json_body(request: Request) -> dict:
@@ -164,8 +187,16 @@ async def set_nickname(
 async def email_send_code(request: Request, c: CacheService = Depends(cache), session: AsyncSession = Depends(db_session)):
     body = await _json_body(request)
     email = str(body.get("email") or "").strip().lower()
+    challenge_id = str(body.get("captcha_id") or "").strip()
+    captcha_answer = str(body.get("captcha_answer") or "").strip()
     if not _EMAIL_RE.match(email):
         return JSONResponse({"error": "邮箱格式不正确"}, status_code=400)
+    if not challenge_id or not captcha_answer:
+        return JSONResponse({"error": "请先完成图片验证码"}, status_code=400)
+    expected = await c.client.get(_captcha_key("email-register", challenge_id))
+    await c.client.delete(_captcha_key("email-register", challenge_id))
+    if not expected or expected != captcha_answer:
+        return JSONResponse({"error": "图片验证码错误或已过期"}, status_code=400)
     if await users_repo.get_by_email(session, email):
         return JSONResponse({"error": "该邮箱已注册，请直接登录"}, status_code=400)
 
@@ -231,6 +262,78 @@ async def email_login(request: Request, session: AsyncSession = Depends(db_sessi
     if user.get("is_admin"):
         resp["admin_token"] = create_access_token(email, typ="admin", expire_minutes=settings.remember_jwt_expire_minutes if remember else settings.jwt_expire_minutes, sty="email")
     return resp
+
+
+@router.post("/email/reset-send-code")
+@limiter.limit(settings.rate_limit_email_send)
+async def email_reset_send_code(request: Request, c: CacheService = Depends(cache), session: AsyncSession = Depends(db_session)):
+    body = await _json_body(request)
+    email = str(body.get("email") or "").strip().lower()
+    challenge_id = str(body.get("captcha_id") or "").strip()
+    captcha_answer = str(body.get("captcha_answer") or "").strip()
+    if not challenge_id or not captcha_answer:
+        return JSONResponse({"error": "请先完成图片验证码"}, status_code=400)
+    expected = await c.client.get(_captcha_key("password-reset", challenge_id))
+    await c.client.delete(_captcha_key("password-reset", challenge_id))
+    if not expected or expected != captcha_answer:
+        return JSONResponse({"error": "图片验证码错误或已过期"}, status_code=400)
+    user = await users_repo.get_by_email(session, email) if _EMAIL_RE.match(email) else None
+    # 对外统一返回成功，避免通过接口枚举已注册邮箱。
+    if not user or not user.get("password_hash"):
+        return {"error": ""}
+    if await c.client.get(_reset_resend_key(email)):
+        return JSONResponse({"error": "发送太频繁，请稍后再试"}, status_code=429)
+    code = "".join(secrets.choice("0123456789") for _ in range(6))
+    await c.client.set(_reset_code_key(email), code, ex=settings.email_code_expire_seconds)
+    await c.client.set(_reset_resend_key(email), "1", ex=settings.email_resend_interval_seconds)
+    ok = await run_in_threadpool(send_verification_email, email, code)
+    if not ok:
+        return JSONResponse({"error": "验证码发送失败，请稍后重试"}, status_code=502)
+    return {"error": ""}
+
+
+async def _issue_email_captcha(c: CacheService, purpose: str) -> dict:
+    left = secrets.randbelow(8) + 2
+    right = secrets.randbelow(8) + 1
+    op = secrets.choice(("+", "-", "×"))
+    if op == "-" and right > left:
+        left, right = right, left
+    answer = str(left + right if op == "+" else left - right if op == "-" else left * right)
+    challenge_id = secrets.token_urlsafe(18)
+    await c.client.set(_captcha_key(purpose, challenge_id), answer, ex=settings.captcha_expire_seconds)
+    svg = _captcha_svg(left, op, right)
+    image = "data:image/svg+xml;base64," + base64.b64encode(svg.encode("utf-8")).decode("ascii")
+    return {"challenge_id": challenge_id, "image": image, "error": ""}
+
+
+@router.get("/email/reset-captcha")
+async def email_reset_captcha(c: CacheService = Depends(cache)):
+    return await _issue_email_captcha(c, "password-reset")
+
+
+@router.get("/email/register-captcha")
+async def email_register_captcha(c: CacheService = Depends(cache)):
+    return await _issue_email_captcha(c, "email-register")
+
+
+@router.post("/email/reset-password")
+@limiter.limit(settings.rate_limit_login)
+async def email_reset_password(request: Request, c: CacheService = Depends(cache), session: AsyncSession = Depends(db_session)):
+    body = await _json_body(request)
+    email = str(body.get("email") or "").strip().lower()
+    code = str(body.get("code") or "").strip()
+    password = str(body.get("password") or "")
+    if not _EMAIL_RE.match(email) or not code:
+        return JSONResponse({"error": "请输入邮箱和验证码"}, status_code=400)
+    if len(password) < 6:
+        return JSONResponse({"error": "密码至少 6 位"}, status_code=400)
+    saved = await c.client.get(_reset_code_key(email))
+    if not saved or saved != code:
+        return JSONResponse({"error": "验证码错误或已过期"}, status_code=401)
+    if not await users_repo.set_password_by_email(session, email, hash_password(password)):
+        return JSONResponse({"error": "邮箱账号不存在"}, status_code=400)
+    await c.client.delete(_reset_code_key(email))
+    return {"error": ""}
 
 
 # ===== 微信扫码 =====

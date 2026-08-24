@@ -328,6 +328,12 @@ export interface VisitorLoginResp {
   admin_token?: string;
 }
 
+export interface ResetCaptchaResp {
+  challenge_id: string;
+  image: string;
+  error: string;
+}
+
 export interface WechatQrcodeResp {
   scene_key: string;
   qr_url: string;

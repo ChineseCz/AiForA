@@ -9,7 +9,6 @@ import { api, errMsg } from "@/api/client";
 import {
   useAuthSettings, useJobStatus, useSaveAuthSettings, useSaveSchedule, useSchedule, useUsers,
 } from "@/api/hooks";
-import { useAuth } from "@/auth";
 import { useIsMobile } from "@/hooks/useIsMobile";
 
 // ---- 单个后台任务面板：触发 + 轮询状态 ----
@@ -172,7 +171,6 @@ function JobPanelInline(p: { kind: string; triggerPath: string; statusPath: stri
 }
 
 export default function Admin() {
-  const { logout } = useAuth();
   const isMobile = useIsMobile();
 
   const cleanupZombie = () => {
@@ -187,10 +185,7 @@ export default function Admin() {
 
   return (
     <Space direction="vertical" size={isMobile ? 12 : 16} style={{ width: "100%" }}>
-      <Row justify="space-between" align="middle">
-        <Typography.Title level={isMobile ? 5 : 4} style={{ margin: 0 }}>管理后台</Typography.Title>
-        <Button onClick={logout} size={isMobile ? "small" : "middle"}>退出登录</Button>
-      </Row>
+      <Typography.Title level={isMobile ? 5 : 4} style={{ margin: 0 }}>管理后台</Typography.Title>
 
       <Card size="small" style={{ marginBottom: 12 }}>
         <Space>

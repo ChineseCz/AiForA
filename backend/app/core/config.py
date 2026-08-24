@@ -87,7 +87,7 @@ class Settings(BaseSettings):
     rate_limit_public: str = "120/minute"   # 公开只读接口默认限额（按 IP）
     rate_limit_login: str = "5/minute"      # 登录接口更严（防爆破）
     rate_limit_sms_send: str = "1/minute"   # 发送验证码接口（按 IP，配合 Redis 按手机号节流）
-    rate_limit_email_send: str = "1/minute"  # 邮箱验证码发送接口（按 IP，配合 Redis 按邮箱节流）
+    rate_limit_email_send: str = "3/minute"  # 邮箱验证码发送接口（按 IP，配合 Redis 按邮箱节流）
 
     # ===== 访客账号（手机号+验证码）=====
     sms_code_length: int = 6
@@ -97,7 +97,8 @@ class Settings(BaseSettings):
 
     # ===== 邮箱账号（注册验证码 + 账密登录）=====
     email_code_expire_seconds: int = 600     # 注册验证码有效期 10 分钟
-    email_resend_interval_seconds: int = 60  # 同一邮箱重发间隔
+    email_resend_interval_seconds: int = 20  # 同一邮箱重发间隔，配合接口限流约1分钟3次
+    captcha_expire_seconds: int = 300  # 图片验证码有效期 5 分钟
     smtp_host: str = ""
     smtp_port: int = 465
     smtp_user: str = ""

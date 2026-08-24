@@ -61,6 +61,15 @@ async def get_by_email(session: AsyncSession, email: str) -> dict | None:
     return dict(row) if row else None
 
 
+async def set_password_by_email(session: AsyncSession, email: str, password_hash: str) -> bool:
+    result = await session.execute(
+        text("UPDATE users SET password_hash = :h WHERE email = :e"),
+        {"h": password_hash, "e": email},
+    )
+    await session.commit()
+    return result.rowcount > 0
+
+
 async def create_by_email(session: AsyncSession, email: str, password_hash: str) -> dict:
     """邮箱验证码校验通过后建号；email 已注册时返回 None 由调用方判断。"""
     result = await session.execute(

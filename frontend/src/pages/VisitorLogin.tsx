@@ -1,10 +1,10 @@
-import { LineChartOutlined } from "@ant-design/icons";
-import { Button, Card, Checkbox, Form, Input, Row, Tabs, Typography, message } from "antd";
+import { LineChartOutlined, ReloadOutlined } from "@ant-design/icons";
+import { Button, Card, Checkbox, Form, Input, Modal, Row, Segmented, Space, Tabs, Typography, message } from "antd";
 import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
 import { errMsg } from "@/api/client";
-import { useAuthConfig, useEmailLogin, useEmailRegister, useGuestLogin, useSendEmailCode, useWechatCodeLogin } from "@/api/hooks";
+import { useAuthConfig, useEmailLogin, useEmailRegister, useGuestLogin, useRegisterCaptcha, useResetCaptcha, useResetPassword, useSendEmailCode, useSendResetEmailCode, useWechatCodeLogin } from "@/api/hooks";
 import { useAuth } from "@/auth";
 import { useVisitorAuth } from "@/visitorAuth";
 
@@ -69,6 +69,46 @@ function EmailLoginTab() {
   const auth = useAuth();
   const from: string = (loc.state as { from?: string } | null)?.from ?? "/";
   const emailLogin = useEmailLogin();
+  const [loginForm] = Form.useForm();
+  const sendResetCode = useSendResetEmailCode();
+  const resetPassword = useResetPassword();
+  const [resetOpen, setResetOpen] = useState(false);
+  const [captchaOpen, setCaptchaOpen] = useState(false);
+  const [resetEmail, setResetEmail] = useState("");
+  const [resetSent, setResetSent] = useState(false);
+  const [captchaAnswer, setCaptchaAnswer] = useState("");
+  const [resetForm] = Form.useForm();
+  const captcha = useResetCaptcha(captchaOpen);
+
+  const sendReset = () => {
+    const email = resetEmail.trim().toLowerCase();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { message.warning("请输入正确的邮箱地址"); return; }
+    sendResetCode.mutate({ email, captcha_id: captcha.data?.challenge_id || "", captcha_answer: captchaAnswer.trim() }, {
+      onSuccess: () => { setResetSent(true); setCaptchaAnswer(""); setCaptchaOpen(false); message.success("如果邮箱已注册，验证码将发送到邮箱"); captcha.refetch(); },
+      onError: (e) => message.error(errMsg(e, "发送失败")),
+    });
+  };
+
+  const openReset = () => {
+    const email = String(loginForm.getFieldValue("email") || "").trim().toLowerCase();
+    if (!email) {
+      message.warning("请先填写邮箱，再点击忘记密码");
+      return;
+    }
+    setResetEmail(email);
+    setCaptchaAnswer("");
+    setResetOpen(true);
+  };
+
+  const reset = (values: { code: string; password: string }) => {
+    resetPassword.mutate(
+      { email: resetEmail.trim().toLowerCase(), code: values.code, password: values.password },
+      {
+        onSuccess: () => { message.success("密码已重置，请使用新密码登录"); setResetOpen(false); setResetSent(false); resetForm.resetFields(); },
+        onError: (e) => message.error(errMsg(e, "重置失败")),
+      },
+    );
+  };
 
   const handleLogin = (values: { email: string; password: string; remember?: boolean }) => {
     emailLogin.mutate(
@@ -85,7 +125,7 @@ function EmailLoginTab() {
   };
 
   return (
-    <Form layout="vertical" onFinish={handleLogin}>
+    <Form form={loginForm} layout="vertical" onFinish={handleLogin}>
       <Form.Item name="email" label="邮箱" rules={[{ required: true, message: "请输入邮箱" }]}>
         <Input placeholder="请输入邮箱" autoComplete="email" />
       </Form.Item>
@@ -98,6 +138,47 @@ function EmailLoginTab() {
           登录
         </Button>
       </Form.Item>
+      <div style={{ textAlign: "right", marginTop: 8 }}>
+        <Button type="link" size="small" onClick={openReset}>忘记密码？</Button>
+      </div>
+      <Modal
+        title="找回邮箱密码"
+        open={resetOpen}
+        onCancel={() => { setResetOpen(false); setCaptchaOpen(false); setResetSent(false); setCaptchaAnswer(""); resetForm.resetFields(); }}
+        footer={null}
+        destroyOnClose
+      >
+        <Space direction="vertical" style={{ width: "100%" }}>
+          <Typography.Text>验证码将发送到：{resetEmail}</Typography.Text>
+          <Button block onClick={() => setCaptchaOpen(true)}>验证并获取重置验证码</Button>
+          {resetSent && (
+            <Form form={resetForm} layout="vertical" onFinish={reset}>
+              <Form.Item name="code" label="验证码" rules={[{ required: true, message: "请输入验证码" }]}>
+                <Input maxLength={6} placeholder="请输入邮箱验证码" />
+              </Form.Item>
+              <Form.Item name="password" label="新密码" rules={[{ required: true, min: 6, message: "密码至少 6 位" }]}>
+                <Input.Password placeholder="至少 6 位" autoComplete="new-password" />
+              </Form.Item>
+              <Button type="primary" htmlType="submit" block loading={resetPassword.isPending}>确认重置密码</Button>
+            </Form>
+          )}
+        </Space>
+      </Modal>
+      <Modal
+        title="完成图片验证"
+        open={captchaOpen}
+        onCancel={() => setCaptchaOpen(false)}
+        onOk={sendReset}
+        okText="验证并发送"
+        confirmLoading={sendResetCode.isPending}
+        destroyOnClose
+      >
+        <Space direction="vertical" style={{ width: "100%" }}>
+          {captcha.data?.image && <img src={captcha.data.image} alt="图片验证码" style={{ width: 144, height: 48, border: "1px solid #d9d9d9", borderRadius: 6 }} />}
+          <Input value={captchaAnswer} onChange={(e) => setCaptchaAnswer(e.target.value)} placeholder="请输入图片中的算式答案" inputMode="numeric" maxLength={2} autoFocus />
+          <Button type="link" size="small" icon={<ReloadOutlined />} onClick={() => { setCaptchaAnswer(""); captcha.refetch(); }}>看不清，换一张</Button>
+        </Space>
+      </Modal>
     </Form>
   );
 }
@@ -113,6 +194,9 @@ function EmailRegisterTab() {
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
   const sendCode = useSendEmailCode();
   const register = useEmailRegister();
+  const [captchaOpen, setCaptchaOpen] = useState(false);
+  const registerCaptcha = useRegisterCaptcha(captchaOpen);
+  const [captchaAnswer, setCaptchaAnswer] = useState("");
 
   useEffect(() => () => { if (timer.current) clearInterval(timer.current); }, []);
 
@@ -129,8 +213,8 @@ function EmailRegisterTab() {
   const handleSend = () => {
     const v = email.trim().toLowerCase();
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v)) { message.warning("请输入正确的邮箱地址"); return; }
-    sendCode.mutate({ email: v }, {
-      onSuccess: () => { setCodeSent(true); startCountdown(); message.success("验证码已发送，请查收邮件（也留意垃圾箱）"); },
+    sendCode.mutate({ email: v, captcha_id: registerCaptcha.data?.challenge_id || "", captcha_answer: captchaAnswer.trim() }, {
+      onSuccess: () => { setCodeSent(true); setCaptchaAnswer(""); setCaptchaOpen(false); startCountdown(); registerCaptcha.refetch(); message.success("验证码已发送，请查收邮件（也留意垃圾箱）"); },
       onError: (e) => message.error(errMsg(e, "发送失败")),
     });
   };
@@ -157,9 +241,7 @@ function EmailRegisterTab() {
         />
       </Form.Item>
       {!codeSent ? (
-        <Button type="primary" block loading={sendCode.isPending} onClick={handleSend}>
-          获取验证码
-        </Button>
+        <Button type="primary" block onClick={() => setCaptchaOpen(true)}>验证并获取验证码</Button>
       ) : (
         <>
           <Form.Item name="code" label="验证码" rules={[{ required: true, message: "请输入验证码" }]}>
@@ -178,12 +260,46 @@ function EmailRegisterTab() {
               注册并登录
             </Button>
           </Form.Item>
-          <Button block disabled={countdown > 0} loading={sendCode.isPending} onClick={handleSend}>
+          <Button block disabled={countdown > 0} onClick={() => setCaptchaOpen(true)}>
             {countdown > 0 ? `${countdown}s 后重新发送` : "重新发送验证码"}
           </Button>
         </>
       )}
+      <Modal
+        title="完成图片验证"
+        open={captchaOpen}
+        onCancel={() => setCaptchaOpen(false)}
+        onOk={handleSend}
+        okText="验证并发送"
+        confirmLoading={sendCode.isPending}
+        destroyOnClose
+      >
+        <Space direction="vertical" style={{ width: "100%" }}>
+          {registerCaptcha.data?.image && <img src={registerCaptcha.data.image} alt="图片验证码" style={{ width: 144, height: 48, border: "1px solid #d9d9d9", borderRadius: 6 }} />}
+          <Input value={captchaAnswer} onChange={(e) => setCaptchaAnswer(e.target.value)} placeholder="请输入图片中的算式答案" inputMode="numeric" maxLength={2} autoFocus />
+          <Button type="link" size="small" icon={<ReloadOutlined />} onClick={() => { setCaptchaAnswer(""); registerCaptcha.refetch(); }}>看不清，换一张</Button>
+        </Space>
+      </Modal>
     </Form>
+  );
+}
+
+function EmailAccountTab() {
+  const [mode, setMode] = useState<"login" | "register">("login");
+  return (
+    <div>
+      <Segmented
+        block
+        value={mode}
+        onChange={(v) => setMode(v as "login" | "register")}
+        options={[
+          { value: "login", label: "邮箱登录" },
+          { value: "register", label: "邮箱注册" },
+        ]}
+        style={{ marginBottom: 16 }}
+      />
+      {mode === "login" ? <EmailLoginTab /> : <EmailRegisterTab />}
+    </div>
   );
 }
 
@@ -215,8 +331,7 @@ export default function VisitorLogin() {
             centered
             items={[
               { key: "wechat", label: "微信登录", children: <WechatLoginTab /> },
-              { key: "email-login", label: "邮箱登录", children: <EmailLoginTab /> },
-              { key: "email-register", label: "邮箱注册", children: <EmailRegisterTab /> },
+              { key: "email", label: "邮箱", children: <EmailAccountTab /> },
             ]}
           />
           {authConfig?.visitor_mode && (

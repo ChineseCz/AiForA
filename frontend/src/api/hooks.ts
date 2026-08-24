@@ -6,7 +6,7 @@ import type {
   AuthConfigResp, AuthSettingsCfg, BondDetail, Condition, Fundamentals, FieldMeta, GroupItem, GroupMember, JobStatus, KlineView, NewsItem,
   Overview, PostsPage, Quote, ScheduleCfg, ScreenResp, SectorItem, SectorRankResp, StockAiAnalysisResp, SummaryResp, IntradayView,
   TradeNote, TradeRecord, TradeStats, UserItem,
-  VisitorLoginResp, VisitorMeResp, WechatQrcodeResp, WechatPollResp,
+  ResetCaptchaResp, VisitorLoginResp, VisitorMeResp, WechatQrcodeResp, WechatPollResp,
 } from "./types";
 
 const get = async <T>(url: string, params?: object): Promise<T> =>
@@ -167,7 +167,7 @@ export const useWechatCodeLogin = () =>
 
 // ===== 访客账号（邮箱注册 + 账密登录） =====
 export const useSendEmailCode = () =>
-  useMutation({ mutationFn: (b: { email: string }) => post<{ error: string }>("/api/user/email/send-code", b) });
+  useMutation({ mutationFn: (b: { email: string; captcha_id: string; captcha_answer: string }) => post<{ error: string }>("/api/user/email/send-code", b) });
 
 export const useEmailRegister = () =>
   useMutation({
@@ -178,6 +178,33 @@ export const useEmailRegister = () =>
 export const useEmailLogin = () =>
   useMutation({
     mutationFn: (b: { email: string; password: string; remember?: boolean }) => post<VisitorLoginResp>("/api/user/email/login", b),
+  });
+
+export const useSendResetEmailCode = () =>
+  useMutation({ mutationFn: (b: { email: string; captcha_id: string; captcha_answer: string }) => post<{ error: string }>("/api/user/email/reset-send-code", b) });
+
+export const useResetCaptcha = (enabled: boolean) =>
+  useQuery({
+    queryKey: ["reset_captcha"],
+    queryFn: () => get<ResetCaptchaResp>("/api/user/email/reset-captcha"),
+    enabled,
+    staleTime: 0,
+    refetchOnWindowFocus: false,
+  });
+
+export const useRegisterCaptcha = (enabled: boolean) =>
+  useQuery({
+    queryKey: ["register_captcha"],
+    queryFn: () => get<ResetCaptchaResp>("/api/user/email/register-captcha"),
+    enabled,
+    staleTime: 0,
+    refetchOnWindowFocus: false,
+  });
+
+export const useResetPassword = () =>
+  useMutation({
+    mutationFn: (b: { email: string; code: string; password: string }) =>
+      post<{ error: string }>("/api/user/email/reset-password", b),
   });
 
 export const useVisitorMe = (enabled: boolean) =>
