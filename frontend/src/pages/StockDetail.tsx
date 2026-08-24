@@ -304,13 +304,13 @@ function IntradayPanel({ code, defaultDay, recentDays, dark, isMobile }: { code:
     return (
       <Collapse ghost size="small" items={[{
         key: "intraday",
-        label: <Space size={6}><Typography.Text strong>分时线</Typography.Text><Typography.Text type="secondary" style={{ fontSize: 11 }}>按需获取，不落库</Typography.Text></Space>,
+        label: <Typography.Text strong>分时线</Typography.Text>,
         extra: controls,
         children: body,
       }]} />
     );
   }
-  return <Card size="small" title={<Space size={8}><span>分时线</span><Typography.Text type="secondary" style={{ fontSize: 12 }}>{day === today ? "实时按需刷新，不落库" : "历史分钟数据，不落库"}</Typography.Text></Space>} extra={controls}>{body}</Card>;
+  return <Card size="small" title="分时线" extra={controls}>{body}</Card>;
 }
 
 // 顶部指标条：随悬停更新的当前 bar 数值（取代悬浮 tooltip）。
