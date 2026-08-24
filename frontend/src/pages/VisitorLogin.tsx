@@ -69,6 +69,7 @@ function EmailLoginTab() {
   const auth = useAuth();
   const from: string = (loc.state as { from?: string } | null)?.from ?? "/";
   const emailLogin = useEmailLogin();
+  const [loginForm] = Form.useForm();
   const sendResetCode = useSendResetEmailCode();
   const resetPassword = useResetPassword();
   const [resetOpen, setResetOpen] = useState(false);
@@ -83,6 +84,16 @@ function EmailLoginTab() {
       onSuccess: () => { setResetSent(true); message.success("如果邮箱已注册，验证码将发送到邮箱"); },
       onError: (e) => message.error(errMsg(e, "发送失败")),
     });
+  };
+
+  const openReset = () => {
+    const email = String(loginForm.getFieldValue("email") || "").trim().toLowerCase();
+    if (!email) {
+      message.warning("请先填写邮箱，再点击忘记密码");
+      return;
+    }
+    setResetEmail(email);
+    setResetOpen(true);
   };
 
   const reset = (values: { code: string; password: string }) => {
@@ -110,7 +121,7 @@ function EmailLoginTab() {
   };
 
   return (
-    <Form layout="vertical" onFinish={handleLogin}>
+    <Form form={loginForm} layout="vertical" onFinish={handleLogin}>
       <Form.Item name="email" label="邮箱" rules={[{ required: true, message: "请输入邮箱" }]}>
         <Input placeholder="请输入邮箱" autoComplete="email" />
       </Form.Item>
@@ -124,7 +135,7 @@ function EmailLoginTab() {
         </Button>
       </Form.Item>
       <div style={{ textAlign: "right", marginTop: 8 }}>
-        <Button type="link" size="small" onClick={() => setResetOpen(true)}>忘记密码？</Button>
+        <Button type="link" size="small" onClick={openReset}>忘记密码？</Button>
       </div>
       <Modal
         title="找回邮箱密码"
@@ -134,7 +145,7 @@ function EmailLoginTab() {
         destroyOnClose
       >
         <Space direction="vertical" style={{ width: "100%" }}>
-          <Input value={resetEmail} onChange={(e) => setResetEmail(e.target.value)} placeholder="请输入注册邮箱" autoComplete="email" />
+          <Typography.Text>验证码将发送到：{resetEmail}</Typography.Text>
           <Button block onClick={sendReset} loading={sendResetCode.isPending}>获取重置验证码</Button>
           {resetSent && (
             <Form form={resetForm} layout="vertical" onFinish={reset}>
