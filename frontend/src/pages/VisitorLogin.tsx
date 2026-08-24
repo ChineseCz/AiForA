@@ -1,5 +1,5 @@
 import { LineChartOutlined } from "@ant-design/icons";
-import { Button, Card, Checkbox, Form, Input, Modal, Row, Space, Tabs, Typography, message } from "antd";
+import { Button, Card, Checkbox, Form, Input, Modal, Row, Segmented, Space, Tabs, Typography, message } from "antd";
 import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
@@ -238,6 +238,25 @@ function EmailRegisterTab() {
   );
 }
 
+function EmailAccountTab() {
+  const [mode, setMode] = useState<"login" | "register">("login");
+  return (
+    <div>
+      <Segmented
+        block
+        value={mode}
+        onChange={(v) => setMode(v as "login" | "register")}
+        options={[
+          { value: "login", label: "邮箱登录" },
+          { value: "register", label: "邮箱注册" },
+        ]}
+        style={{ marginBottom: 16 }}
+      />
+      {mode === "login" ? <EmailLoginTab /> : <EmailRegisterTab />}
+    </div>
+  );
+}
+
 export default function VisitorLogin() {
   const nav = useNavigate();
   const loc = useLocation();
@@ -266,8 +285,7 @@ export default function VisitorLogin() {
             centered
             items={[
               { key: "wechat", label: "微信登录", children: <WechatLoginTab /> },
-              { key: "email-login", label: "邮箱登录", children: <EmailLoginTab /> },
-              { key: "email-register", label: "邮箱注册", children: <EmailRegisterTab /> },
+              { key: "email", label: "邮箱", children: <EmailAccountTab /> },
             ]}
           />
           {authConfig?.visitor_mode && (

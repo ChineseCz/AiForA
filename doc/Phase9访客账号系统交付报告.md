@@ -64,7 +64,7 @@ id, phone(unique), openid(unique), email(unique), password_hash, nickname, creat
 
 ### 3.5 前端
 
-- `VisitorLogin.tsx`：三 Tab（微信/邮箱登录/邮箱注册），短信 Tab 因资质未办暂时移除（后端接口保留）。
+- `VisitorLogin.tsx`：微信/邮箱两大 Tab，邮箱 Tab 内部切换登录/注册；短信 Tab 因资质未办暂时移除（后端接口保留）。
 - `visitorAuth.tsx`：模块级 Context（不是模块级单例，因为不需要跨路由脱离 React 树存活，登录态本身可以放 Context）。
 - `App.tsx`：`RequireVisitorOrAnon` 包裹全部只读路由；`VisitorMenu` 在 Header 展示当前账号 + 改昵称 + 退出。
 - `client.ts`：管理员 token 和访客 token 分开存 localStorage，请求时管理员优先；401 时只清失效的那一个，不误伤另一个。
