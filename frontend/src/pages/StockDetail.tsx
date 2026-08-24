@@ -266,22 +266,51 @@ function buildIntradayOption(view: IntradayView, dark: boolean, compact: boolean
   };
 }
 
-function IntradayPanel({ code, defaultDay, dark, isMobile }: { code: string; defaultDay: string; dark: boolean; isMobile: boolean }) {
+function IntradayPanel({ code, defaultDay, recentDays, dark, isMobile }: { code: string; defaultDay: string; recentDays: string[]; dark: boolean; isMobile: boolean }) {
   const [day, setDay] = useState(defaultDay);
   useEffect(() => { if (defaultDay) setDay(defaultDay); }, [defaultDay]);
   const { data, isLoading, isFetching } = useIntraday(code, day);
   const today = dayjs().format("YYYY-MM-DD");
-  return (
-    <Card
-      size="small"
-      title={<Space size={8}><span>分时线</span><Typography.Text type="secondary" style={{ fontSize: 12 }}>{day === today ? "实时按需刷新，不落库" : "历史分钟数据，不落库"}</Typography.Text></Space>}
-      extra={<DatePicker size="small" value={day ? dayjs(day) : null} format="YYYY-MM-DD" allowClear={false} disabledDate={(d) => d.isAfter(dayjs(), "day")} onChange={(v) => v && setDay(v.format("YYYY-MM-DD"))} />}
-    >
-      <Spin spinning={isLoading || isFetching}>
-        {data?.bars?.length ? <ReactECharts option={buildIntradayOption(data, dark, isMobile)} style={{ height: isMobile ? 280 : 340 }} notMerge /> : <Empty description={data?.error || "该日期暂无分钟数据"} />}
-      </Spin>
-    </Card>
+  const chooseDate = (value: string) => setDay(value);
+  const controls = (
+    <Space wrap size={6} style={{ width: isMobile ? "100%" : undefined }}>
+      {isMobile ? (
+        <Select
+          size="small"
+          value={recentDays.includes(day) ? day : undefined}
+          placeholder="最近交易日"
+          onChange={chooseDate}
+          options={recentDays.map((d) => ({ value: d, label: d === today ? `${d}（今天）` : d }))}
+          style={{ minWidth: 132, flex: 1 }}
+        />
+      ) : null}
+      <DatePicker
+        size="small"
+        value={day ? dayjs(day) : null}
+        format="YYYY-MM-DD"
+        allowClear={false}
+        inputReadOnly={isMobile}
+        disabledDate={(d) => d.isAfter(dayjs(), "day")}
+        onChange={(v) => v && chooseDate(v.format("YYYY-MM-DD"))}
+      />
+    </Space>
   );
+  const body = (
+    <Spin spinning={isLoading || isFetching}>
+      {data?.bars?.length ? <ReactECharts option={buildIntradayOption(data, dark, isMobile)} style={{ height: isMobile ? 280 : 340 }} notMerge /> : <Empty description={data?.error || "该日期暂无分钟数据"} />}
+    </Spin>
+  );
+  if (isMobile) {
+    return (
+      <Collapse ghost size="small" items={[{
+        key: "intraday",
+        label: <Space size={6}><Typography.Text strong>分时线</Typography.Text><Typography.Text type="secondary" style={{ fontSize: 11 }}>按需获取，不落库</Typography.Text></Space>,
+        extra: controls,
+        children: body,
+      }]} />
+    );
+  }
+  return <Card size="small" title={<Space size={8}><span>分时线</span><Typography.Text type="secondary" style={{ fontSize: 12 }}>{day === today ? "实时按需刷新，不落库" : "历史分钟数据，不落库"}</Typography.Text></Space>} extra={controls}>{body}</Card>;
 }
 
 // 顶部指标条：随悬停更新的当前 bar 数值（取代悬浮 tooltip）。
@@ -759,6 +788,7 @@ export default function StockDetail() {
   const intradayDefaultDay = kline?.bars?.length
     ? kline.bars[kline.bars.length - 1].trade_date
     : dayjs().format("YYYY-MM-DD");
+  const intradayRecentDays = (kline?.bars ?? []).slice(-30).map((b) => b.trade_date).reverse();
 
   return (
     <Space direction="vertical" size={isMobile ? 12 : 16} style={{ width: "100%" }}>
@@ -926,7 +956,7 @@ export default function StockDetail() {
         }]} />
       </Card>
 
-      <IntradayPanel code={code} defaultDay={intradayDefaultDay} dark={dark} isMobile={isMobile} />
+      <IntradayPanel code={code} defaultDay={intradayDefaultDay} recentDays={intradayRecentDays} dark={dark} isMobile={isMobile} />
 
       <Row gutter={[isMobile ? 8 : 16, isMobile ? 8 : 16]}>
         <Col xs={24} sm={24} md={8}>
