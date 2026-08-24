@@ -9,6 +9,7 @@ from app.models.schedule import Schedule
 from app.models.sector import SectorCatalog, StockSector
 from app.models.stock_daily import StockDaily
 from app.models.bond_daily import BondDaily
+from app.models.backfill_failure import BackfillFailure
 from app.models.stock_finance import StockFinance
 from app.models.summary import Summary
 from app.models.user import User
@@ -30,4 +31,5 @@ __all__ = [
     "Schedule",
     "JobRun",
     "User",
+    "BackfillFailure",
 ]

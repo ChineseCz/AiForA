@@ -41,7 +41,14 @@ def _browser_fetch_json(page, url: str) -> tuple[int, str]:
     return result["status"], result["text"] or ""
 
 
-def backfill_history(days: int = 60, delay: float = 0.5, batch_size: int = 10, asset_type: str = "all") -> tuple[int, int]:
+def backfill_history(
+    days: int = 60,
+    delay: float = 0.5,
+    batch_size: int = 10,
+    asset_type: str = "all",
+    failed_only: bool = False,
+    job_id: int | None = None,
+) -> tuple[int, int]:
     import random
 
     from playwright.sync_api import sync_playwright
@@ -52,18 +59,23 @@ def backfill_history(days: int = 60, delay: float = 0.5, batch_size: int = 10, a
         print("⚠️ 还没有行情快照，请先运行行情同步")
         return 0, 0
 
-    # 过滤：只回补有缺失的股票（60天约42个交易日，低于38天视为缺失）
-    stock_codes = [c for c in all_codes if db.has_missing_bars(c, days)]
-    bond_codes = [c for c in all_bond_codes if db.has_missing_bond_bars(c, days)]
-    codes = [("stock", c) for c in stock_codes] + [("bond", c) for c in bond_codes]
-    skipped = len(all_codes) + len(all_bond_codes) - len(codes)
-    print(f"📊 共 {len(all_codes)} 只股票，{skipped} 只数据完整跳过，{len(codes)} 只待回补")
+    if failed_only:
+        codes = db.get_backfill_failure_codes(asset_type)
+        print(f"🔁 失败重试模式：读取 {len(codes)} 个失败标的")
+    else:
+        # 过滤：只回补有缺失的标的（60天约42个交易日，低于38天视为缺失）
+        stock_codes = [c for c in all_codes if db.has_missing_bars(c, days)]
+        bond_codes = [c for c in all_bond_codes if db.has_missing_bond_bars(c, days)]
+        codes = [("stock", c) for c in stock_codes] + [("bond", c) for c in bond_codes]
+        skipped = len(all_codes) + len(all_bond_codes) - len(codes)
+        print(f"📊 共 {len(all_codes)} 只股票，{skipped} 只数据完整跳过，{len(codes)} 只待回补")
 
     today = date.today().isoformat()
     total = len(codes)
     ok, fail = 0, 0
+    succeeded_codes: list[tuple[str, str]] = []
     if not codes:
-        print("✅ 所有股票 K线数据完整，无需回补")
+        print("✅ 没有需要回补的标的")
         return 0, 0
 
     with sync_playwright() as p:
@@ -98,11 +110,13 @@ def backfill_history(days: int = 60, delay: float = 0.5, batch_size: int = 10, a
             for i, (kind, code) in enumerate(codes, 1):
                 status, text = _browser_fetch_json(page, _history_api_url(code, days))
                 text = text.strip()
+                failure_reason = ""
                 if status == 200 and text.startswith("["):
                     try:
                         items = json.loads(text)
                     except ValueError:
                         items = []
+                        failure_reason = "接口返回非有效 JSON"
                     bars = []
                     for it in items:
                         day = it.get("day")
@@ -126,11 +140,19 @@ def backfill_history(days: int = 60, delay: float = 0.5, batch_size: int = 10, a
                             stock_buffer.append((code, bars))
                         else:
                             bond_buffer.append((code, bars))
-                    ok += 1
-                    consec_fail = 0
+                        succeeded_codes.append((kind, code))
+                        ok += 1
+                        consec_fail = 0
+                    else:
+                        failure_reason = failure_reason or "接口返回空历史数据"
+                        fail += 1
+                        db.record_backfill_failure(kind, code, job_id, failure_reason)
+                        consec_fail += 1
                 else:
                     fail += 1
                     consec_fail += 1
+                    failure_reason = f"HTTP {status}: {text[:300]}"
+                    db.record_backfill_failure(kind, code, job_id, failure_reason)
                     if consec_fail >= 10:
                         print(f"⚠️ 连续 {consec_fail} 只失败，暂停60秒…")
                         time.sleep(60)
@@ -144,6 +166,9 @@ def backfill_history(days: int = 60, delay: float = 0.5, batch_size: int = 10, a
                     if bond_buffer:
                         db.save_bond_history_bars_batch(bond_buffer)
                         bond_buffer = []
+                    for success_kind, success_code in succeeded_codes:
+                        db.clear_backfill_failure(success_kind, success_code)
+                    succeeded_codes = []
 
                 if i % 50 == 0 or i == total:
                     print(f"… 已回补 {i}/{total} 只（成功{ok}/失败{fail}） …")

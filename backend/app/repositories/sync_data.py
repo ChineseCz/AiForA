@@ -691,6 +691,48 @@ def has_missing_bond_bars(code: str, days: int = 60) -> bool:
         return count < 38
 
 
+def get_backfill_failure_codes(asset_type: str = "all") -> list[tuple[str, str]]:
+    """读取当前失败清单，返回 (asset_type, code)。"""
+    with sync_session() as s:
+        if asset_type == "all":
+            rows = s.execute(text(
+                "SELECT asset_type, code FROM backfill_failures ORDER BY asset_type, code"
+            )).all()
+        else:
+            rows = s.execute(text(
+                "SELECT asset_type, code FROM backfill_failures "
+                "WHERE asset_type = :asset_type ORDER BY code"
+            ), {"asset_type": asset_type}).all()
+        return [(r[0], r[1]) for r in rows]
+
+
+def record_backfill_failure(asset_type: str, code: str, job_id: int | None, error: str) -> None:
+    with sync_session() as s:
+        s.execute(text(
+            """
+            INSERT INTO backfill_failures (asset_type, code, last_job_id, error, updated_at)
+            VALUES (:asset_type, :code, :job_id, :error, :updated_at)
+            ON CONFLICT (asset_type, code) DO UPDATE SET
+                last_job_id = EXCLUDED.last_job_id,
+                error = EXCLUDED.error,
+                updated_at = EXCLUDED.updated_at
+            """
+        ), {
+            "asset_type": asset_type,
+            "code": code,
+            "job_id": job_id,
+            "error": error[:1000],
+            "updated_at": int(time.time()),
+        })
+
+
+def clear_backfill_failure(asset_type: str, code: str) -> None:
+    with sync_session() as s:
+        s.execute(text(
+            "DELETE FROM backfill_failures WHERE asset_type = :asset_type AND code = :code"
+        ), {"asset_type": asset_type, "code": code})
+
+
 def save_history_bars(rows: list[dict]) -> int:
     """冲突时整行覆盖 OHLC/volume（不再是"只补空 open"）。
 
