@@ -1,10 +1,10 @@
 import { LineChartOutlined } from "@ant-design/icons";
-import { Button, Card, Checkbox, Form, Input, Row, Tabs, Typography, message } from "antd";
+import { Button, Card, Checkbox, Form, Input, Modal, Row, Space, Tabs, Typography, message } from "antd";
 import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
 import { errMsg } from "@/api/client";
-import { useAuthConfig, useEmailLogin, useEmailRegister, useGuestLogin, useSendEmailCode, useWechatCodeLogin } from "@/api/hooks";
+import { useAuthConfig, useEmailLogin, useEmailRegister, useGuestLogin, useResetPassword, useSendEmailCode, useSendResetEmailCode, useWechatCodeLogin } from "@/api/hooks";
 import { useAuth } from "@/auth";
 import { useVisitorAuth } from "@/visitorAuth";
 
@@ -69,6 +69,31 @@ function EmailLoginTab() {
   const auth = useAuth();
   const from: string = (loc.state as { from?: string } | null)?.from ?? "/";
   const emailLogin = useEmailLogin();
+  const sendResetCode = useSendResetEmailCode();
+  const resetPassword = useResetPassword();
+  const [resetOpen, setResetOpen] = useState(false);
+  const [resetEmail, setResetEmail] = useState("");
+  const [resetSent, setResetSent] = useState(false);
+  const [resetForm] = Form.useForm();
+
+  const sendReset = () => {
+    const email = resetEmail.trim().toLowerCase();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { message.warning("请输入正确的邮箱地址"); return; }
+    sendResetCode.mutate({ email }, {
+      onSuccess: () => { setResetSent(true); message.success("如果邮箱已注册，验证码将发送到邮箱"); },
+      onError: (e) => message.error(errMsg(e, "发送失败")),
+    });
+  };
+
+  const reset = (values: { code: string; password: string }) => {
+    resetPassword.mutate(
+      { email: resetEmail.trim().toLowerCase(), code: values.code, password: values.password },
+      {
+        onSuccess: () => { message.success("密码已重置，请使用新密码登录"); setResetOpen(false); setResetSent(false); resetForm.resetFields(); },
+        onError: (e) => message.error(errMsg(e, "重置失败")),
+      },
+    );
+  };
 
   const handleLogin = (values: { email: string; password: string; remember?: boolean }) => {
     emailLogin.mutate(
@@ -98,6 +123,32 @@ function EmailLoginTab() {
           登录
         </Button>
       </Form.Item>
+      <div style={{ textAlign: "right", marginTop: 8 }}>
+        <Button type="link" size="small" onClick={() => setResetOpen(true)}>忘记密码？</Button>
+      </div>
+      <Modal
+        title="找回邮箱密码"
+        open={resetOpen}
+        onCancel={() => { setResetOpen(false); setResetSent(false); resetForm.resetFields(); }}
+        footer={null}
+        destroyOnClose
+      >
+        <Space direction="vertical" style={{ width: "100%" }}>
+          <Input value={resetEmail} onChange={(e) => setResetEmail(e.target.value)} placeholder="请输入注册邮箱" autoComplete="email" />
+          <Button block onClick={sendReset} loading={sendResetCode.isPending}>获取重置验证码</Button>
+          {resetSent && (
+            <Form form={resetForm} layout="vertical" onFinish={reset}>
+              <Form.Item name="code" label="验证码" rules={[{ required: true, message: "请输入验证码" }]}>
+                <Input maxLength={6} placeholder="请输入邮箱验证码" />
+              </Form.Item>
+              <Form.Item name="password" label="新密码" rules={[{ required: true, min: 6, message: "密码至少 6 位" }]}>
+                <Input.Password placeholder="至少 6 位" autoComplete="new-password" />
+              </Form.Item>
+              <Button type="primary" htmlType="submit" block loading={resetPassword.isPending}>确认重置密码</Button>
+            </Form>
+          )}
+        </Space>
+      </Modal>
     </Form>
   );
 }

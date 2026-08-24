@@ -3,7 +3,7 @@ import {
   MoreOutlined, RadarChartOutlined, SettingOutlined, StarOutlined, UserOutlined,
 } from "@ant-design/icons";
 import { Button, Dropdown, Input, Layout, Menu, Modal, theme, Typography, message } from "antd";
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import { Navigate, Outlet, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 
 import { errMsg } from "./api/client";
@@ -11,15 +11,16 @@ import { useSetNickname, useVisitorMe } from "./api/hooks";
 import { useAuth } from "./auth";
 import FeibiWidget from "./components/FeibiWidget";
 import { useIsMobile } from "./hooks/useIsMobile";
-import Admin from "./pages/Admin";
-import Feed from "./pages/Feed";
-import VisitorLogin from "./pages/VisitorLogin";
-import My from "./pages/My";
-import Dashboard from "./pages/Dashboard";
-import Screener from "./pages/Screener";
-import StockDetail from "./pages/StockDetail";
 import { useThemeMode } from "./theme";
 import { useVisitorAuth } from "./visitorAuth";
+
+const Admin = lazy(() => import("./pages/Admin"));
+const Feed = lazy(() => import("./pages/Feed"));
+const VisitorLogin = lazy(() => import("./pages/VisitorLogin"));
+const My = lazy(() => import("./pages/My"));
+const Dashboard = lazy(() => import("./pages/Dashboard"));
+const Screener = lazy(() => import("./pages/Screener"));
+const StockDetail = lazy(() => import("./pages/StockDetail"));
 
 const { Sider, Content, Header } = Layout;
 
@@ -228,22 +229,24 @@ export default function App() {
           paddingBottom: isMobile ? "calc(var(--tab-bar-height) + 12px)" : 20,
           overflow: "auto",
         }}>
-          <Routes>
-            <Route path="/login" element={<VisitorLogin />} />
-            {/* 管理员后台：管理员登录入口已移至 /login 页（IP 限制显示），此处无需独立登录路由 */}
-            <Route path="/admin" element={<RequireAdmin><Admin /></RequireAdmin>} />
-            <Route element={<RequireVisitorOrAnon><Outlet /></RequireVisitorOrAnon>}>
-              <Route path="/" element={<Dashboard />} />
-              <Route path="/feed" element={<Feed />} />
-              <Route path="/posts" element={<Navigate to="/feed" replace />} />
-              <Route path="/summary" element={<Navigate to="/feed" replace />} />
-              <Route path="/screener" element={<Screener />} />
-              <Route path="/sectors" element={<Navigate to="/screener" replace />} />
-              <Route path="/my" element={<My />} />
-              <Route path="/stock/:code" element={<StockDetail />} />
-              <Route path="*" element={<Navigate to="/" replace />} />
-            </Route>
-          </Routes>
+          <Suspense fallback={<div style={{ padding: 24, textAlign: "center" }}>加载中…</div>}>
+            <Routes>
+              <Route path="/login" element={<VisitorLogin />} />
+              {/* 管理员后台：管理员登录入口已移至 /login 页（IP 限制显示），此处无需独立登录路由 */}
+              <Route path="/admin" element={<RequireAdmin><Admin /></RequireAdmin>} />
+              <Route element={<RequireVisitorOrAnon><Outlet /></RequireVisitorOrAnon>}>
+                <Route path="/" element={<Dashboard />} />
+                <Route path="/feed" element={<Feed />} />
+                <Route path="/posts" element={<Navigate to="/feed" replace />} />
+                <Route path="/summary" element={<Navigate to="/feed" replace />} />
+                <Route path="/screener" element={<Screener />} />
+                <Route path="/sectors" element={<Navigate to="/screener" replace />} />
+                <Route path="/my" element={<My />} />
+                <Route path="/stock/:code" element={<StockDetail />} />
+                <Route path="*" element={<Navigate to="/" replace />} />
+              </Route>
+            </Routes>
+          </Suspense>
         </Content>
       </Layout>
       {isMobile && <BottomTabBar selected={selected} onSelect={nav} />}

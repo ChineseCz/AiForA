@@ -47,6 +47,14 @@ def _email_resend_key(email: str) -> str:
     return f"emailcode:resend:{email}"
 
 
+def _reset_code_key(email: str) -> str:
+    return f"passwordreset:{email}"
+
+
+def _reset_resend_key(email: str) -> str:
+    return f"passwordreset:resend:{email}"
+
+
 async def _json_body(request: Request) -> dict:
     raw = await request.body()
     if not raw:
@@ -231,6 +239,46 @@ async def email_login(request: Request, session: AsyncSession = Depends(db_sessi
     if user.get("is_admin"):
         resp["admin_token"] = create_access_token(email, typ="admin", expire_minutes=settings.remember_jwt_expire_minutes if remember else settings.jwt_expire_minutes, sty="email")
     return resp
+
+
+@router.post("/email/reset-send-code")
+@limiter.limit(settings.rate_limit_email_send)
+async def email_reset_send_code(request: Request, c: CacheService = Depends(cache), session: AsyncSession = Depends(db_session)):
+    body = await _json_body(request)
+    email = str(body.get("email") or "").strip().lower()
+    user = await users_repo.get_by_email(session, email) if _EMAIL_RE.match(email) else None
+    # 对外统一返回成功，避免通过接口枚举已注册邮箱。
+    if not user or not user.get("password_hash"):
+        return {"error": ""}
+    if await c.client.get(_reset_resend_key(email)):
+        return JSONResponse({"error": "发送太频繁，请稍后再试"}, status_code=429)
+    code = "".join(secrets.choice("0123456789") for _ in range(6))
+    await c.client.set(_reset_code_key(email), code, ex=settings.email_code_expire_seconds)
+    await c.client.set(_reset_resend_key(email), "1", ex=settings.email_resend_interval_seconds)
+    ok = await run_in_threadpool(send_verification_email, email, code)
+    if not ok:
+        return JSONResponse({"error": "验证码发送失败，请稍后重试"}, status_code=502)
+    return {"error": ""}
+
+
+@router.post("/email/reset-password")
+@limiter.limit(settings.rate_limit_login)
+async def email_reset_password(request: Request, c: CacheService = Depends(cache), session: AsyncSession = Depends(db_session)):
+    body = await _json_body(request)
+    email = str(body.get("email") or "").strip().lower()
+    code = str(body.get("code") or "").strip()
+    password = str(body.get("password") or "")
+    if not _EMAIL_RE.match(email) or not code:
+        return JSONResponse({"error": "请输入邮箱和验证码"}, status_code=400)
+    if len(password) < 6:
+        return JSONResponse({"error": "密码至少 6 位"}, status_code=400)
+    saved = await c.client.get(_reset_code_key(email))
+    if not saved or saved != code:
+        return JSONResponse({"error": "验证码错误或已过期"}, status_code=401)
+    if not await users_repo.set_password_by_email(session, email, hash_password(password)):
+        return JSONResponse({"error": "邮箱账号不存在"}, status_code=400)
+    await c.client.delete(_reset_code_key(email))
+    return {"error": ""}
 
 
 # ===== 微信扫码 =====

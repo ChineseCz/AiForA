@@ -180,6 +180,15 @@ export const useEmailLogin = () =>
     mutationFn: (b: { email: string; password: string; remember?: boolean }) => post<VisitorLoginResp>("/api/user/email/login", b),
   });
 
+export const useSendResetEmailCode = () =>
+  useMutation({ mutationFn: (b: { email: string }) => post<{ error: string }>("/api/user/email/reset-send-code", b) });
+
+export const useResetPassword = () =>
+  useMutation({
+    mutationFn: (b: { email: string; code: string; password: string }) =>
+      post<{ error: string }>("/api/user/email/reset-password", b),
+  });
+
 export const useVisitorMe = (enabled: boolean) =>
   useQuery({ queryKey: ["visitor_me"], queryFn: () => get<VisitorMeResp>("/api/user/me"), enabled });
 
