@@ -96,6 +96,7 @@ async def login(request: Request, c: CacheService = Depends(cache), session: Asy
     body = await _json_body(request)
     phone = str(body.get("phone") or "").strip()
     code = str(body.get("code") or "").strip()
+    remember = bool(body.get("remember", False))
     if not _PHONE_RE.match(phone) or not code:
         return JSONResponse({"error": "请输入手机号和验证码"}, status_code=400)
 
@@ -105,7 +106,11 @@ async def login(request: Request, c: CacheService = Depends(cache), session: Asy
     await c.client.delete(_code_key(phone))
 
     user = await users_repo.get_or_create_by_phone(session, phone)
-    token = create_access_token(phone, typ="visitor", expire_minutes=settings.visitor_jwt_expire_minutes, sty="phone")
+    token = create_access_token(
+        phone, typ="visitor",
+        expire_minutes=settings.remember_jwt_expire_minutes if remember else settings.visitor_jwt_expire_minutes,
+        sty="phone",
+    )
     return {"access_token": token, "token_type": "bearer", "phone": user["phone"]}
 
 
@@ -184,6 +189,7 @@ async def email_register(request: Request, c: CacheService = Depends(cache), ses
     email = str(body.get("email") or "").strip().lower()
     code = str(body.get("code") or "").strip()
     password = str(body.get("password") or "")
+    remember = bool(body.get("remember", False))
     if not _EMAIL_RE.match(email) or not code:
         return JSONResponse({"error": "请输入邮箱和验证码"}, status_code=400)
     if len(password) < 6:
@@ -197,10 +203,11 @@ async def email_register(request: Request, c: CacheService = Depends(cache), ses
     user = await users_repo.create_by_email(session, email, hash_password(password))
     if not user:
         return JSONResponse({"error": "该邮箱已注册，请直接登录"}, status_code=400)
-    token = create_access_token(email, typ="visitor", expire_minutes=settings.visitor_jwt_expire_minutes, sty="email")
+    expire_minutes = settings.remember_jwt_expire_minutes if remember else settings.visitor_jwt_expire_minutes
+    token = create_access_token(email, typ="visitor", expire_minutes=expire_minutes, sty="email")
     resp: dict = {"access_token": token, "token_type": "bearer", "email": email}
     if user.get("is_admin"):
-        resp["admin_token"] = create_access_token(email, typ="admin", expire_minutes=settings.jwt_expire_minutes, sty="email")
+        resp["admin_token"] = create_access_token(email, typ="admin", expire_minutes=settings.remember_jwt_expire_minutes if remember else settings.jwt_expire_minutes, sty="email")
     return resp
 
 
@@ -210,6 +217,7 @@ async def email_login(request: Request, session: AsyncSession = Depends(db_sessi
     body = await _json_body(request)
     email = str(body.get("email") or "").strip().lower()
     password = str(body.get("password") or "")
+    remember = bool(body.get("remember", False))
     if not _EMAIL_RE.match(email) or not password:
         return JSONResponse({"error": "请输入邮箱和密码"}, status_code=400)
 
@@ -217,10 +225,11 @@ async def email_login(request: Request, session: AsyncSession = Depends(db_sessi
     if not user or not user.get("password_hash") or not verify_password(password, user["password_hash"]):
         return JSONResponse({"error": "邮箱或密码错误"}, status_code=401)
 
-    token = create_access_token(email, typ="visitor", expire_minutes=settings.visitor_jwt_expire_minutes, sty="email")
+    expire_minutes = settings.remember_jwt_expire_minutes if remember else settings.visitor_jwt_expire_minutes
+    token = create_access_token(email, typ="visitor", expire_minutes=expire_minutes, sty="email")
     resp: dict = {"access_token": token, "token_type": "bearer", "email": email}
     if user.get("is_admin"):
-        resp["admin_token"] = create_access_token(email, typ="admin", expire_minutes=settings.jwt_expire_minutes, sty="email")
+        resp["admin_token"] = create_access_token(email, typ="admin", expire_minutes=settings.remember_jwt_expire_minutes if remember else settings.jwt_expire_minutes, sty="email")
     return resp
 
 
@@ -307,6 +316,7 @@ async def wechat_code_login(
     """用户凭微信回复的验证码换取 JWT。"""
     body = await _json_body(request)
     code = str(body.get("code") or "").strip()
+    remember = bool(body.get("remember", False))
     if not code:
         return JSONResponse({"error": "请输入验证码"}, status_code=400)
 
@@ -316,7 +326,11 @@ async def wechat_code_login(
     await c.client.delete(f"{_WX_MSGCODE_PREFIX}{code}")
 
     await users_repo.get_or_create_by_openid(session, openid)
-    token = create_access_token(openid, typ="visitor", expire_minutes=settings.visitor_jwt_expire_minutes, sty="wechat")
+    token = create_access_token(
+        openid, typ="visitor",
+        expire_minutes=settings.remember_jwt_expire_minutes if remember else settings.visitor_jwt_expire_minutes,
+        sty="wechat",
+    )
     return {"access_token": token, "token_type": "bearer"}
 
 
@@ -351,7 +365,7 @@ async def auth_config(c: CacheService = Depends(cache), session: AsyncSession = 
 
 @router.post("/guest-login")
 async def guest_login(c: CacheService = Depends(cache), session: AsyncSession = Depends(db_session)):
-    """游客一键登录：仅在访客模式开启时可用，发放只读 JWT（sty=guest，TTL=30天）。"""
+    """游客一键登录：仅在访客模式开启时可用，发放只读 JWT（sty=guest，TTL=24小时）。"""
     if not await _is_visitor_mode_enabled(c, session):
         return JSONResponse({"error": "访客模式已关闭，请使用账号登录"}, status_code=403)
     token = create_access_token("guest", typ="visitor", expire_minutes=settings.visitor_jwt_expire_minutes, sty="guest")

@@ -109,7 +109,7 @@ export const usePreset = () =>
 // ===== 管理员 =====
 export const useLogin = () =>
   useMutation({
-    mutationFn: (b: { username: string; password: string }) =>
+    mutationFn: (b: { username: string; password: string; remember?: boolean }) =>
       post<{ access_token: string; username: string }>("/api/admin/login", b),
   });
 
@@ -160,10 +160,10 @@ export const useSendCode = () =>
   useMutation({ mutationFn: (b: { phone: string }) => post<{ error: string }>("/api/user/send-code", b) });
 
 export const useVisitorLogin = () =>
-  useMutation({ mutationFn: (b: { phone: string; code: string }) => post<VisitorLoginResp>("/api/user/login", b) });
+  useMutation({ mutationFn: (b: { phone: string; code: string; remember?: boolean }) => post<VisitorLoginResp>("/api/user/login", b) });
 
 export const useWechatCodeLogin = () =>
-  useMutation({ mutationFn: (b: { code: string }) => post<VisitorLoginResp>("/api/user/wechat/code-login", b) });
+  useMutation({ mutationFn: (b: { code: string; remember?: boolean }) => post<VisitorLoginResp>("/api/user/wechat/code-login", b) });
 
 // ===== 访客账号（邮箱注册 + 账密登录） =====
 export const useSendEmailCode = () =>
@@ -171,13 +171,13 @@ export const useSendEmailCode = () =>
 
 export const useEmailRegister = () =>
   useMutation({
-    mutationFn: (b: { email: string; code: string; password: string }) =>
+    mutationFn: (b: { email: string; code: string; password: string; remember?: boolean }) =>
       post<VisitorLoginResp>("/api/user/email/register", b),
   });
 
 export const useEmailLogin = () =>
   useMutation({
-    mutationFn: (b: { email: string; password: string }) => post<VisitorLoginResp>("/api/user/email/login", b),
+    mutationFn: (b: { email: string; password: string; remember?: boolean }) => post<VisitorLoginResp>("/api/user/email/login", b),
   });
 
 export const useVisitorMe = (enabled: boolean) =>
