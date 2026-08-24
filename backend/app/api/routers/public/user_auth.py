@@ -57,8 +57,8 @@ def _reset_resend_key(email: str) -> str:
     return f"passwordreset:resend:{email}"
 
 
-def _captcha_key(challenge_id: str) -> str:
-    return f"captcha:password-reset:{challenge_id}"
+def _captcha_key(purpose: str, challenge_id: str) -> str:
+    return f"captcha:{purpose}:{challenge_id}"
 
 
 def _captcha_svg(left: int, op: str, right: int) -> str:
@@ -187,8 +187,16 @@ async def set_nickname(
 async def email_send_code(request: Request, c: CacheService = Depends(cache), session: AsyncSession = Depends(db_session)):
     body = await _json_body(request)
     email = str(body.get("email") or "").strip().lower()
+    challenge_id = str(body.get("captcha_id") or "").strip()
+    captcha_answer = str(body.get("captcha_answer") or "").strip()
     if not _EMAIL_RE.match(email):
         return JSONResponse({"error": "邮箱格式不正确"}, status_code=400)
+    if not challenge_id or not captcha_answer:
+        return JSONResponse({"error": "请先完成图片验证码"}, status_code=400)
+    expected = await c.client.get(_captcha_key("email-register", challenge_id))
+    await c.client.delete(_captcha_key("email-register", challenge_id))
+    if not expected or expected != captcha_answer:
+        return JSONResponse({"error": "图片验证码错误或已过期"}, status_code=400)
     if await users_repo.get_by_email(session, email):
         return JSONResponse({"error": "该邮箱已注册，请直接登录"}, status_code=400)
 
@@ -265,8 +273,8 @@ async def email_reset_send_code(request: Request, c: CacheService = Depends(cach
     captcha_answer = str(body.get("captcha_answer") or "").strip()
     if not challenge_id or not captcha_answer:
         return JSONResponse({"error": "请先完成图片验证码"}, status_code=400)
-    expected = await c.client.get(_captcha_key(challenge_id))
-    await c.client.delete(_captcha_key(challenge_id))
+    expected = await c.client.get(_captcha_key("password-reset", challenge_id))
+    await c.client.delete(_captcha_key("password-reset", challenge_id))
     if not expected or expected != captcha_answer:
         return JSONResponse({"error": "图片验证码错误或已过期"}, status_code=400)
     user = await users_repo.get_by_email(session, email) if _EMAIL_RE.match(email) else None
@@ -284,8 +292,7 @@ async def email_reset_send_code(request: Request, c: CacheService = Depends(cach
     return {"error": ""}
 
 
-@router.get("/email/reset-captcha")
-async def email_reset_captcha(c: CacheService = Depends(cache)):
+async def _issue_email_captcha(c: CacheService, purpose: str) -> dict:
     left = secrets.randbelow(8) + 2
     right = secrets.randbelow(8) + 1
     op = secrets.choice(("+", "-", "×"))
@@ -293,10 +300,20 @@ async def email_reset_captcha(c: CacheService = Depends(cache)):
         left, right = right, left
     answer = str(left + right if op == "+" else left - right if op == "-" else left * right)
     challenge_id = secrets.token_urlsafe(18)
-    await c.client.set(_captcha_key(challenge_id), answer, ex=settings.captcha_expire_seconds)
+    await c.client.set(_captcha_key(purpose, challenge_id), answer, ex=settings.captcha_expire_seconds)
     svg = _captcha_svg(left, op, right)
     image = "data:image/svg+xml;base64," + base64.b64encode(svg.encode("utf-8")).decode("ascii")
     return {"challenge_id": challenge_id, "image": image, "error": ""}
+
+
+@router.get("/email/reset-captcha")
+async def email_reset_captcha(c: CacheService = Depends(cache)):
+    return await _issue_email_captcha(c, "password-reset")
+
+
+@router.get("/email/register-captcha")
+async def email_register_captcha(c: CacheService = Depends(cache)):
+    return await _issue_email_captcha(c, "email-register")
 
 
 @router.post("/email/reset-password")

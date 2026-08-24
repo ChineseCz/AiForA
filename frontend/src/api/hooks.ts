@@ -167,7 +167,7 @@ export const useWechatCodeLogin = () =>
 
 // ===== 访客账号（邮箱注册 + 账密登录） =====
 export const useSendEmailCode = () =>
-  useMutation({ mutationFn: (b: { email: string }) => post<{ error: string }>("/api/user/email/send-code", b) });
+  useMutation({ mutationFn: (b: { email: string; captcha_id: string; captcha_answer: string }) => post<{ error: string }>("/api/user/email/send-code", b) });
 
 export const useEmailRegister = () =>
   useMutation({
@@ -187,6 +187,15 @@ export const useResetCaptcha = (enabled: boolean) =>
   useQuery({
     queryKey: ["reset_captcha"],
     queryFn: () => get<ResetCaptchaResp>("/api/user/email/reset-captcha"),
+    enabled,
+    staleTime: 0,
+    refetchOnWindowFocus: false,
+  });
+
+export const useRegisterCaptcha = (enabled: boolean) =>
+  useQuery({
+    queryKey: ["register_captcha"],
+    queryFn: () => get<ResetCaptchaResp>("/api/user/email/register-captcha"),
     enabled,
     staleTime: 0,
     refetchOnWindowFocus: false,

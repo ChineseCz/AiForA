@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
 import { errMsg } from "@/api/client";
-import { useAuthConfig, useEmailLogin, useEmailRegister, useGuestLogin, useResetCaptcha, useResetPassword, useSendEmailCode, useSendResetEmailCode, useWechatCodeLogin } from "@/api/hooks";
+import { useAuthConfig, useEmailLogin, useEmailRegister, useGuestLogin, useRegisterCaptcha, useResetCaptcha, useResetPassword, useSendEmailCode, useSendResetEmailCode, useWechatCodeLogin } from "@/api/hooks";
 import { useAuth } from "@/auth";
 import { useVisitorAuth } from "@/visitorAuth";
 
@@ -183,6 +183,8 @@ function EmailRegisterTab() {
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
   const sendCode = useSendEmailCode();
   const register = useEmailRegister();
+  const registerCaptcha = useRegisterCaptcha(true);
+  const [captchaAnswer, setCaptchaAnswer] = useState("");
 
   useEffect(() => () => { if (timer.current) clearInterval(timer.current); }, []);
 
@@ -199,8 +201,8 @@ function EmailRegisterTab() {
   const handleSend = () => {
     const v = email.trim().toLowerCase();
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v)) { message.warning("请输入正确的邮箱地址"); return; }
-    sendCode.mutate({ email: v }, {
-      onSuccess: () => { setCodeSent(true); startCountdown(); message.success("验证码已发送，请查收邮件（也留意垃圾箱）"); },
+    sendCode.mutate({ email: v, captcha_id: registerCaptcha.data?.challenge_id || "", captcha_answer: captchaAnswer.trim() }, {
+      onSuccess: () => { setCodeSent(true); setCaptchaAnswer(""); startCountdown(); registerCaptcha.refetch(); message.success("验证码已发送，请查收邮件（也留意垃圾箱）"); },
       onError: (e) => message.error(errMsg(e, "发送失败")),
     });
   };
@@ -227,9 +229,14 @@ function EmailRegisterTab() {
         />
       </Form.Item>
       {!codeSent ? (
-        <Button type="primary" block loading={sendCode.isPending} onClick={handleSend}>
-          获取验证码
-        </Button>
+        <>
+          <Space.Compact style={{ width: "100%", marginBottom: 8 }}>
+            {registerCaptcha.data?.image ? <img src={registerCaptcha.data.image} alt="图片验证码" style={{ width: 220, height: 72, border: "1px solid #d9d9d9", borderRadius: 6 }} /> : <div style={{ width: 220, height: 72 }} />}
+            <Button icon={<ReloadOutlined />} aria-label="刷新图片验证码" title="刷新图片验证码" onClick={() => { setCaptchaAnswer(""); registerCaptcha.refetch(); }} />
+          </Space.Compact>
+          <Input value={captchaAnswer} onChange={(e) => setCaptchaAnswer(e.target.value)} placeholder="请输入图片中的算式答案" inputMode="numeric" maxLength={2} style={{ marginBottom: 8 }} />
+          <Button type="primary" block loading={sendCode.isPending} onClick={handleSend}>获取验证码</Button>
+        </>
       ) : (
         <>
           <Form.Item name="code" label="验证码" rules={[{ required: true, message: "请输入验证码" }]}>
