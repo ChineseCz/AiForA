@@ -98,6 +98,7 @@ class Settings(BaseSettings):
     # ===== 邮箱账号（注册验证码 + 账密登录）=====
     email_code_expire_seconds: int = 600     # 注册验证码有效期 10 分钟
     email_resend_interval_seconds: int = 60  # 同一邮箱重发间隔
+    captcha_expire_seconds: int = 300  # 图片验证码有效期 5 分钟
     smtp_host: str = ""
     smtp_port: int = 465
     smtp_user: str = ""

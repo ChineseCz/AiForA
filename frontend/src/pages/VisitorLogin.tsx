@@ -1,10 +1,10 @@
-import { LineChartOutlined } from "@ant-design/icons";
+import { LineChartOutlined, ReloadOutlined } from "@ant-design/icons";
 import { Button, Card, Checkbox, Form, Input, Modal, Row, Segmented, Space, Tabs, Typography, message } from "antd";
 import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
 import { errMsg } from "@/api/client";
-import { useAuthConfig, useEmailLogin, useEmailRegister, useGuestLogin, useResetPassword, useSendEmailCode, useSendResetEmailCode, useWechatCodeLogin } from "@/api/hooks";
+import { useAuthConfig, useEmailLogin, useEmailRegister, useGuestLogin, useResetCaptcha, useResetPassword, useSendEmailCode, useSendResetEmailCode, useWechatCodeLogin } from "@/api/hooks";
 import { useAuth } from "@/auth";
 import { useVisitorAuth } from "@/visitorAuth";
 
@@ -75,13 +75,15 @@ function EmailLoginTab() {
   const [resetOpen, setResetOpen] = useState(false);
   const [resetEmail, setResetEmail] = useState("");
   const [resetSent, setResetSent] = useState(false);
+  const [captchaAnswer, setCaptchaAnswer] = useState("");
   const [resetForm] = Form.useForm();
+  const captcha = useResetCaptcha(resetOpen);
 
   const sendReset = () => {
     const email = resetEmail.trim().toLowerCase();
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { message.warning("请输入正确的邮箱地址"); return; }
-    sendResetCode.mutate({ email }, {
-      onSuccess: () => { setResetSent(true); message.success("如果邮箱已注册，验证码将发送到邮箱"); },
+    sendResetCode.mutate({ email, captcha_id: captcha.data?.challenge_id || "", captcha_answer: captchaAnswer.trim() }, {
+      onSuccess: () => { setResetSent(true); setCaptchaAnswer(""); message.success("如果邮箱已注册，验证码将发送到邮箱"); captcha.refetch(); },
       onError: (e) => message.error(errMsg(e, "发送失败")),
     });
   };
@@ -93,6 +95,7 @@ function EmailLoginTab() {
       return;
     }
     setResetEmail(email);
+    setCaptchaAnswer("");
     setResetOpen(true);
   };
 
@@ -140,12 +143,17 @@ function EmailLoginTab() {
       <Modal
         title="找回邮箱密码"
         open={resetOpen}
-        onCancel={() => { setResetOpen(false); setResetSent(false); resetForm.resetFields(); }}
+        onCancel={() => { setResetOpen(false); setResetSent(false); setCaptchaAnswer(""); resetForm.resetFields(); }}
         footer={null}
         destroyOnClose
       >
         <Space direction="vertical" style={{ width: "100%" }}>
           <Typography.Text>验证码将发送到：{resetEmail}</Typography.Text>
+          <Space.Compact style={{ width: "100%" }}>
+            {captcha.data?.image ? <img src={captcha.data.image} alt="图片验证码" style={{ width: 220, height: 72, border: "1px solid #d9d9d9", borderRadius: 6 }} /> : <div style={{ width: 220, height: 72 }} />}
+            <Button icon={<ReloadOutlined />} aria-label="刷新图片验证码" title="刷新图片验证码" onClick={() => { setCaptchaAnswer(""); captcha.refetch(); }} />
+          </Space.Compact>
+          <Input value={captchaAnswer} onChange={(e) => setCaptchaAnswer(e.target.value)} placeholder="请输入图片中的算式答案" inputMode="numeric" maxLength={2} />
           <Button block onClick={sendReset} loading={sendResetCode.isPending}>获取重置验证码</Button>
           {resetSent && (
             <Form form={resetForm} layout="vertical" onFinish={reset}>

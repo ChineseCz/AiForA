@@ -6,7 +6,7 @@ import type {
   AuthConfigResp, AuthSettingsCfg, BondDetail, Condition, Fundamentals, FieldMeta, GroupItem, GroupMember, JobStatus, KlineView, NewsItem,
   Overview, PostsPage, Quote, ScheduleCfg, ScreenResp, SectorItem, SectorRankResp, StockAiAnalysisResp, SummaryResp, IntradayView,
   TradeNote, TradeRecord, TradeStats, UserItem,
-  VisitorLoginResp, VisitorMeResp, WechatQrcodeResp, WechatPollResp,
+  ResetCaptchaResp, VisitorLoginResp, VisitorMeResp, WechatQrcodeResp, WechatPollResp,
 } from "./types";
 
 const get = async <T>(url: string, params?: object): Promise<T> =>
@@ -181,7 +181,16 @@ export const useEmailLogin = () =>
   });
 
 export const useSendResetEmailCode = () =>
-  useMutation({ mutationFn: (b: { email: string }) => post<{ error: string }>("/api/user/email/reset-send-code", b) });
+  useMutation({ mutationFn: (b: { email: string; captcha_id: string; captcha_answer: string }) => post<{ error: string }>("/api/user/email/reset-send-code", b) });
+
+export const useResetCaptcha = (enabled: boolean) =>
+  useQuery({
+    queryKey: ["reset_captcha"],
+    queryFn: () => get<ResetCaptchaResp>("/api/user/email/reset-captcha"),
+    enabled,
+    staleTime: 0,
+    refetchOnWindowFocus: false,
+  });
 
 export const useResetPassword = () =>
   useMutation({
