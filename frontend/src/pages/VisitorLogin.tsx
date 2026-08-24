@@ -12,7 +12,7 @@ const RESEND_SECONDS = 60;
 
 function RememberLogin() {
   return (
-    <Form.Item name="remember" valuePropName="checked" initialValue={false} style={{ marginBottom: 12 }}>
+    <Form.Item name="remember" valuePropName="checked" initialValue={true} style={{ marginBottom: 12 }}>
       <Checkbox>30日内免登录</Checkbox>
     </Form.Item>
   );
