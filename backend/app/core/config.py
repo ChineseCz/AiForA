@@ -76,7 +76,7 @@ class Settings(BaseSettings):
     # ===== 管理员鉴权（Phase 3）=====
     jwt_secret: str = "change-me-in-production"  # 生产务必用强随机值（env 覆盖）
     jwt_algorithm: str = "HS256"
-    jwt_expire_minutes: int = 720  # 12 小时
+    jwt_expire_minutes: int = 43200  # 30 天
     # 启动引导管理员：admins 表为空且这两项都配置时，自动创建一个管理员
     admin_username: str = ""
     admin_password: str = ""

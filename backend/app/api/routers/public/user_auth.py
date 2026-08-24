@@ -351,9 +351,9 @@ async def auth_config(c: CacheService = Depends(cache), session: AsyncSession = 
 
 @router.post("/guest-login")
 async def guest_login(c: CacheService = Depends(cache), session: AsyncSession = Depends(db_session)):
-    """游客一键登录：仅在访客模式开启时可用，发放只读 JWT（sty=guest，TTL=24h）。"""
+    """游客一键登录：仅在访客模式开启时可用，发放只读 JWT（sty=guest，TTL=30天）。"""
     if not await _is_visitor_mode_enabled(c, session):
         return JSONResponse({"error": "访客模式已关闭，请使用账号登录"}, status_code=403)
-    token = create_access_token("guest", typ="visitor", expire_minutes=60 * 24, sty="guest")
+    token = create_access_token("guest", typ="visitor", expire_minutes=settings.visitor_jwt_expire_minutes, sty="guest")
     return {"access_token": token, "token_type": "bearer"}
 
