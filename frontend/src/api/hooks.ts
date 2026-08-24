@@ -44,11 +44,11 @@ export const useScreenFields = () =>
 export const useSectors = () =>
   useQuery({ queryKey: ["sectors"], queryFn: () => get<SectorItem[]>("/api/screen/sectors") });
 
-export const useKline = (code: string, sp?: Record<string, number | boolean>) => {
+export const useKline = (code: string, sp?: Record<string, number | boolean>, period = "day") => {
   const spStr = sp && Object.keys(sp).length ? JSON.stringify(sp) : undefined;
   return useQuery({
-    queryKey: ["kline", code, spStr],
-    queryFn: () => get<KlineView>("/api/stock/kline", { code, ...(spStr ? { sp: spStr } : {}) }),
+    queryKey: ["kline", code, period, spStr],
+    queryFn: () => get<KlineView>("/api/stock/kline", { code, period, ...(spStr ? { sp: spStr } : {}) }),
     enabled: !!code,
   });
 };

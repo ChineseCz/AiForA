@@ -38,6 +38,7 @@ async def api_stock_quote(code: str = Query(default=""), c: CacheService = Depen
 @router.get("/stock/kline")
 async def api_stock_kline(
     code: str = Query(default=""),
+    period: str = Query(default="day"),
     sp: str = Query(default=""),
     c: CacheService = Depends(cache),
 ):
@@ -46,6 +47,8 @@ async def api_stock_kline(
         return JSONResponse(
             {"error": "缺少股票代码", "code": "", "name": "", "bars": []}, status_code=400
         )
+    if period not in ("day", "week", "month"):
+        return JSONResponse({"error": "period 必须是 day、week 或 month", "code": code, "name": "", "bars": []}, status_code=400)
     signal_params: dict | None = None
     if sp:
         try:
@@ -56,16 +59,16 @@ async def api_stock_kline(
             pass
 
     if not signal_params:
-        key = await c.key("kline", code=code)
+        key = await c.key("kline", code=code, period=period)
         hit = await c.get_json(key)
         if hit is not None:
             return hit
-        view = await run_in_threadpool(views.get_kline_view, code, None)
+        view = await run_in_threadpool(views.get_kline_view, code, None, period)
         view["error"] = ""
         await c.set_json(key, view, settings.cache_ttl_kline)
         return view
 
-    view = await run_in_threadpool(views.get_kline_view, code, signal_params)
+    view = await run_in_threadpool(views.get_kline_view, code, signal_params, period)
     view["error"] = ""
     return view
 

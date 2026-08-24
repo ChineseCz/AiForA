@@ -172,6 +172,7 @@ export interface KlineBar {
 export interface KlineView {
   code: string;
   name: string;
+  period?: "day" | "week" | "month";
   bars: KlineBar[];
   error: string;
 }

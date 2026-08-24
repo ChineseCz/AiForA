@@ -369,9 +369,10 @@ export default function StockDetail() {
     else navigate("/screener");
   };
   const [signalParams, setSignalParams] = useState<Record<string, number>>({});
+  const [period, setPeriod] = useState<"day" | "week" | "month">("day");
   const spForQuery = Object.keys(signalParams).length ? signalParams : undefined;
   const isBond = /^1[12]\d{4}$/.test(code);
-  const { data: kline, isLoading } = useKline(code, spForQuery);
+  const { data: kline, isLoading } = useKline(code, spForQuery, period);
   const { data: bondDetail } = useBondDetail(code);
   const { data: fund } = useFundamentals(code);
   const { data: news } = useNews(code);
@@ -385,7 +386,7 @@ export default function StockDetail() {
   // 当前可见区间 [start,end]（百分比），双指缩放手势需要它算新窗口；随 datazoom 事件更新。
   const rangeRef = useRef({ start: 55, end: 100 });
   // 参数变化触发重新请求时，记录上次 kline 对应的 code，用来区分"同股换参"vs"切换到新股"。
-  const prevKlineCodeRef = useRef<string>("");
+  const prevKlineKeyRef = useRef<string>("");
 
   const [tradeOpen, setTradeOpen] = useState(false);
   const [tradeDir, setTradeDir] = useState<"buy" | "sell">("buy");
@@ -421,7 +422,7 @@ export default function StockDetail() {
   // ── bars：含实时报价合并，供顶部指标条 / hover 悬停显示用 ──
   const bars = useMemo(() => {
     const raw = kline?.bars ?? [];
-    if (!quote || quote.error || !raw.length) return raw;
+    if (period !== "day" || !quote || quote.error || !raw.length) return raw;
     const last = raw[raw.length - 1];
     if (last.trade_date !== quote.trade_date) return raw;
     const merged = {
@@ -432,7 +433,7 @@ export default function StockDetail() {
       volume: quote.volume ?? last.volume,
     };
     return [...raw.slice(0, -1), merged];
-  }, [kline, quote]);
+  }, [kline, quote, period]);
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
   const activeIdx = hoverIdx != null && bars[hoverIdx] ? hoverIdx : bars.length - 1;
   const active = bars[activeIdx];
@@ -489,20 +490,21 @@ export default function StockDetail() {
   // 检测到"同股换参"（非首次加载、非切换股票）就用 rangeRef 恢复上次的可见区间。
   useEffect(() => {
     if (!kline || !chartReady) return;
-    const isSameCode = prevKlineCodeRef.current === kline.code;
-    prevKlineCodeRef.current = kline.code;
-    if (!isSameCode) return;
+    const key = `${kline.code}:${kline.period || period}`;
+    const isSameKline = prevKlineKeyRef.current === key;
+    prevKlineKeyRef.current = key;
+    if (!isSameKline) return;
     const inst = chartRef.current?.getEchartsInstance();
     if (!inst) return;
     const t = window.setTimeout(() => {
       inst.dispatchAction({ type: "dataZoom", start: rangeRef.current.start, end: rangeRef.current.end });
     }, 0);
     return () => window.clearTimeout(t);
-  }, [kline, chartReady]);
+  }, [kline, chartReady, period]);
 
   // ── 实时报价轻量更新：只改 K线和成交量两条系列的最后一根数据 ──
   useEffect(() => {
-    if (!quote || quote.error || !chartReady) return;
+    if (period !== "day" || !quote || quote.error || !chartReady) return;
     const inst = chartRef.current?.getEchartsInstance();
     if (!inst) return;
     const raw = kline?.bars ?? [];
@@ -530,7 +532,7 @@ export default function StockDetail() {
         },
       ],
     });
-  }, [quote, kline, chartReady]);
+  }, [quote, kline, chartReady, period]);
   const onEvents = useMemo(
     () => ({
       // 悬停时读取当前索引，更新顶部指标条。因为 buildOption 里 tooltip.triggerOn 已经设成
@@ -764,6 +766,21 @@ export default function StockDetail() {
           ) : <Empty description="暂无K线数据（需先在后台回补历史K线）" />}
         </Spin>
         <Space style={{ marginTop: 8, marginBottom: 4 }} wrap>
+          <Select
+            size="small"
+            value={period}
+            onChange={(v: "day" | "week" | "month") => {
+              setPeriod(v);
+              setHoverIdx(null);
+              rangeRef.current = { start: 55, end: 100 };
+            }}
+            options={[
+              { value: "day", label: "日线" },
+              { value: "week", label: "周线" },
+              { value: "month", label: "月线" },
+            ]}
+            style={{ width: 76 }}
+          />
           <Button
             size="small"
             style={{ color: "#e64545", borderColor: "#e64545" }}
