@@ -191,6 +191,25 @@ export interface Quote {
   error?: string;
 }
 
+export interface IntradayBar {
+  time: string;
+  open: number | null;
+  high: number | null;
+  low: number | null;
+  close: number | null;
+  volume: number;
+  amount: number;
+}
+
+export interface IntradayView {
+  code: string;
+  name: string;
+  date: string;
+  pre_close: number | null;
+  bars: IntradayBar[];
+  error: string;
+}
+
 export interface BondDetail {
   code: string;
   name: string | null;

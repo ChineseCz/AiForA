@@ -6,8 +6,8 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react"
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 
 import { errMsg } from "@/api/client";
-import { useBondDetail, useFundamentals, useGenerateStockAiAnalysis, useGroupMutations, useGroups, useKline, useNews, useQuote, useStockAiAnalysis, useTradeMutations } from "@/api/hooks";
-import type { KlineBar } from "@/api/types";
+import { useBondDetail, useFundamentals, useGenerateStockAiAnalysis, useGroupMutations, useGroups, useIntraday, useKline, useNews, useQuote, useStockAiAnalysis, useTradeMutations } from "@/api/hooks";
+import type { IntradayView, KlineBar } from "@/api/types";
 import MarkdownContent from "@/components/MarkdownContent";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { usePageContext } from "@/pageContext";
@@ -234,6 +234,54 @@ function buildOption(bars: KlineBar[], dark: boolean, compact: boolean, visibili
       { name: "J", type: "line", xAxisIndex: 3, yAxisIndex: 3, data: bars.map((b) => b.j), showSymbol: false, lineStyle, color: "#ec4899" },
     ],
   };
+}
+
+function buildIntradayOption(view: IntradayView, dark: boolean, compact: boolean) {
+  const bars = view.bars;
+  const labels = bars.map((b) => b.time.slice(11, 16));
+  const prices = bars.map((b) => b.close);
+  const volumes = bars.map((b) => ({ value: b.volume, itemStyle: { color: b.close != null && b.open != null && b.close >= b.open ? UP : DOWN } }));
+  const axis = dark ? "#a6adb4" : "#666";
+  const grid = dark ? "#2a2e33" : "#f0f0f0";
+  return {
+    animation: false,
+    tooltip: { trigger: "axis" },
+    grid: [
+      { left: compact ? 42 : 52, right: 12, top: 16, height: "58%" },
+      { left: compact ? 42 : 52, right: 12, top: "78%", height: "16%" },
+    ],
+    xAxis: [
+      { type: "category", data: labels, gridIndex: 0, axisLabel: { show: false }, axisLine: { lineStyle: { color: axis } } },
+      { type: "category", data: labels, gridIndex: 1, axisLabel: { color: axis, fontSize: 10 }, axisLine: { lineStyle: { color: axis } } },
+    ],
+    yAxis: [
+      { type: "value", scale: true, gridIndex: 0, axisLabel: { color: axis }, splitLine: { lineStyle: { color: grid } } },
+      { type: "value", gridIndex: 1, axisLabel: { show: false }, splitLine: { show: false } },
+    ],
+    dataZoom: [{ type: "inside", xAxisIndex: [0, 1] }, { type: "slider", xAxisIndex: [0, 1], bottom: 0, height: 16 }],
+    series: [
+      { name: "价格", type: "line", data: prices, showSymbol: false, smooth: false, lineStyle: { width: 1.5, color: "#1677ff" }, areaStyle: { opacity: 0.08, color: "#1677ff" } },
+      { name: "成交量", type: "bar", xAxisIndex: 1, yAxisIndex: 1, data: volumes },
+    ],
+  };
+}
+
+function IntradayPanel({ code, defaultDay, dark, isMobile }: { code: string; defaultDay: string; dark: boolean; isMobile: boolean }) {
+  const [day, setDay] = useState(defaultDay);
+  useEffect(() => { if (defaultDay) setDay(defaultDay); }, [defaultDay]);
+  const { data, isLoading, isFetching } = useIntraday(code, day);
+  const today = dayjs().format("YYYY-MM-DD");
+  return (
+    <Card
+      size="small"
+      title={<Space size={8}><span>分时线</span><Typography.Text type="secondary" style={{ fontSize: 12 }}>{day === today ? "实时按需刷新，不落库" : "历史分钟数据，不落库"}</Typography.Text></Space>}
+      extra={<DatePicker size="small" value={day ? dayjs(day) : null} format="YYYY-MM-DD" allowClear={false} disabledDate={(d) => d.isAfter(dayjs(), "day")} onChange={(v) => v && setDay(v.format("YYYY-MM-DD"))} />}
+    >
+      <Spin spinning={isLoading || isFetching}>
+        {data?.bars?.length ? <ReactECharts option={buildIntradayOption(data, dark, isMobile)} style={{ height: isMobile ? 280 : 340 }} notMerge /> : <Empty description={data?.error || "该日期暂无分钟数据"} />}
+      </Spin>
+    </Card>
+  );
 }
 
 // 顶部指标条：随悬停更新的当前 bar 数值（取代悬浮 tooltip）。
@@ -708,6 +756,10 @@ export default function StockDetail() {
       (fund.sectors?.length ? `所属板块：${fund.sectors.map((s) => s.sector).join("、")}。` : "") : ""),
   );
 
+  const intradayDefaultDay = kline?.bars?.length
+    ? kline.bars[kline.bars.length - 1].trade_date
+    : dayjs().format("YYYY-MM-DD");
+
   return (
     <Space direction="vertical" size={isMobile ? 12 : 16} style={{ width: "100%" }}>
       <Space wrap>
@@ -873,6 +925,8 @@ export default function StockDetail() {
           ),
         }]} />
       </Card>
+
+      <IntradayPanel code={code} defaultDay={intradayDefaultDay} dark={dark} isMobile={isMobile} />
 
       <Row gutter={[isMobile ? 8 : 16, isMobile ? 8 : 16]}>
         <Col xs={24} sm={24} md={8}>

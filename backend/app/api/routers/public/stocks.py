@@ -14,6 +14,7 @@ from app.core.config import settings
 from app.core.markdown import render_md
 from app.repositories import sync_data as db
 from app.services import stock_ai, views
+from app.services.external import eastmoney
 from app.services.external import sina
 
 router = APIRouter(prefix="/api")
@@ -71,6 +72,36 @@ async def api_stock_kline(
     view = await run_in_threadpool(views.get_kline_view, code, signal_params, period)
     view["error"] = ""
     return view
+
+
+@router.get("/stock/intraday")
+async def api_stock_intraday(
+    code: str = Query(default=""),
+    day: str = Query(default=""),
+    c: CacheService = Depends(cache),
+):
+    """按需读取指定日期 1 分钟线，不写数据库；短缓存用于避免重复请求上游。"""
+    code = code.strip()
+    if not code:
+        return JSONResponse({"error": "缺少股票代码", "code": code, "date": day, "bars": []}, status_code=400)
+    try:
+        target = date.fromisoformat(day) if day else date.today()
+    except ValueError:
+        return JSONResponse({"error": "日期格式必须是 YYYY-MM-DD", "code": code, "date": day, "bars": []}, status_code=400)
+    if target > date.today():
+        return JSONResponse({"error": "不能查询未来日期", "code": code, "date": target.isoformat(), "bars": []}, status_code=400)
+    day = target.isoformat()
+    key = await c.key("intraday", code=code, day=day)
+    hit = await c.get_json(key)
+    if hit is not None:
+        return hit
+    try:
+        result = await run_in_threadpool(eastmoney.fetch_intraday, code, day)
+    except Exception as exc:  # noqa: BLE001
+        return JSONResponse({"error": f"分时数据获取失败：{exc}", "code": code, "date": day, "bars": []}, status_code=502)
+    result["error"] = ""
+    await c.set_json(key, result, 30 if day == date.today().isoformat() else 3600)
+    return result
 
 
 @router.get("/index/kline")

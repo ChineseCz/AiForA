@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "./client";
 import type {
   AuthConfigResp, AuthSettingsCfg, BondDetail, Condition, Fundamentals, FieldMeta, GroupItem, GroupMember, JobStatus, KlineView, NewsItem,
-  Overview, PostsPage, Quote, ScheduleCfg, ScreenResp, SectorItem, SectorRankResp, StockAiAnalysisResp, SummaryResp,
+  Overview, PostsPage, Quote, ScheduleCfg, ScreenResp, SectorItem, SectorRankResp, StockAiAnalysisResp, SummaryResp, IntradayView,
   TradeNote, TradeRecord, TradeStats, UserItem,
   VisitorLoginResp, VisitorMeResp, WechatQrcodeResp, WechatPollResp,
 } from "./types";
@@ -74,6 +74,14 @@ export const useQuote = (code: string) =>
     enabled: !!code,
     refetchInterval: 1000,
     staleTime: 0,
+  });
+
+export const useIntraday = (code: string, day: string) =>
+  useQuery({
+    queryKey: ["intraday", code, day],
+    queryFn: () => get<IntradayView>("/api/stock/intraday", { code, day }),
+    enabled: !!code && !!day,
+    refetchInterval: day === new Date().toISOString().slice(0, 10) ? 15_000 : false,
   });
 
 export const useSectorRank = () =>

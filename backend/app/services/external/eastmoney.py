@@ -1,7 +1,9 @@
-"""东方财富财务指标抓取：全市场最新一期业绩报表（EPS/ROE/净利润同比/营收同比/毛利率）。
+"""东方财富财务指标和按需行情数据抓取。
 
 从旧 stock.py 移植（纯 requests，带 Referer 头，实测稳定）。
 """
+from datetime import date, timedelta
+
 import requests
 
 _EM_FINANCE_URL = "https://datacenter-web.eastmoney.com/api/data/v1/get"
@@ -9,6 +11,7 @@ _EM_FINANCE_REPORT = "RPT_LICO_FN_CPD"
 _EM_FINANCE_COLUMNS = "SECURITY_CODE,SECURITY_NAME_ABBR,SECUCODE,REPORTDATE,BASIC_EPS,WEIGHTAVG_ROE,YSTZ,SJLTZ,XSMLL"
 _EM_FINANCE_PAGE_SIZE = 500
 _EM_HEADERS = {"Referer": "https://data.eastmoney.com/"}
+_EM_MINUTE_URL = "https://push2his.eastmoney.com/api/qt/stock/kline/get"
 _EM_BOND_URL = "https://push2.eastmoney.com/api/qt/clist/get"
 _EM_BOND_FIELDS = "f2,f3,f4,f5,f6,f12,f13,f14,f15,f16,f17,f18"
 _EM_BOND_PAGE_SIZE = 100
@@ -19,6 +22,47 @@ def _to_float(v):
         return float(v)
     except (TypeError, ValueError):
         return None
+
+
+def _em_market(code: str) -> int:
+    """东方财富市场编号：1=沪市，0=深市。"""
+    return 1 if code.startswith(("5", "6", "9", "11", "12")) else 0
+
+
+def fetch_intraday(code: str, day: str) -> dict:
+    """按需获取指定交易日 1 分钟线，不落库。"""
+    target = date.fromisoformat(day)
+    end = target + timedelta(days=1)
+    response = requests.get(
+        _EM_MINUTE_URL,
+        params={
+            "secid": f"{_em_market(code)}.{code}",
+            "klt": "1", "fqt": "0",
+            "beg": target.strftime("%Y%m%d"), "end": end.strftime("%Y%m%d"),
+            "lmt": "10000",
+            "fields1": "f1,f2,f3,f4,f5,f6",
+            "fields2": "f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61",
+        },
+        headers={**_EM_HEADERS, "User-Agent": "Mozilla/5.0"},
+        timeout=15,
+    )
+    response.raise_for_status()
+    data = (response.json().get("data") or {})
+    bars = []
+    for raw in data.get("klines") or []:
+        parts = raw.split(",")
+        if len(parts) < 7:
+            continue
+        bars.append({
+            "time": parts[0],
+            "open": _to_float(parts[1]), "close": _to_float(parts[2]),
+            "high": _to_float(parts[3]), "low": _to_float(parts[4]),
+            "volume": _to_float(parts[5]) or 0, "amount": _to_float(parts[6]) or 0,
+        })
+    return {
+        "code": code, "name": data.get("name") or code, "date": day,
+        "pre_close": _to_float(data.get("preKPrice")), "bars": bars,
+    }
 
 
 def fetch_bond_snapshot() -> list[dict]:
