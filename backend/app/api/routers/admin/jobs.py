@@ -141,10 +141,20 @@ async def stock_backfill(request: Request, session: AsyncSession = Depends(db_se
         days = max(20, min(120, int(body.get("days", 60) or 60)))
     except (TypeError, ValueError):
         days = 60
+    asset_type = body.get("asset_type", "all")
+    if asset_type not in ("all", "stock", "bond"):
+        asset_type = "all"
+    failed_only = bool(body.get("failed_only", False))
     if await jobs.any_running(session, "stock_backfill"):
         return {"started": False, "running": True}
     job_id = await run_in_threadpool(jobs.create_job, "stock_backfill", "手动")
-    task_backfill.delay(days=days, source="手动", job_id=job_id)
+    task_backfill.delay(
+        days=days,
+        source="手动",
+        job_id=job_id,
+        asset_type=asset_type,
+        failed_only=failed_only,
+    )
     return {"started": True, "running": True}
 
 
@@ -162,6 +172,28 @@ async def finance_sync(session: AsyncSession = Depends(db_session)):
 @router.get("/stock/finance_sync/status")
 async def finance_sync_status(session: AsyncSession = Depends(db_session)):
     return await jobs.get_job_status(session, "finance_sync")
+
+
+@router.post("/bond/sync")
+async def bond_sync(session: AsyncSession = Depends(db_session)):
+    from app.workers.tasks.stock import task_bond_sync
+    return await _trigger(session, "bond_sync", task_bond_sync, source="手动")
+
+
+@router.get("/bond/sync/status")
+async def bond_sync_status(session: AsyncSession = Depends(db_session)):
+    return await jobs.get_job_status(session, "bond_sync")
+
+
+@router.post("/bond/basic_sync")
+async def bond_basic_sync(session: AsyncSession = Depends(db_session)):
+    from app.workers.tasks.stock import task_bond_basic_sync
+    return await _trigger(session, "bond_basic_sync", task_bond_basic_sync, source="手动")
+
+
+@router.get("/bond/basic_sync/status")
+async def bond_basic_sync_status(session: AsyncSession = Depends(db_session)):
+    return await jobs.get_job_status(session, "bond_basic_sync")
 
 
 @router.post("/stock/sync-sectors")

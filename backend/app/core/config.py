@@ -76,7 +76,8 @@ class Settings(BaseSettings):
     # ===== 管理员鉴权（Phase 3）=====
     jwt_secret: str = "change-me-in-production"  # 生产务必用强随机值（env 覆盖）
     jwt_algorithm: str = "HS256"
-    jwt_expire_minutes: int = 720  # 12 小时
+    jwt_expire_minutes: int = 1440  # 未勾选免登录时 24 小时
+    remember_jwt_expire_minutes: int = 43200  # 勾选“30日内免登录”时 30 天
     # 启动引导管理员：admins 表为空且这两项都配置时，自动创建一个管理员
     admin_username: str = ""
     admin_password: str = ""
@@ -92,7 +93,7 @@ class Settings(BaseSettings):
     sms_code_length: int = 6
     sms_code_expire_seconds: int = 300      # 验证码有效期 5 分钟
     sms_resend_interval_seconds: int = 60   # 同一手机号重发间隔
-    visitor_jwt_expire_minutes: int = 43200  # 访客 token 有效期 30 天
+    visitor_jwt_expire_minutes: int = 1440  # 未勾选免登录时 24 小时
 
     # ===== 邮箱账号（注册验证码 + 账密登录）=====
     email_code_expire_seconds: int = 600     # 注册验证码有效期 10 分钟

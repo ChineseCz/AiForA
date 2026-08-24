@@ -1,5 +1,5 @@
 import { LineChartOutlined } from "@ant-design/icons";
-import { Button, Card, Form, Input, Row, Tabs, Typography, message } from "antd";
+import { Button, Card, Checkbox, Form, Input, Row, Tabs, Typography, message } from "antd";
 import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
@@ -10,6 +10,14 @@ import { useVisitorAuth } from "@/visitorAuth";
 
 const RESEND_SECONDS = 60;
 
+function RememberLogin() {
+  return (
+    <Form.Item name="remember" valuePropName="checked" initialValue={true} style={{ marginBottom: 12 }}>
+      <Checkbox>30日内免登录</Checkbox>
+    </Form.Item>
+  );
+}
+
 // 手机短信登录需要短信服务资质认证，暂时做不了，先只保留微信登录（SmsLoginTab 已移除，
 // 后端 /api/user/sms/* 接口保留未删，资质办下来后可以直接把 Tab 加回来）。
 function WechatLoginTab() {
@@ -19,8 +27,8 @@ function WechatLoginTab() {
   const from: string = (loc.state as { from?: string } | null)?.from ?? "/";
   const wechatLogin = useWechatCodeLogin();
 
-  const handleLogin = (values: { code: string }) => {
-    wechatLogin.mutate({ code: values.code.trim() }, {
+  const handleLogin = (values: { code: string; remember?: boolean }) => {
+    wechatLogin.mutate({ code: values.code.trim(), remember: !!values.remember }, {
       onSuccess: (d) => { login(d.access_token); nav(from, { replace: true }); },
       onError: (e) => message.error(errMsg(e, "验证失败，验证码错误或已过期")),
     });
@@ -45,6 +53,7 @@ function WechatLoginTab() {
         <Form.Item name="code" rules={[{ required: true, message: "请输入验证码" }]}>
           <Input placeholder="输入公众号回复的 6 位验证码" maxLength={6} style={{ textAlign: "center" }} />
         </Form.Item>
+        <RememberLogin />
         <Button type="primary" htmlType="submit" block loading={wechatLogin.isPending}>
           登录
         </Button>
@@ -61,9 +70,9 @@ function EmailLoginTab() {
   const from: string = (loc.state as { from?: string } | null)?.from ?? "/";
   const emailLogin = useEmailLogin();
 
-  const handleLogin = (values: { email: string; password: string }) => {
+  const handleLogin = (values: { email: string; password: string; remember?: boolean }) => {
     emailLogin.mutate(
-      { email: values.email.trim().toLowerCase(), password: values.password },
+      { email: values.email.trim().toLowerCase(), password: values.password, remember: !!values.remember },
       {
         onSuccess: (d) => {
           login(d.access_token);
@@ -83,6 +92,7 @@ function EmailLoginTab() {
       <Form.Item name="password" label="密码" rules={[{ required: true, message: "请输入密码" }]}>
         <Input.Password placeholder="请输入密码" autoComplete="current-password" />
       </Form.Item>
+      <RememberLogin />
       <Form.Item style={{ marginBottom: 0 }}>
         <Button type="primary" htmlType="submit" block loading={emailLogin.isPending}>
           登录
@@ -125,9 +135,9 @@ function EmailRegisterTab() {
     });
   };
 
-  const handleRegister = (values: { code: string; password: string }) => {
+  const handleRegister = (values: { code: string; password: string; remember?: boolean }) => {
     register.mutate(
-      { email: email.trim().toLowerCase(), code: values.code, password: values.password },
+      { email: email.trim().toLowerCase(), code: values.code, password: values.password, remember: !!values.remember },
       {
         onSuccess: (d) => { login(d.access_token); nav(from, { replace: true }); },
         onError: (e) => message.error(errMsg(e, "注册失败")),
@@ -162,6 +172,7 @@ function EmailRegisterTab() {
           >
             <Input.Password placeholder="至少 6 位" autoComplete="new-password" />
           </Form.Item>
+          <RememberLogin />
           <Form.Item style={{ marginBottom: 8 }}>
             <Button type="primary" htmlType="submit" block loading={register.isPending}>
               注册并登录

@@ -2,7 +2,7 @@ import {
   BulbOutlined, CheckCircleFilled, DeleteOutlined, FilterOutlined, PieChartOutlined, PlusOutlined, TeamOutlined,
 } from "@ant-design/icons";
 import {
-  Button, Card, Checkbox, Collapse, Empty, Input, InputNumber, List, Modal, Segmented, Select, Space,
+  Button, Card, Checkbox, Collapse, Descriptions, Empty, Input, InputNumber, List, Modal, Segmented, Select, Space,
   Spin, Switch, Table, Tabs, Tag, Typography, message,
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
@@ -105,6 +105,329 @@ function SectorRankTab({ onGotoScreener }: { onGotoScreener: () => void }) {
         <Table<SectorRankItem> rowKey="sector" size="small" columns={columns} dataSource={items}
           loading={isLoading} pagination={{ pageSize: 30, showSizeChanger: true }} />
       ) : <Empty description={isLoading ? "加载中" : "暂无数据"} />}
+    </Card>
+  );
+}
+
+// ──────────────────────────────────────────────
+// ETF筛选 Tab
+// ──────────────────────────────────────────────
+
+interface ETFRow {
+  code: string;
+  name: string;
+  close: number;
+  change_pct: number;
+  volume: number;
+  amount: number;
+  turnover_rate: number;
+}
+
+function ETFScreenTab() {
+  const isMobile = useIsMobile();
+  const [loading, setLoading] = useState(false);
+  const [etfs, setEtfs] = useState<ETFRow[]>([]);
+  const [sortField, setSortField] = useState<string>("change_pct");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
+  const [nameQuery, setNameQuery] = useState("");
+
+  // 加载 ETF 列表
+  const loadEtfs = async () => {
+    setLoading(true);
+    try {
+      const token = getToken() || getVisitorToken();
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (token) headers.Authorization = `Bearer ${token}`;
+
+      const res = await fetch("/api/stock/etf/list", { headers });
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      setEtfs(data.etfs || []);
+    } catch (err) {
+      message.error(errMsg(err));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadEtfs();
+  }, []);
+
+  // 筛选和排序
+  const filteredEtfs = useMemo(() => {
+    let result = etfs;
+
+    // 名称筛选
+    if (nameQuery.trim()) {
+      const q = nameQuery.trim().toLowerCase();
+      result = result.filter(e =>
+        e.name.toLowerCase().includes(q) || e.code.includes(q)
+      );
+    }
+
+    // 排序
+    result = [...result].sort((a, b) => {
+      const aVal = a[sortField as keyof ETFRow] as number;
+      const bVal = b[sortField as keyof ETFRow] as number;
+      return sortOrder === "desc" ? bVal - aVal : aVal - bVal;
+    });
+
+    return result;
+  }, [etfs, nameQuery, sortField, sortOrder]);
+
+  const handleSort = (field: string) => {
+    if (sortField === field) {
+      setSortOrder(sortOrder === "desc" ? "asc" : "desc");
+    } else {
+      setSortField(field);
+      setSortOrder("desc");
+    }
+  };
+
+  const columns: ColumnsType<ETFRow> = isMobile ? [
+    {
+      title: "ETF名称", dataIndex: "name", fixed: "left",
+      render: (name: string, row) => (
+        <Link to={`/stock/${row.code}`} style={{ fontWeight: 500 }}>{name}</Link>
+      ),
+    },
+    {
+      title: "涨跌幅", dataIndex: "change_pct", width: 90,
+      render: (v) => <span className={pctClass(v)} style={{ fontWeight: 600 }}>{fmtPct(v)}</span>,
+      sorter: true,
+    },
+  ] : [
+    {
+      title: "ETF名称", dataIndex: "name", width: 200, fixed: "left",
+      render: (name: string, row) => (
+        <div>
+          <Link to={`/stock/${row.code}`} style={{ fontWeight: 500 }}>{name}</Link>
+          <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>{row.code}</div>
+        </div>
+      ),
+    },
+    {
+      title: "最新价", dataIndex: "close", width: 100,
+      render: (v) => fmtNum(v),
+    },
+    {
+      title: "涨跌幅", dataIndex: "change_pct", width: 100,
+      render: (v) => <span className={pctClass(v)} style={{ fontWeight: 600 }}>{fmtPct(v)}</span>,
+      sorter: true,
+    },
+    {
+      title: "成交量", dataIndex: "volume", width: 120,
+      render: (v) => fmtNum(v),
+    },
+    {
+      title: "成交额", dataIndex: "amount", width: 120,
+      render: (v) => fmtYi(v),
+    },
+    {
+      title: "换手率", dataIndex: "turnover_rate", width: 100,
+      render: (v) => fmtPct(v),
+      sorter: true,
+    },
+  ];
+
+  return (
+    <Card size="small">
+      <Space direction="vertical" size={12} style={{ width: "100%" }}>
+        <Space wrap>
+          <Input
+            placeholder="搜索ETF名称或代码"
+            allowClear
+            value={nameQuery}
+            onChange={(e) => setNameQuery(e.target.value)}
+            style={{ width: isMobile ? 180 : 240 }}
+          />
+          <Button onClick={loadEtfs} loading={loading}>刷新</Button>
+          <Tag color="blue">{filteredEtfs.length} 只ETF</Tag>
+        </Space>
+
+        {loading && etfs.length === 0 ? (
+          <div style={{ textAlign: "center", padding: "40px 0" }}>
+            <Spin tip="加载中..." />
+          </div>
+        ) : filteredEtfs.length > 0 ? (
+          <Table<ETFRow>
+            rowKey="code"
+            size="small"
+            columns={columns}
+            dataSource={filteredEtfs}
+            pagination={{ pageSize: 50, showSizeChanger: true, showTotal: (t) => `共 ${t} 只` }}
+            onChange={(_pagination, _filters, sorter: any) => {
+              if (sorter.field) handleSort(sorter.field);
+            }}
+            scroll={{ x: isMobile ? 600 : undefined }}
+          />
+        ) : (
+          <Empty description="暂无ETF数据" />
+        )}
+      </Space>
+    </Card>
+  );
+}
+
+interface BondRow {
+  code: string;
+  name: string;
+  close: number | null;
+  change_pct: number | null;
+  volume: number | null;
+  amount: number | null;
+  high: number | null;
+  low: number | null;
+  stock_code: string | null;
+  stock_name: string | null;
+  convert_price: number | null;
+  conversion_value: number | null;
+  premium_rate: number | null;
+  maturity_date: string | null;
+  rating: string | null;
+  redeem_status: string | null;
+  risk_tags?: string[];
+}
+
+function BondScreenTab() {
+  const isMobile = useIsMobile();
+  const [loading, setLoading] = useState(false);
+  const [bonds, setBonds] = useState<BondRow[]>([]);
+  const [query, setQuery] = useState("");
+  const [minPrice, setMinPrice] = useState<number>();
+  const [maxPrice, setMaxPrice] = useState<number>();
+  const [maxPremium, setMaxPremium] = useState<number>();
+  const [minConversion, setMinConversion] = useState<number>();
+  const [minAmount, setMinAmount] = useState<number>();
+  const [rating, setRating] = useState("");
+  const [risk, setRisk] = useState("");
+  const [backtestOpen, setBacktestOpen] = useState(false);
+  const [backtestLoading, setBacktestLoading] = useState(false);
+  const [backtest, setBacktest] = useState<any>(null);
+
+  const numSorter = (field: keyof BondRow) => (a: BondRow, b: BondRow) =>
+    (a[field] as number | null ?? Number.POSITIVE_INFINITY) - (b[field] as number | null ?? Number.POSITIVE_INFINITY);
+  const ratingRank: Record<string, number> = { "AAA": 6, "AA+": 5, "AA": 4, "AA-": 3, "A+": 2, "A": 1 };
+
+  const loadBonds = async () => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams({ limit: "2000" });
+      if (query.trim()) params.set("q", query.trim());
+      if (minPrice != null) params.set("min_price", String(minPrice));
+      if (maxPrice != null) params.set("max_price", String(maxPrice));
+      if (maxPremium != null) params.set("max_premium", String(maxPremium));
+      if (minConversion != null) params.set("min_conversion", String(minConversion));
+      if (minAmount != null) params.set("min_amount", String(minAmount));
+      if (rating) params.set("rating", rating);
+      if (risk) params.set("risk", risk);
+      const token = getToken() || getVisitorToken();
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (token) headers.Authorization = `Bearer ${token}`;
+
+      const res = await fetch(`/api/bond/list?${params.toString()}`, { headers });
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      setBonds(data.bonds || []);
+    } catch (err) {
+      message.error(errMsg(err));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const runBacktest = async () => {
+    setBacktestLoading(true);
+    try {
+      const params = new URLSearchParams({
+        max_premium: String(maxPremium ?? 10), max_price: String(maxPrice ?? 130),
+        min_conversion: String(minConversion ?? 100), hold_days: "5",
+      });
+      const token = getToken() || getVisitorToken();
+      const res = await fetch(`/api/bond/backtest?${params.toString()}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "回测失败");
+      setBacktest(data);
+      setBacktestOpen(true);
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : "回测失败");
+    } finally {
+      setBacktestLoading(false);
+    }
+  };
+
+  useEffect(() => { loadBonds(); }, []);
+
+  const columns: ColumnsType<BondRow> = [
+    {
+      title: "转债名称", dataIndex: "name", fixed: "left", width: isMobile ? 150 : 210,
+      render: (name: string, row) => (
+        <div>
+          <Link to={`/stock/${row.code}`} state={{ from: "screener" }} style={{ fontWeight: 500 }}>{name}</Link>
+          <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>{row.code}</div>
+        </div>
+      ),
+    },
+    { title: "最新价", dataIndex: "close", width: 90, sorter: numSorter("close"), render: (v) => fmtNum(v) },
+    {
+      title: "涨跌幅", dataIndex: "change_pct", width: 90, sorter: numSorter("change_pct"),
+      render: (v) => <span className={pctClass(v)} style={{ fontWeight: 600 }}>{fmtPct(v)}</span>,
+    },
+    { title: "成交额", dataIndex: "amount", width: 120, sorter: numSorter("amount"), render: (v) => fmtYi(v) },
+    { title: "正股", dataIndex: "stock_name", width: 120, render: (v, row) => v || row.stock_code || "-" },
+    { title: "转股价值", dataIndex: "conversion_value", width: 100, sorter: numSorter("conversion_value"), render: (v) => fmtNum(v) },
+    { title: "转股溢价率", dataIndex: "premium_rate", width: 110, sorter: numSorter("premium_rate"), render: (v) => v == null ? "-" : fmtPct(v) },
+    { title: "评级", dataIndex: "rating", width: 80, sorter: (a, b) => (ratingRank[b.rating || ""] || 0) - (ratingRank[a.rating || ""] || 0), render: (v) => v || "-" },
+    { title: "到期日", dataIndex: "maturity_date", width: 110, sorter: (a, b) => (a.maturity_date || "9999").localeCompare(b.maturity_date || "9999"), render: (v) => v || "-" },
+    { title: "强赎状态", dataIndex: "redeem_status", width: 100, render: (v) => v || "-" },
+    { title: "风险提示", dataIndex: "risk_tags", width: 150, render: (tags: string[] = []) => <Space wrap size={2}>{tags.map((t) => <Tag key={t} color={t === "high_premium" ? "orange" : "red"}>{t === "near_maturity" ? "临近到期" : t === "high_premium" ? "高溢价" : "强赎"}</Tag>)}</Space> },
+  ];
+
+  return (
+    <Card size="small">
+      <Space direction="vertical" size={12} style={{ width: "100%" }}>
+        <Space wrap>
+          <Input
+            placeholder="搜索转债名称或代码"
+            allowClear
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onPressEnter={loadBonds}
+            style={{ width: isMobile ? 180 : 240 }}
+          />
+          <Button onClick={loadBonds} loading={loading}>查询</Button>
+          <Button onClick={runBacktest} loading={backtestLoading}>策略回测</Button>
+          <Tag color="purple">{bonds.length} 只转债</Tag>
+        </Space>
+        <Space wrap>
+          <InputNumber placeholder="最低价" min={0} step={1} value={minPrice} onChange={(v) => setMinPrice(v ?? undefined)} />
+          <InputNumber placeholder="最高价" min={0} step={1} value={maxPrice} onChange={(v) => setMaxPrice(v ?? undefined)} />
+          <InputNumber placeholder="最高溢价率%" value={maxPremium} onChange={(v) => setMaxPremium(v ?? undefined)} />
+          <InputNumber placeholder="最低转股价值" value={minConversion} onChange={(v) => setMinConversion(v ?? undefined)} />
+          <InputNumber placeholder="最低成交额" value={minAmount} onChange={(v) => setMinAmount(v ?? undefined)} />
+          <Select allowClear placeholder="评级" value={rating || undefined} onChange={(v) => setRating(v || "")} style={{ width: 100 }} options={["AAA", "AA+", "AA", "AA-", "A+", "A"].map((v) => ({ value: v, label: v }))} />
+          <Select allowClear placeholder="风险标签" value={risk || undefined} onChange={(v) => setRisk(v || "")} style={{ width: 130 }} options={[{ value: "redeem", label: "强赎" }, { value: "near_maturity", label: "临近到期" }, { value: "high_premium", label: "高溢价" }]} />
+        </Space>
+        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+          可重点关注低溢价率、较高转股价值、合理价格、较高评级和充足成交额；排序仅作研究参考，不代表收益保证。
+        </Typography.Text>
+        {loading && bonds.length === 0 ? <div style={{ textAlign: "center", padding: "40px 0" }}><Spin tip="加载中..." /></div> : (
+          <Table<BondRow>
+            rowKey="code" size="small" columns={columns} dataSource={bonds}
+            pagination={{ pageSize: 50, showSizeChanger: true, showTotal: (t) => `共 ${t} 只` }}
+            scroll={{ x: isMobile ? 900 : 1050 }}
+          />
+        )}
+      </Space>
+      <Modal title="低溢价转债策略回测" open={backtestOpen} onCancel={() => setBacktestOpen(false)} footer={null}>
+        {backtest && <Descriptions column={1} size="small">
+          <Descriptions.Item label="样本交易日">{backtest.trade_count}</Descriptions.Item>
+          <Descriptions.Item label="平均5日收益">{backtest.avg_return_pct.toFixed(2)}%</Descriptions.Item>
+          <Descriptions.Item label="胜率">{backtest.win_rate_pct.toFixed(2)}%</Descriptions.Item>
+          <Descriptions.Item label="最好/最差">{backtest.best_return_pct.toFixed(2)}% / {backtest.worst_return_pct.toFixed(2)}%</Descriptions.Item>
+        </Descriptions>}
+      </Modal>
     </Card>
   );
 }
@@ -698,6 +1021,8 @@ export default function Screener() {
         destroyInactiveTabPane
         items={[
           { key: "sectors", label: "板块行情", children: <SectorRankTab onGotoScreener={handleGotoScreener} /> },
+          { key: "etf", label: "ETF筛选", children: <ETFScreenTab /> },
+          { key: "bond", label: "转债行情", children: <BondScreenTab /> },
           { key: "screener", label: "选股", children: <ScreenerTab pendingRun={pendingRun} onRunDone={() => setPendingRun(false)} /> },
         ]}
       />

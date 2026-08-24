@@ -31,10 +31,22 @@ def task_crawl(source: str = "手动", summarize: bool = True, job_id: int | Non
 
 
 @celery_app.task(name="browser.backfill", queue=QUEUE_BROWSER)
-def task_backfill(days: int = 60, delay: float = 0.5, source: str = "手动", job_id: int | None = None) -> None:
+def task_backfill(
+    days: int = 60,
+    delay: float = 0.5,
+    source: str = "手动",
+    job_id: int | None = None,
+    asset_type: str = "all",
+    failed_only: bool = False,
+) -> None:
+    if job_id is not None:
+        from app.repositories import jobs
+        if jobs.is_job_finished(job_id):
+            print(f"跳过重复的历史K线回补任务：job_id={job_id} 已成功完成")
+            return
     from app.scrapers import kline
     with job_run("stock_backfill", source, invalidate_cache=True, job_id=job_id):
-        kline.backfill_history(days, delay)
+        kline.backfill_history(days, delay, asset_type=asset_type, failed_only=failed_only, job_id=job_id)
     # 历史K线变化 → 触发预计算指标重算（default 队列，由容器 worker 消费）
     from app.workers.tasks.stock import task_recompute_indicators
     task_recompute_indicators.delay(source="自动(回补后)")

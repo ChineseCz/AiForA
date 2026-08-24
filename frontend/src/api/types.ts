@@ -172,6 +172,7 @@ export interface KlineBar {
 export interface KlineView {
   code: string;
   name: string;
+  period?: "day" | "week" | "month";
   bars: KlineBar[];
   error: string;
 }
@@ -188,6 +189,44 @@ export interface Quote {
   trade_date: string;
   time: string;
   error?: string;
+}
+
+export interface IntradayBar {
+  time: string;
+  open: number | null;
+  high: number | null;
+  low: number | null;
+  close: number | null;
+  volume: number;
+  amount: number;
+}
+
+export interface IntradayView {
+  code: string;
+  name: string;
+  date: string;
+  pre_close: number | null;
+  bars: IntradayBar[];
+  error: string;
+}
+
+export interface BondDetail {
+  code: string;
+  name: string | null;
+  close: number | null;
+  change_pct: number | null;
+  volume: number | null;
+  amount: number | null;
+  high: number | null;
+  low: number | null;
+  stock_code: string | null;
+  stock_name: string | null;
+  convert_price: number | null;
+  conversion_value: number | null;
+  premium_rate: number | null;
+  maturity_date: string | null;
+  rating: string | null;
+  redeem_status: string | null;
 }
 
 export interface Fundamentals {

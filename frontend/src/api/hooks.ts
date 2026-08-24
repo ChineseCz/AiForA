@@ -3,8 +3,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { api } from "./client";
 import type {
-  AuthConfigResp, AuthSettingsCfg, Condition, Fundamentals, FieldMeta, GroupItem, GroupMember, JobStatus, KlineView, NewsItem,
-  Overview, PostsPage, Quote, ScheduleCfg, ScreenResp, SectorItem, SectorRankResp, StockAiAnalysisResp, SummaryResp,
+  AuthConfigResp, AuthSettingsCfg, BondDetail, Condition, Fundamentals, FieldMeta, GroupItem, GroupMember, JobStatus, KlineView, NewsItem,
+  Overview, PostsPage, Quote, ScheduleCfg, ScreenResp, SectorItem, SectorRankResp, StockAiAnalysisResp, SummaryResp, IntradayView,
   TradeNote, TradeRecord, TradeStats, UserItem,
   VisitorLoginResp, VisitorMeResp, WechatQrcodeResp, WechatPollResp,
 } from "./types";
@@ -44,11 +44,11 @@ export const useScreenFields = () =>
 export const useSectors = () =>
   useQuery({ queryKey: ["sectors"], queryFn: () => get<SectorItem[]>("/api/screen/sectors") });
 
-export const useKline = (code: string, sp?: Record<string, number | boolean>) => {
+export const useKline = (code: string, sp?: Record<string, number | boolean>, period = "day") => {
   const spStr = sp && Object.keys(sp).length ? JSON.stringify(sp) : undefined;
   return useQuery({
-    queryKey: ["kline", code, spStr],
-    queryFn: () => get<KlineView>("/api/stock/kline", { code, ...(spStr ? { sp: spStr } : {}) }),
+    queryKey: ["kline", code, period, spStr],
+    queryFn: () => get<KlineView>("/api/stock/kline", { code, period, ...(spStr ? { sp: spStr } : {}) }),
     enabled: !!code,
   });
 };
@@ -58,6 +58,9 @@ export const useIndexKline = (code: string) =>
 
 export const useFundamentals = (code: string) =>
   useQuery({ queryKey: ["fundamentals", code], queryFn: () => get<Fundamentals>("/api/stock/fundamentals", { code }), enabled: !!code });
+
+export const useBondDetail = (code: string) =>
+  useQuery({ queryKey: ["bond_detail", code], queryFn: () => get<{ bond: BondDetail }>("/api/bond/detail", { code }), enabled: /^1[12]\d{4}$/.test(code) });
 
 export const useNews = (code: string) =>
   useQuery({ queryKey: ["news", code], queryFn: () => get<{ items: NewsItem[] }>("/api/stock/news", { code }), enabled: !!code });
@@ -71,6 +74,14 @@ export const useQuote = (code: string) =>
     enabled: !!code,
     refetchInterval: 1000,
     staleTime: 0,
+  });
+
+export const useIntraday = (code: string, day: string) =>
+  useQuery({
+    queryKey: ["intraday", code, day],
+    queryFn: () => get<IntradayView>("/api/stock/intraday", { code, day }),
+    enabled: !!code && !!day,
+    refetchInterval: day === new Date().toISOString().slice(0, 10) ? 15_000 : false,
   });
 
 export const useSectorRank = () =>
@@ -98,7 +109,7 @@ export const usePreset = () =>
 // ===== 管理员 =====
 export const useLogin = () =>
   useMutation({
-    mutationFn: (b: { username: string; password: string }) =>
+    mutationFn: (b: { username: string; password: string; remember?: boolean }) =>
       post<{ access_token: string; username: string }>("/api/admin/login", b),
   });
 
@@ -149,10 +160,10 @@ export const useSendCode = () =>
   useMutation({ mutationFn: (b: { phone: string }) => post<{ error: string }>("/api/user/send-code", b) });
 
 export const useVisitorLogin = () =>
-  useMutation({ mutationFn: (b: { phone: string; code: string }) => post<VisitorLoginResp>("/api/user/login", b) });
+  useMutation({ mutationFn: (b: { phone: string; code: string; remember?: boolean }) => post<VisitorLoginResp>("/api/user/login", b) });
 
 export const useWechatCodeLogin = () =>
-  useMutation({ mutationFn: (b: { code: string }) => post<VisitorLoginResp>("/api/user/wechat/code-login", b) });
+  useMutation({ mutationFn: (b: { code: string; remember?: boolean }) => post<VisitorLoginResp>("/api/user/wechat/code-login", b) });
 
 // ===== 访客账号（邮箱注册 + 账密登录） =====
 export const useSendEmailCode = () =>
@@ -160,13 +171,13 @@ export const useSendEmailCode = () =>
 
 export const useEmailRegister = () =>
   useMutation({
-    mutationFn: (b: { email: string; code: string; password: string }) =>
+    mutationFn: (b: { email: string; code: string; password: string; remember?: boolean }) =>
       post<VisitorLoginResp>("/api/user/email/register", b),
   });
 
 export const useEmailLogin = () =>
   useMutation({
-    mutationFn: (b: { email: string; password: string }) => post<VisitorLoginResp>("/api/user/email/login", b),
+    mutationFn: (b: { email: string; password: string; remember?: boolean }) => post<VisitorLoginResp>("/api/user/email/login", b),
   });
 
 export const useVisitorMe = (enabled: boolean) =>

@@ -1,13 +1,13 @@
 import { ArrowLeftOutlined, MobileOutlined, SettingOutlined, StarOutlined } from "@ant-design/icons";
-import { Button, Card, Col, Collapse, DatePicker, Descriptions, Dropdown, Empty, Form, Input, InputNumber, List, Modal, Row, Select, Space, Spin, Tag, Tooltip, Typography, message } from "antd";
+import { Button, Card, Col, Collapse, DatePicker, Descriptions, Dropdown, Empty, Form, Input, InputNumber, List, Modal, Row, Segmented, Select, Space, Spin, Tag, Tooltip, Typography, message } from "antd";
 import dayjs from "dayjs";
 import ReactECharts from "echarts-for-react";
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 
 import { errMsg } from "@/api/client";
-import { useFundamentals, useGenerateStockAiAnalysis, useGroupMutations, useGroups, useKline, useNews, useQuote, useStockAiAnalysis, useTradeMutations } from "@/api/hooks";
-import type { KlineBar } from "@/api/types";
+import { useBondDetail, useFundamentals, useGenerateStockAiAnalysis, useGroupMutations, useGroups, useIntraday, useKline, useNews, useQuote, useStockAiAnalysis, useTradeMutations } from "@/api/hooks";
+import type { IntradayView, KlineBar } from "@/api/types";
 import MarkdownContent from "@/components/MarkdownContent";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { usePageContext } from "@/pageContext";
@@ -79,6 +79,12 @@ function defaultSignalVisibility(mobile = false): Record<string, boolean> {
   BASIC_ITEMS.forEach((b) => { v[b.key] = true; });
   SIGNALS.forEach((s) => { v[s.key] = false; });
   if (!mobile) {
+    v.loose_ok = true;
+    v.strict_ok = true;
+    v.stop_loss_ok = true;
+    v.mid_reverse_ok = true;
+  } else {
+    // 移动端默认直接显示核心买卖点，避免用户必须先展开图例才能看到信号。
     v.loose_ok = true;
     v.strict_ok = true;
     v.stop_loss_ok = true;
@@ -172,13 +178,13 @@ function buildOption(bars: KlineBar[], dark: boolean, compact: boolean, visibili
           id: "buy",
           data: SIGNALS.filter((s) => s.dir === "buy").map((s) => s.name),
           selected: Object.fromEntries(SIGNALS.filter((s) => s.dir === "buy").map((s) => [s.name, visibility[s.key] ?? false])),
-          type: "scroll", show: true, top: 28, left: 9999, textStyle: lStyle,
+          type: "scroll", show: true, top: 28, left: compact ? 54 : 9999, textStyle: lStyle,
         },
         {
           id: "sell",
           data: SIGNALS.filter((s) => s.dir === "sell").map((s) => ({ name: s.name, icon: "path://M 0 5 L -6 -5 L 6 -5 Z" })),
           selected: Object.fromEntries(SIGNALS.filter((s) => s.dir === "sell").map((s) => [s.name, visibility[s.key] ?? false])),
-          type: "scroll", show: true, top: 52, left: 9999, textStyle: lStyle,
+          type: "scroll", show: true, top: 52, left: compact ? 54 : 9999, textStyle: lStyle,
         },
       ];
     })(),
@@ -228,6 +234,83 @@ function buildOption(bars: KlineBar[], dark: boolean, compact: boolean, visibili
       { name: "J", type: "line", xAxisIndex: 3, yAxisIndex: 3, data: bars.map((b) => b.j), showSymbol: false, lineStyle, color: "#ec4899" },
     ],
   };
+}
+
+function buildIntradayOption(view: IntradayView, dark: boolean, compact: boolean) {
+  const bars = view.bars;
+  const labels = bars.map((b) => b.time.slice(11, 16));
+  const prices = bars.map((b) => b.close);
+  const volumes = bars.map((b) => ({ value: b.volume, itemStyle: { color: b.close != null && b.open != null && b.close >= b.open ? UP : DOWN } }));
+  const axis = dark ? "#a6adb4" : "#666";
+  const grid = dark ? "#2a2e33" : "#f0f0f0";
+  return {
+    animation: false,
+    tooltip: { trigger: "axis" },
+    grid: [
+      { left: compact ? 42 : 52, right: 12, top: 16, height: "58%" },
+      { left: compact ? 42 : 52, right: 12, top: "78%", height: "16%" },
+    ],
+    xAxis: [
+      { type: "category", data: labels, gridIndex: 0, axisLabel: { show: false }, axisLine: { lineStyle: { color: axis } } },
+      { type: "category", data: labels, gridIndex: 1, axisLabel: { color: axis, fontSize: 10 }, axisLine: { lineStyle: { color: axis } } },
+    ],
+    yAxis: [
+      { type: "value", scale: true, gridIndex: 0, axisLabel: { color: axis }, splitLine: { lineStyle: { color: grid } } },
+      { type: "value", gridIndex: 1, axisLabel: { show: false }, splitLine: { show: false } },
+    ],
+    dataZoom: [{ type: "inside", xAxisIndex: [0, 1] }, { type: "slider", xAxisIndex: [0, 1], bottom: 0, height: 16 }],
+    series: [
+      { name: "价格", type: "line", data: prices, showSymbol: false, smooth: false, lineStyle: { width: 1.5, color: "#1677ff" }, areaStyle: { opacity: 0.08, color: "#1677ff" } },
+      { name: "成交量", type: "bar", xAxisIndex: 1, yAxisIndex: 1, data: volumes },
+    ],
+  };
+}
+
+function IntradayPanel({ code, defaultDay, recentDays, dark, isMobile }: { code: string; defaultDay: string; recentDays: string[]; dark: boolean; isMobile: boolean }) {
+  const [day, setDay] = useState(defaultDay);
+  useEffect(() => { if (defaultDay) setDay(defaultDay); }, [defaultDay]);
+  const { data, isLoading, isFetching } = useIntraday(code, day);
+  const today = dayjs().format("YYYY-MM-DD");
+  const chooseDate = (value: string) => setDay(value);
+  const controls = (
+    <Space wrap size={6} style={{ width: isMobile ? "100%" : undefined }}>
+      {isMobile ? (
+        <Select
+          size="small"
+          value={recentDays.includes(day) ? day : undefined}
+          placeholder="最近交易日"
+          onChange={chooseDate}
+          options={recentDays.map((d) => ({ value: d, label: d === today ? `${d}（今天）` : d }))}
+          style={{ minWidth: 132, flex: 1 }}
+        />
+      ) : null}
+      <DatePicker
+        size="small"
+        value={day ? dayjs(day) : null}
+        format="YYYY-MM-DD"
+        allowClear={false}
+        inputReadOnly={isMobile}
+        disabledDate={(d) => d.isAfter(dayjs(), "day")}
+        onChange={(v) => v && chooseDate(v.format("YYYY-MM-DD"))}
+      />
+    </Space>
+  );
+  const body = (
+    <Spin spinning={isLoading || isFetching}>
+      {data?.bars?.length ? <ReactECharts option={buildIntradayOption(data, dark, isMobile)} style={{ height: isMobile ? 280 : 340 }} notMerge /> : <Empty description={data?.error || "该日期暂无分钟数据"} />}
+    </Spin>
+  );
+  if (isMobile) {
+    return (
+      <Collapse ghost size="small" items={[{
+        key: "intraday",
+        label: <Typography.Text strong>分时线</Typography.Text>,
+        extra: controls,
+        children: body,
+      }]} />
+    );
+  }
+  return <Card size="small" title="分时线" extra={controls}>{body}</Card>;
 }
 
 // 顶部指标条：随悬停更新的当前 bar 数值（取代悬浮 tooltip）。
@@ -363,8 +446,11 @@ export default function StockDetail() {
     else navigate("/screener");
   };
   const [signalParams, setSignalParams] = useState<Record<string, number>>({});
+  const [period, setPeriod] = useState<"day" | "week" | "month">("day");
   const spForQuery = Object.keys(signalParams).length ? signalParams : undefined;
-  const { data: kline, isLoading } = useKline(code, spForQuery);
+  const isBond = /^1[12]\d{4}$/.test(code);
+  const { data: kline, isLoading } = useKline(code, spForQuery, period);
+  const { data: bondDetail } = useBondDetail(code);
   const { data: fund } = useFundamentals(code);
   const { data: news } = useNews(code);
   const { data: quote } = useQuote(code);
@@ -377,7 +463,7 @@ export default function StockDetail() {
   // 当前可见区间 [start,end]（百分比），双指缩放手势需要它算新窗口；随 datazoom 事件更新。
   const rangeRef = useRef({ start: 55, end: 100 });
   // 参数变化触发重新请求时，记录上次 kline 对应的 code，用来区分"同股换参"vs"切换到新股"。
-  const prevKlineCodeRef = useRef<string>("");
+  const prevKlineKeyRef = useRef<string>("");
 
   const [tradeOpen, setTradeOpen] = useState(false);
   const [tradeDir, setTradeDir] = useState<"buy" | "sell">("buy");
@@ -413,7 +499,7 @@ export default function StockDetail() {
   // ── bars：含实时报价合并，供顶部指标条 / hover 悬停显示用 ──
   const bars = useMemo(() => {
     const raw = kline?.bars ?? [];
-    if (!quote || quote.error || !raw.length) return raw;
+    if (period !== "day" || !quote || quote.error || !raw.length) return raw;
     const last = raw[raw.length - 1];
     if (last.trade_date !== quote.trade_date) return raw;
     const merged = {
@@ -424,7 +510,7 @@ export default function StockDetail() {
       volume: quote.volume ?? last.volume,
     };
     return [...raw.slice(0, -1), merged];
-  }, [kline, quote]);
+  }, [kline, quote, period]);
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
   const activeIdx = hoverIdx != null && bars[hoverIdx] ? hoverIdx : bars.length - 1;
   const active = bars[activeIdx];
@@ -437,8 +523,8 @@ export default function StockDetail() {
   // 而是走下面的 useEffect 直接写入 ECharts 实例，保留缩放状态。legend.selected 的初始值
   // 只需要 mount 那一刻的 visibility，之后的变化由下面单独的 effect 增量同步。
   const initialVisibilityRef = useRef(defaultSignalVisibility(window.innerWidth < 768));
-  const [buyExpanded, setBuyExpanded] = useState(false);
-  const [sellExpanded, setSellExpanded] = useState(false);
+  const [buyExpanded, setBuyExpanded] = useState(() => window.innerWidth < 768);
+  const [sellExpanded, setSellExpanded] = useState(() => window.innerWidth < 768);
   const option = useMemo(
     () => buildOption(kline?.bars ?? [], dark, isMobile, initialVisibilityRef.current),
     [kline, dark, isMobile],
@@ -481,20 +567,21 @@ export default function StockDetail() {
   // 检测到"同股换参"（非首次加载、非切换股票）就用 rangeRef 恢复上次的可见区间。
   useEffect(() => {
     if (!kline || !chartReady) return;
-    const isSameCode = prevKlineCodeRef.current === kline.code;
-    prevKlineCodeRef.current = kline.code;
-    if (!isSameCode) return;
+    const key = `${kline.code}:${kline.period || period}`;
+    const isSameKline = prevKlineKeyRef.current === key;
+    prevKlineKeyRef.current = key;
+    if (!isSameKline) return;
     const inst = chartRef.current?.getEchartsInstance();
     if (!inst) return;
     const t = window.setTimeout(() => {
       inst.dispatchAction({ type: "dataZoom", start: rangeRef.current.start, end: rangeRef.current.end });
     }, 0);
     return () => window.clearTimeout(t);
-  }, [kline, chartReady]);
+  }, [kline, chartReady, period]);
 
   // ── 实时报价轻量更新：只改 K线和成交量两条系列的最后一根数据 ──
   useEffect(() => {
-    if (!quote || quote.error || !chartReady) return;
+    if (period !== "day" || !quote || quote.error || !chartReady) return;
     const inst = chartRef.current?.getEchartsInstance();
     if (!inst) return;
     const raw = kline?.bars ?? [];
@@ -522,7 +609,7 @@ export default function StockDetail() {
         },
       ],
     });
-  }, [quote, kline, chartReady]);
+  }, [quote, kline, chartReady, period]);
   const onEvents = useMemo(
     () => ({
       // 悬停时读取当前索引，更新顶部指标条。因为 buildOption 里 tooltip.triggerOn 已经设成
@@ -698,6 +785,11 @@ export default function StockDetail() {
       (fund.sectors?.length ? `所属板块：${fund.sectors.map((s) => s.sector).join("、")}。` : "") : ""),
   );
 
+  const intradayDefaultDay = kline?.bars?.length
+    ? kline.bars[kline.bars.length - 1].trade_date
+    : dayjs().format("YYYY-MM-DD");
+  const intradayRecentDays = (kline?.bars ?? []).slice(-30).map((b) => b.trade_date).reverse();
+
   return (
     <Space direction="vertical" size={isMobile ? 12 : 16} style={{ width: "100%" }}>
       <Space wrap>
@@ -717,6 +809,23 @@ export default function StockDetail() {
       </Space>
 
       <Card styles={{ body: { padding: isMobile ? 6 : 12 } }}>
+        <Space size={8} style={{ marginBottom: 6 }}>
+          <Typography.Text strong style={{ fontSize: 13 }}>K线周期</Typography.Text>
+          <Segmented
+            size="small"
+            value={period}
+            onChange={(v) => {
+              setPeriod(v as "day" | "week" | "month");
+              setHoverIdx(null);
+              rangeRef.current = { start: 55, end: 100 };
+            }}
+            options={[
+              { value: "day", label: "日线" },
+              { value: "week", label: "周线" },
+              { value: "month", label: "月线" },
+            ]}
+          />
+        </Space>
         <Spin spinning={isLoading}>
           {bars.length ? (
             <>
@@ -847,10 +956,24 @@ export default function StockDetail() {
         }]} />
       </Card>
 
+      <IntradayPanel code={code} defaultDay={intradayDefaultDay} recentDays={intradayRecentDays} dark={dark} isMobile={isMobile} />
+
       <Row gutter={[isMobile ? 8 : 16, isMobile ? 8 : 16]}>
         <Col xs={24} sm={24} md={8}>
-          <Card title="估值与财务" size="small">
-            <Descriptions column={1} size="small">
+          <Card title={isBond ? "转债信息" : "估值与财务"} size="small">
+            {isBond ? (
+              <Descriptions column={1} size="small">
+                <Descriptions.Item label="最新价">{fmtNum(bondDetail?.bond.close)}</Descriptions.Item>
+                <Descriptions.Item label="涨跌幅">{fmtNum(bondDetail?.bond.change_pct)}%</Descriptions.Item>
+                <Descriptions.Item label="成交额">{fmtYi(bondDetail?.bond.amount)}</Descriptions.Item>
+                <Descriptions.Item label="正股">{bondDetail?.bond.stock_name || bondDetail?.bond.stock_code || "-"}</Descriptions.Item>
+                <Descriptions.Item label="转股价">{fmtNum(bondDetail?.bond.convert_price)}</Descriptions.Item>
+                <Descriptions.Item label="转股价值">{fmtNum(bondDetail?.bond.conversion_value)}</Descriptions.Item>
+                <Descriptions.Item label="转股溢价率">{bondDetail?.bond.premium_rate == null ? "-" : `${fmtNum(bondDetail.bond.premium_rate)}%`}</Descriptions.Item>
+                <Descriptions.Item label="评级">{bondDetail?.bond.rating || "-"}</Descriptions.Item>
+                <Descriptions.Item label="强赎状态">{bondDetail?.bond.redeem_status || "-"}</Descriptions.Item>
+              </Descriptions>
+            ) : <Descriptions column={1} size="small">
               <Descriptions.Item label="市盈率(动)">{fmtNum(fund?.quote.pe_ttm)}</Descriptions.Item>
               <Descriptions.Item label="市净率">{fmtNum(fund?.quote.pb)}</Descriptions.Item>
               <Descriptions.Item label="总市值">{fmtYi(fund?.quote.total_mv)}</Descriptions.Item>
@@ -862,8 +985,8 @@ export default function StockDetail() {
                 <Descriptions.Item label="毛利率(%)">{fmtNum(fin.gross_margin)}</Descriptions.Item>
                 <Descriptions.Item label="报告期">{String(fin.report_date ?? "-")}</Descriptions.Item>
               </>}
-            </Descriptions>
-            <div style={{ marginTop: 12 }}>
+            </Descriptions>}
+            {!isBond && <div style={{ marginTop: 12 }}>
               <Typography.Text type="secondary">所属板块：</Typography.Text>
               <div style={{ marginTop: 6 }}>
                 {fund?.sectors?.length
@@ -872,9 +995,10 @@ export default function StockDetail() {
                     ))
                   : <Typography.Text type="secondary">（需先在后台全量同步板块成分股）</Typography.Text>}
               </div>
-            </div>
+            </div>}
           </Card>
         </Col>
+        {!isBond && <>
         <Col xs={24} sm={24} md={8}>
           <Card title="大V提及" size="small" styles={{ body: { maxHeight: 420, overflow: "auto" } }}>
             {fund?.mentions?.length ? (
@@ -907,6 +1031,7 @@ export default function StockDetail() {
             ) : <Empty description="暂无新闻" />}
           </Card>
         </Col>
+        </>}
       </Row>
 
       {code && <AiAnalysisCard code={code} />}

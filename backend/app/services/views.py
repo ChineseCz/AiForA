@@ -1,4 +1,6 @@
 """个股详情页视图：K线 / 基本面 / 分组成员。从旧 stock.py 移植。数据走 sync_data。"""
+from datetime import date
+
 from app.repositories import sync_data as db
 from app.services import indicators, matching
 from app.services.external import sina
@@ -8,14 +10,44 @@ INDEX_NAMES = {
 }
 
 
-def get_kline_view(code: str, sp: dict | None = None) -> dict:
-    """日线K线 + MA/MACD/KDJ + 逐日买卖点信号，供前端画6幅图。sp 为可选信号参数覆盖。"""
-    sp = sp or {}
-    name = (db.get_latest_row_by_code(code) or {}).get("name") or code
+def _aggregate_bars(bars: list[dict], period: str) -> list[dict]:
+    """把日线聚合为周线/月线；trade_date 使用该周期最后一个交易日。"""
+    if period == "day":
+        return bars
+    groups: dict[tuple[int, int], list[dict]] = {}
+    for bar in bars:
+        day = date.fromisoformat(bar["trade_date"])
+        key = (day.isocalendar().year, day.isocalendar().week) if period == "week" else (day.year, day.month)
+        groups.setdefault(key, []).append(bar)
+    out: list[dict] = []
+    for items in groups.values():
+        items.sort(key=lambda x: x["trade_date"])
+        out.append({
+            "trade_date": items[-1]["trade_date"],
+            "open": items[0]["open"],
+            "high": max(x["high"] for x in items),
+            "low": min(x["low"] for x in items),
+            "close": items[-1]["close"],
+            "volume": sum(x["volume"] or 0 for x in items),
+        })
+    return out
 
-    bars = db.get_history_for_code(code)
+
+def get_kline_view(code: str, sp: dict | None = None, period: str = "day") -> dict:
+    """日/周/月K线 + 对应周期指标和买卖信号。sp 为可选信号参数覆盖。"""
+    if period not in ("day", "week", "month"):
+        period = "day"
+    sp = sp or {}
+    bond = db.get_latest_bond_by_code(code)
+    if bond:
+        name = bond.get("name") or code
+        bars = db.get_bond_history_for_code(code)
+    else:
+        name = (db.get_latest_row_by_code(code) or {}).get("name") or code
+        bars = db.get_history_for_code(code)
+    bars = _aggregate_bars(bars, period)
     if len(bars) < 23:
-        return {"code": code, "name": name, "bars": []}
+        return {"code": code, "name": name, "period": period, "bars": []}
 
     closes = [b["close"] for b in bars]
     ma5 = indicators.moving_avg(closes, 5)
@@ -72,7 +104,7 @@ def get_kline_view(code: str, sp: dict | None = None) -> dict:
             "rsi_bounce_ok": rsi_bounce_ok[i], "rsi_overbought_ok": rsi_ob_ok[i],
             "break_ma_ok": break_ma_ok[i], "high_vol_drop_ok": hvd_ok[i],
         })
-    return {"code": code, "name": name, "bars": out_bars}
+    return {"code": code, "name": name, "period": period, "bars": out_bars}
 
 
 def get_index_kline_view(code: str) -> dict:

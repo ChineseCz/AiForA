@@ -24,6 +24,7 @@ async def login(request: Request, session: AsyncSession = Depends(db_session)):
         body = {}
     username = str(body.get("username") or "").strip()
     password = str(body.get("password") or "")
+    remember = bool(body.get("remember", False))
     if not username or not password:
         return JSONResponse({"error": "请输入用户名和密码"}, status_code=400)
 
@@ -31,7 +32,10 @@ async def login(request: Request, session: AsyncSession = Depends(db_session)):
     if not admin or not verify_password(password, admin["password_hash"]):
         return JSONResponse({"error": "用户名或密码错误"}, status_code=401)
 
-    token = create_access_token(username)
+    token = create_access_token(
+        username,
+        expire_minutes=settings.remember_jwt_expire_minutes if remember else settings.jwt_expire_minutes,
+    )
     return {"access_token": token, "token_type": "bearer", "username": username}
 
 

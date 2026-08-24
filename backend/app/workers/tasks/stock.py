@@ -67,6 +67,20 @@ def task_finance_sync(source: str = "手动", job_id: int | None = None) -> int:
         return ingest.sync_finance_snapshot()
 
 
+@celery_app.task(name="stock.bond_sync", queue=QUEUE_DEFAULT)
+def task_bond_sync(source: str = "手动", job_id: int | None = None) -> int:
+    from app.services import ingest
+    with job_run("bond_sync", source, invalidate_cache=True, job_id=job_id):
+        return ingest.sync_bond_snapshot()
+
+
+@celery_app.task(name="stock.bond_basic_sync", queue=QUEUE_DEFAULT)
+def task_bond_basic_sync(source: str = "手动", job_id: int | None = None) -> int:
+    from app.services import ingest
+    with job_run("bond_basic_sync", source, invalidate_cache=True, job_id=job_id):
+        return ingest.sync_bond_basic()
+
+
 @celery_app.task(name="stock.sector_catalog", queue=QUEUE_DEFAULT)
 def task_sector_catalog(source: str = "手动", job_id: int | None = None) -> int:
     from app.services import ingest

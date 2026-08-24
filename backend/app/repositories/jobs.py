@@ -27,6 +27,24 @@ async def any_running(session: AsyncSession, kind: str) -> bool:
     ), {"k": kind})).first() is not None
 
 
+def is_running(kind: str) -> bool:
+    """同步任务使用的运行状态检查，供 Celery beat/worker 调用。"""
+    with sync_session() as s:
+        row = s.execute(text(
+            "SELECT 1 FROM job_runs WHERE kind = :k AND status = 'running' LIMIT 1"
+        ), {"k": kind}).first()
+        return row is not None
+
+
+def is_job_finished(job_id: int) -> bool:
+    """按任务 ID 检查任务是否已经结束，防止成功任务重复投递。"""
+    with sync_session() as s:
+        row = s.execute(text(
+            "SELECT status FROM job_runs WHERE id = :id LIMIT 1"
+        ), {"id": job_id}).first()
+        return row is not None and row[0] in ("done", "success")
+
+
 def create_job(kind: str, source: str = "手动") -> int:
     """创建一条新的任务记录，返回 job_id。"""
     now = int(time.time())
