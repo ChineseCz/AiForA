@@ -63,10 +63,10 @@ def _captcha_key(purpose: str, challenge_id: str) -> str:
 
 def _captcha_svg(left: int, op: str, right: int) -> str:
     expression = f"{left} {op} {right} = ?"
-    return f'''<svg xmlns="http://www.w3.org/2000/svg" width="220" height="72" viewBox="0 0 220 72">
-<rect width="220" height="72" rx="8" fill="#f5f7fa"/>
-<path d="M8 18 C50 4 80 32 118 15 S180 8 212 27 M4 56 C40 38 82 66 132 48 S186 43 216 59" fill="none" stroke="#d9e2ec" stroke-width="2"/>
-<text x="110" y="47" text-anchor="middle" font-family="Arial,sans-serif" font-size="28" font-weight="700" fill="#1f2937">{html.escape(expression)}</text>
+    return f'''<svg xmlns="http://www.w3.org/2000/svg" width="144" height="48" viewBox="0 0 144 48">
+<rect width="144" height="48" rx="6" fill="#f5f7fa"/>
+<path d="M5 13 C34 3 55 24 79 12 S119 7 139 19 M3 38 C29 27 55 44 86 31 S119 29 141 40" fill="none" stroke="#d9e2ec" stroke-width="1.5"/>
+<text x="72" y="32" text-anchor="middle" font-family="Arial,sans-serif" font-size="19" font-weight="700" fill="#1f2937">{html.escape(expression)}</text>
 </svg>'''
 
 

@@ -73,17 +73,18 @@ function EmailLoginTab() {
   const sendResetCode = useSendResetEmailCode();
   const resetPassword = useResetPassword();
   const [resetOpen, setResetOpen] = useState(false);
+  const [captchaOpen, setCaptchaOpen] = useState(false);
   const [resetEmail, setResetEmail] = useState("");
   const [resetSent, setResetSent] = useState(false);
   const [captchaAnswer, setCaptchaAnswer] = useState("");
   const [resetForm] = Form.useForm();
-  const captcha = useResetCaptcha(resetOpen);
+  const captcha = useResetCaptcha(captchaOpen);
 
   const sendReset = () => {
     const email = resetEmail.trim().toLowerCase();
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { message.warning("请输入正确的邮箱地址"); return; }
     sendResetCode.mutate({ email, captcha_id: captcha.data?.challenge_id || "", captcha_answer: captchaAnswer.trim() }, {
-      onSuccess: () => { setResetSent(true); setCaptchaAnswer(""); message.success("如果邮箱已注册，验证码将发送到邮箱"); captcha.refetch(); },
+      onSuccess: () => { setResetSent(true); setCaptchaAnswer(""); setCaptchaOpen(false); message.success("如果邮箱已注册，验证码将发送到邮箱"); captcha.refetch(); },
       onError: (e) => message.error(errMsg(e, "发送失败")),
     });
   };
@@ -143,18 +144,13 @@ function EmailLoginTab() {
       <Modal
         title="找回邮箱密码"
         open={resetOpen}
-        onCancel={() => { setResetOpen(false); setResetSent(false); setCaptchaAnswer(""); resetForm.resetFields(); }}
+        onCancel={() => { setResetOpen(false); setCaptchaOpen(false); setResetSent(false); setCaptchaAnswer(""); resetForm.resetFields(); }}
         footer={null}
         destroyOnClose
       >
         <Space direction="vertical" style={{ width: "100%" }}>
           <Typography.Text>验证码将发送到：{resetEmail}</Typography.Text>
-          <Space.Compact style={{ width: "100%" }}>
-            {captcha.data?.image ? <img src={captcha.data.image} alt="图片验证码" style={{ width: 220, height: 72, border: "1px solid #d9d9d9", borderRadius: 6 }} /> : <div style={{ width: 220, height: 72 }} />}
-            <Button icon={<ReloadOutlined />} aria-label="刷新图片验证码" title="刷新图片验证码" onClick={() => { setCaptchaAnswer(""); captcha.refetch(); }} />
-          </Space.Compact>
-          <Input value={captchaAnswer} onChange={(e) => setCaptchaAnswer(e.target.value)} placeholder="请输入图片中的算式答案" inputMode="numeric" maxLength={2} />
-          <Button block onClick={sendReset} loading={sendResetCode.isPending}>获取重置验证码</Button>
+          <Button block onClick={() => setCaptchaOpen(true)}>验证并获取重置验证码</Button>
           {resetSent && (
             <Form form={resetForm} layout="vertical" onFinish={reset}>
               <Form.Item name="code" label="验证码" rules={[{ required: true, message: "请输入验证码" }]}>
@@ -166,6 +162,21 @@ function EmailLoginTab() {
               <Button type="primary" htmlType="submit" block loading={resetPassword.isPending}>确认重置密码</Button>
             </Form>
           )}
+        </Space>
+      </Modal>
+      <Modal
+        title="完成图片验证"
+        open={captchaOpen}
+        onCancel={() => setCaptchaOpen(false)}
+        onOk={sendReset}
+        okText="验证并发送"
+        confirmLoading={sendResetCode.isPending}
+        destroyOnClose
+      >
+        <Space direction="vertical" style={{ width: "100%" }}>
+          {captcha.data?.image && <img src={captcha.data.image} alt="图片验证码" style={{ width: 144, height: 48, border: "1px solid #d9d9d9", borderRadius: 6 }} />}
+          <Input value={captchaAnswer} onChange={(e) => setCaptchaAnswer(e.target.value)} placeholder="请输入图片中的算式答案" inputMode="numeric" maxLength={2} autoFocus />
+          <Button type="link" size="small" icon={<ReloadOutlined />} onClick={() => { setCaptchaAnswer(""); captcha.refetch(); }}>看不清，换一张</Button>
         </Space>
       </Modal>
     </Form>
@@ -183,7 +194,8 @@ function EmailRegisterTab() {
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
   const sendCode = useSendEmailCode();
   const register = useEmailRegister();
-  const registerCaptcha = useRegisterCaptcha(true);
+  const [captchaOpen, setCaptchaOpen] = useState(false);
+  const registerCaptcha = useRegisterCaptcha(captchaOpen);
   const [captchaAnswer, setCaptchaAnswer] = useState("");
 
   useEffect(() => () => { if (timer.current) clearInterval(timer.current); }, []);
@@ -202,7 +214,7 @@ function EmailRegisterTab() {
     const v = email.trim().toLowerCase();
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v)) { message.warning("请输入正确的邮箱地址"); return; }
     sendCode.mutate({ email: v, captcha_id: registerCaptcha.data?.challenge_id || "", captcha_answer: captchaAnswer.trim() }, {
-      onSuccess: () => { setCodeSent(true); setCaptchaAnswer(""); startCountdown(); registerCaptcha.refetch(); message.success("验证码已发送，请查收邮件（也留意垃圾箱）"); },
+      onSuccess: () => { setCodeSent(true); setCaptchaAnswer(""); setCaptchaOpen(false); startCountdown(); registerCaptcha.refetch(); message.success("验证码已发送，请查收邮件（也留意垃圾箱）"); },
       onError: (e) => message.error(errMsg(e, "发送失败")),
     });
   };
@@ -229,14 +241,7 @@ function EmailRegisterTab() {
         />
       </Form.Item>
       {!codeSent ? (
-        <>
-          <Space.Compact style={{ width: "100%", marginBottom: 8 }}>
-            {registerCaptcha.data?.image ? <img src={registerCaptcha.data.image} alt="图片验证码" style={{ width: 220, height: 72, border: "1px solid #d9d9d9", borderRadius: 6 }} /> : <div style={{ width: 220, height: 72 }} />}
-            <Button icon={<ReloadOutlined />} aria-label="刷新图片验证码" title="刷新图片验证码" onClick={() => { setCaptchaAnswer(""); registerCaptcha.refetch(); }} />
-          </Space.Compact>
-          <Input value={captchaAnswer} onChange={(e) => setCaptchaAnswer(e.target.value)} placeholder="请输入图片中的算式答案" inputMode="numeric" maxLength={2} style={{ marginBottom: 8 }} />
-          <Button type="primary" block loading={sendCode.isPending} onClick={handleSend}>获取验证码</Button>
-        </>
+        <Button type="primary" block onClick={() => setCaptchaOpen(true)}>验证并获取验证码</Button>
       ) : (
         <>
           <Form.Item name="code" label="验证码" rules={[{ required: true, message: "请输入验证码" }]}>
@@ -255,11 +260,26 @@ function EmailRegisterTab() {
               注册并登录
             </Button>
           </Form.Item>
-          <Button block disabled={countdown > 0} loading={sendCode.isPending} onClick={handleSend}>
+          <Button block disabled={countdown > 0} onClick={() => setCaptchaOpen(true)}>
             {countdown > 0 ? `${countdown}s 后重新发送` : "重新发送验证码"}
           </Button>
         </>
       )}
+      <Modal
+        title="完成图片验证"
+        open={captchaOpen}
+        onCancel={() => setCaptchaOpen(false)}
+        onOk={handleSend}
+        okText="验证并发送"
+        confirmLoading={sendCode.isPending}
+        destroyOnClose
+      >
+        <Space direction="vertical" style={{ width: "100%" }}>
+          {registerCaptcha.data?.image && <img src={registerCaptcha.data.image} alt="图片验证码" style={{ width: 144, height: 48, border: "1px solid #d9d9d9", borderRadius: 6 }} />}
+          <Input value={captchaAnswer} onChange={(e) => setCaptchaAnswer(e.target.value)} placeholder="请输入图片中的算式答案" inputMode="numeric" maxLength={2} autoFocus />
+          <Button type="link" size="small" icon={<ReloadOutlined />} onClick={() => { setCaptchaAnswer(""); registerCaptcha.refetch(); }}>看不清，换一张</Button>
+        </Space>
+      </Modal>
     </Form>
   );
 }
