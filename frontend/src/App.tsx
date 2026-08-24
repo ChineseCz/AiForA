@@ -51,6 +51,7 @@ function RequireVisitorOrAnon({ children }: { children: JSX.Element }) {
 // 访客登录后在 header 显示账号信息 + 改昵称 + 退出登录；游客（isGuest）只显示简单退出入口。
 function VisitorMenu() {
   const { loggedIn, isGuest, logout } = useVisitorAuth();
+  const { logout: adminLogout } = useAuth();
   const { data: me } = useVisitorMe(loggedIn && !isGuest);
   const setNickname = useSetNickname();
   const nav = useNavigate();
@@ -68,7 +69,7 @@ function VisitorMenu() {
             { key: "logout", label: "退出并登录账号" },
           ],
           onClick: ({ key }) => {
-            if (key === "logout") { logout(); nav("/login", { replace: true }); }
+            if (key === "logout") { logout(); adminLogout(); nav("/login", { replace: true }); }
           },
         }}
       >
@@ -104,6 +105,7 @@ function VisitorMenu() {
           onClick: ({ key }) => {
             if (key === "logout") {
               logout();
+              adminLogout();
               nav("/login", { replace: true });
             } else if (key === "edit-nickname") {
               setDraft(me?.nickname || "");
