@@ -557,6 +557,106 @@ def save_snapshot(trade_date: str, rows: list[dict]) -> int:
     return len(payload)
 
 
+def get_latest_bond_rows(limit: int = 5000, q: str = "") -> list[dict]:
+    with sync_session() as s:
+        rows = s.execute(text(
+            """
+            SELECT * FROM bond_daily
+            WHERE trade_date = (SELECT MAX(trade_date) FROM bond_daily)
+              AND (:q = '' OR code ILIKE :pattern OR name ILIKE :pattern)
+            ORDER BY change_pct DESC NULLS LAST, code
+            LIMIT :limit
+            """
+        ), {"q": q, "pattern": f"%{q}%", "limit": limit}).mappings().all()
+        return [dict(r) for r in rows]
+
+
+def get_bond_history_for_code(code: str) -> list[dict]:
+    with sync_session() as s:
+        rows = s.execute(text(
+            """
+            SELECT trade_date, open, high, low, close, volume
+            FROM bond_daily
+            WHERE code = :code
+            ORDER BY trade_date
+            """
+        ), {"code": code}).mappings().all()
+        return [dict(r) for r in rows]
+
+
+def get_bond_history_rows(start: str = "", end: str = "") -> list[dict]:
+    with sync_session() as s:
+        rows = s.execute(text(
+            """
+            SELECT trade_date, code, name, close, conversion_value, premium_rate,
+                   amount, rating, maturity_date, redeem_status
+            FROM bond_daily
+            WHERE (:start = '' OR trade_date >= :start)
+              AND (:end = '' OR trade_date <= :end)
+            ORDER BY trade_date, code
+            """
+        ), {"start": start, "end": end}).mappings().all()
+        return [dict(r) for r in rows]
+
+
+def get_latest_bond_by_code(code: str) -> dict | None:
+    with sync_session() as s:
+        row = s.execute(text(
+            """
+            SELECT * FROM bond_daily
+            WHERE code = :code AND trade_date = (SELECT MAX(trade_date) FROM bond_daily)
+            """
+        ), {"code": code}).mappings().first()
+        return dict(row) if row else None
+
+
+def save_bond_snapshot(trade_date: str, rows: list[dict]) -> int:
+    now = int(time.time())
+    payload = [{"trade_date": trade_date, "fetched_at": now, **r} for r in rows if r.get("code")]
+    if not payload:
+        return 0
+    with sync_session() as s:
+        s.execute(text(
+            """
+            INSERT INTO bond_daily
+            (trade_date, code, name, close, change_pct, volume, amount, high, low, open, pre_close,
+             stock_code, stock_name, convert_price, conversion_value, premium_rate, maturity_date,
+             rating, redeem_status, fetched_at)
+            VALUES (:trade_date, :code, :name, :close, :change_pct, :volume, :amount, :high, :low,
+                    :open, :pre_close, :stock_code, :stock_name, :convert_price, :conversion_value,
+                    :premium_rate, :maturity_date, :rating, :redeem_status, :fetched_at)
+            ON CONFLICT (trade_date, code) DO UPDATE SET
+                name=EXCLUDED.name, close=EXCLUDED.close, change_pct=EXCLUDED.change_pct,
+                volume=EXCLUDED.volume, amount=EXCLUDED.amount, high=EXCLUDED.high, low=EXCLUDED.low,
+                open=EXCLUDED.open, pre_close=EXCLUDED.pre_close, fetched_at=EXCLUDED.fetched_at
+            """
+        ), payload)
+    return len(payload)
+
+
+def update_bond_basic(rows: list[dict]) -> int:
+    """更新最新交易日的转债基础资料，不覆盖行情字段。"""
+    if not rows:
+        return 0
+    with sync_session() as s:
+        for r in rows:
+            s.execute(text(
+                """
+                UPDATE bond_daily SET
+                    stock_code = COALESCE(:stock_code, stock_code),
+                    stock_name = COALESCE(:stock_name, stock_name),
+                    convert_price = COALESCE(:convert_price, convert_price),
+                    maturity_date = COALESCE(:maturity_date, maturity_date),
+                    rating = COALESCE(:rating, rating),
+                    conversion_value = COALESCE(:conversion_value, conversion_value),
+                    premium_rate = COALESCE(:premium_rate, premium_rate)
+                WHERE code = :code
+                  AND trade_date = (SELECT MAX(trade_date) FROM bond_daily)
+                """
+            ), r)
+    return len(rows)
+
+
 def has_missing_bars(code: str, days: int = 60) -> bool:
     """检查该股票最近 N 天是否有缺失（与市场交易日历对比）。
 
@@ -575,6 +675,19 @@ def has_missing_bars(code: str, days: int = 60) -> bool:
             "SELECT COUNT(*) FROM stock_daily WHERE code = :code AND trade_date >= :cutoff"
         ), {"code": code, "cutoff": cutoff}).scalar() or 0
         # 60天约42个交易日，允许10%容差（节假日），低于38天视为有缺失
+        return count < 38
+
+
+def has_missing_bond_bars(code: str, days: int = 60) -> bool:
+    with sync_session() as s:
+        latest_date = s.execute(text("SELECT MAX(trade_date) FROM bond_daily")).scalar()
+        if not latest_date:
+            return True
+        from datetime import datetime, timedelta
+        cutoff = (datetime.fromisoformat(latest_date) - timedelta(days=days)).isoformat()
+        count = s.execute(text(
+            "SELECT COUNT(*) FROM bond_daily WHERE code = :code AND trade_date >= :cutoff"
+        ), {"code": code, "cutoff": cutoff}).scalar() or 0
         return count < 38
 
 
@@ -631,6 +744,35 @@ def save_history_bars_batch(stock_bars: list[tuple[str, list[dict]]]) -> int:
             INSERT INTO stock_daily
             (trade_date, code, name, close, high, low, open, volume, fetched_at)
             VALUES (:trade_date, :code, :name, :close, :high, :low, :open, :volume, :fetched_at)
+            ON CONFLICT (trade_date, code) DO UPDATE SET
+                close = EXCLUDED.close, high = EXCLUDED.high, low = EXCLUDED.low,
+                open = EXCLUDED.open, volume = EXCLUDED.volume, fetched_at = EXCLUDED.fetched_at
+            """
+        ), payload)
+    return len(payload)
+
+
+def save_bond_history_bars_batch(bond_bars: list[tuple[str, list[dict]]]) -> int:
+    """批量写入多只转债的历史K线，数据落在 bond_daily。"""
+    if not bond_bars:
+        return 0
+    now = int(time.time())
+    payload = []
+    for code, bars in bond_bars:
+        for r in bars:
+            payload.append({
+                "trade_date": r.get("trade_date"), "code": code,
+                "close": r.get("close"), "high": r.get("high"), "low": r.get("low"),
+                "open": r.get("open"), "volume": r.get("volume"), "fetched_at": now,
+            })
+    if not payload:
+        return 0
+    with sync_session() as s:
+        s.execute(text(
+            """
+            INSERT INTO bond_daily
+            (trade_date, code, close, high, low, open, volume, fetched_at)
+            VALUES (:trade_date, :code, :close, :high, :low, :open, :volume, :fetched_at)
             ON CONFLICT (trade_date, code) DO UPDATE SET
                 close = EXCLUDED.close, high = EXCLUDED.high, low = EXCLUDED.low,
                 open = EXCLUDED.open, volume = EXCLUDED.volume, fetched_at = EXCLUDED.fetched_at

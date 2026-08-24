@@ -164,6 +164,28 @@ async def finance_sync_status(session: AsyncSession = Depends(db_session)):
     return await jobs.get_job_status(session, "finance_sync")
 
 
+@router.post("/bond/sync")
+async def bond_sync(session: AsyncSession = Depends(db_session)):
+    from app.workers.tasks.stock import task_bond_sync
+    return await _trigger(session, "bond_sync", task_bond_sync, source="手动")
+
+
+@router.get("/bond/sync/status")
+async def bond_sync_status(session: AsyncSession = Depends(db_session)):
+    return await jobs.get_job_status(session, "bond_sync")
+
+
+@router.post("/bond/basic_sync")
+async def bond_basic_sync(session: AsyncSession = Depends(db_session)):
+    from app.workers.tasks.stock import task_bond_basic_sync
+    return await _trigger(session, "bond_basic_sync", task_bond_basic_sync, source="手动")
+
+
+@router.get("/bond/basic_sync/status")
+async def bond_basic_sync_status(session: AsyncSession = Depends(db_session)):
+    return await jobs.get_job_status(session, "bond_basic_sync")
+
+
 @router.post("/stock/sync-sectors")
 async def sync_sectors(session: AsyncSession = Depends(db_session)):
     from app.workers.tasks.stock import task_sector_catalog

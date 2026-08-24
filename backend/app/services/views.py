@@ -11,9 +11,13 @@ INDEX_NAMES = {
 def get_kline_view(code: str, sp: dict | None = None) -> dict:
     """日线K线 + MA/MACD/KDJ + 逐日买卖点信号，供前端画6幅图。sp 为可选信号参数覆盖。"""
     sp = sp or {}
-    name = (db.get_latest_row_by_code(code) or {}).get("name") or code
-
-    bars = db.get_history_for_code(code)
+    bond = db.get_latest_bond_by_code(code)
+    if bond:
+        name = bond.get("name") or code
+        bars = db.get_bond_history_for_code(code)
+    else:
+        name = (db.get_latest_row_by_code(code) or {}).get("name") or code
+        bars = db.get_history_for_code(code)
     if len(bars) < 23:
         return {"code": code, "name": name, "bars": []}
 

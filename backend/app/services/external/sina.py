@@ -9,6 +9,7 @@ import time
 from datetime import date, datetime, timedelta
 
 import requests
+from bs4 import BeautifulSoup
 
 _SINA_COUNT_URL = "http://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/Market_Center.getHQNodeStockCount"
 _SINA_DATA_URL = "http://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/Market_Center.getHQNodeData"
@@ -47,9 +48,9 @@ def _to_float(v):
         return None
 
 
-def fetch_spot_snapshot() -> list[dict]:
-    """全市场A股实时快照（逐页拉取约 5000+ 只）。"""
-    r = requests.get(_SINA_COUNT_URL, params={"node": "hs_a"}, timeout=10)
+def _fetch_market_snapshot(node: str, market_name: str) -> list[dict]:
+    """通用市场快照拉取（A股/ETF等）。"""
+    r = requests.get(_SINA_COUNT_URL, params={"node": node}, timeout=10)
     total = int(re.findall(r"\d+", r.text)[0])
     pages = (total + _SINA_PAGE_SIZE - 1) // _SINA_PAGE_SIZE
 
@@ -59,7 +60,7 @@ def fetch_spot_snapshot() -> list[dict]:
             _SINA_DATA_URL,
             params={
                 "page": str(page), "num": str(_SINA_PAGE_SIZE), "sort": "symbol",
-                "asc": "1", "node": "hs_a", "symbol": "", "_s_r_a": "page",
+                "asc": "1", "node": node, "symbol": "", "_s_r_a": "page",
             },
             timeout=10,
         )
@@ -79,8 +80,84 @@ def fetch_spot_snapshot() -> list[dict]:
                 "pre_close": _to_float(it.get("settlement")),
             })
         if page % 10 == 0 or page == pages:
-            print(f"… 第 {page}/{pages} 页 …")
+            print(f"… {market_name} 第 {page}/{pages} 页 …")
     return rows
+
+
+def fetch_spot_snapshot() -> list[dict]:
+    """全市场A股实时快照（逐页拉取约 5000+ 只）。"""
+    return _fetch_market_snapshot("hs_a", "A股")
+
+
+def fetch_etf_snapshot() -> list[dict]:
+    """全市场ETF实时快照（逐页拉取约 1600+ 只）。"""
+    return _fetch_market_snapshot("etf_hq_fund", "ETF")
+
+
+def fetch_bond_snapshot() -> list[dict]:
+    """全市场可转债实时快照（新浪 hskzz_z 节点）。"""
+    r = requests.get(_SINA_COUNT_URL, params={"node": "hskzz_z"}, timeout=10)
+    total = int(re.findall(r"\d+", r.text)[0])
+    pages = (total + _SINA_PAGE_SIZE - 1) // _SINA_PAGE_SIZE
+
+    rows = []
+    for page in range(1, pages + 1):
+        r = requests.get(
+            _SINA_DATA_URL,
+            params={
+                "page": str(page), "num": str(_SINA_PAGE_SIZE), "sort": "symbol",
+                "asc": "1", "node": "hskzz_z", "symbol": "", "_s_r_a": "page",
+            },
+            timeout=10,
+        )
+        for it in r.json():
+            code = str(it.get("code") or "")
+            # hskzz_z 还会返回少量北交所“定转”，当前转债表按沪深 11/12 开头代码维护。
+            if not code.startswith(("11", "12")):
+                continue
+            rows.append({
+                "code": code, "name": it.get("name"),
+                "close": _to_float(it.get("trade")),
+                "change_pct": _to_float(it.get("changepercent")),
+                "volume": _to_float(it.get("volume")),
+                "amount": _to_float(it.get("amount")),
+                "high": _to_float(it.get("high")), "low": _to_float(it.get("low")),
+                "open": _to_float(it.get("open")), "pre_close": _to_float(it.get("settlement")),
+                "stock_code": None, "stock_name": None, "convert_price": None,
+                "conversion_value": None, "premium_rate": None, "maturity_date": None,
+                "rating": None, "redeem_status": None,
+            })
+        if page % 10 == 0 or page == pages:
+            print(f"… 可转债第 {page}/{pages} 页 …")
+    return rows
+
+
+def fetch_bond_basic(code: str) -> dict:
+    """从新浪债券资料页读取可转债基础资料和最新转股价。"""
+    market = "sh" if code.startswith("11") else "sz"
+    symbol = f"{market}{code}"
+    headers = {"User-Agent": "Mozilla/5.0"}
+    result = {"code": code, "issuer_name": None, "convert_price": None, "maturity_date": None, "rating": None}
+
+    def table_map(url: str) -> dict[str, str]:
+        response = requests.get(url, headers=headers, timeout=15)
+        response.encoding = "gb2312"
+        soup = BeautifulSoup(response.text, "html.parser")
+        values: dict[str, str] = {}
+        for tr in soup.find_all("tr"):
+            cells = [c.get_text(" ", strip=True) for c in tr.find_all(["th", "td"])]
+            for i in range(0, len(cells) - 1, 2):
+                if cells[i] and cells[i + 1]:
+                    values[cells[i]] = cells[i + 1]
+        return values
+
+    info = table_map(f"https://money.finance.sina.com.cn/bond/info/{symbol}.html")
+    terms = table_map(f"https://money.finance.sina.com.cn/bond/convertItem/{symbol}.html")
+    result["maturity_date"] = info.get("到期日") or info.get("到期")
+    result["rating"] = info.get("信用等级")
+    value = terms.get("最新转换价格（元）") or terms.get("最新转换价格(元)")
+    result["convert_price"] = _to_float(value)
+    return result
 
 
 def fetch_board_list(param: str, kind: str) -> list[dict]:
@@ -284,3 +361,4 @@ def fetch_stock_news(code: str, days: int = 14, max_pages: int = 5) -> list[dict
 
     items.sort(key=lambda x: (x["date"], x["time"]), reverse=True)
     return items
+    result["issuer_name"] = info.get("债券名称")

@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { api } from "./client";
 import type {
-  AuthConfigResp, AuthSettingsCfg, Condition, Fundamentals, FieldMeta, GroupItem, GroupMember, JobStatus, KlineView, NewsItem,
+  AuthConfigResp, AuthSettingsCfg, BondDetail, Condition, Fundamentals, FieldMeta, GroupItem, GroupMember, JobStatus, KlineView, NewsItem,
   Overview, PostsPage, Quote, ScheduleCfg, ScreenResp, SectorItem, SectorRankResp, StockAiAnalysisResp, SummaryResp,
   TradeNote, TradeRecord, TradeStats, UserItem,
   VisitorLoginResp, VisitorMeResp, WechatQrcodeResp, WechatPollResp,
@@ -58,6 +58,9 @@ export const useIndexKline = (code: string) =>
 
 export const useFundamentals = (code: string) =>
   useQuery({ queryKey: ["fundamentals", code], queryFn: () => get<Fundamentals>("/api/stock/fundamentals", { code }), enabled: !!code });
+
+export const useBondDetail = (code: string) =>
+  useQuery({ queryKey: ["bond_detail", code], queryFn: () => get<{ bond: BondDetail }>("/api/bond/detail", { code }), enabled: /^1[12]\d{4}$/.test(code) });
 
 export const useNews = (code: string) =>
   useQuery({ queryKey: ["news", code], queryFn: () => get<{ items: NewsItem[] }>("/api/stock/news", { code }), enabled: !!code });

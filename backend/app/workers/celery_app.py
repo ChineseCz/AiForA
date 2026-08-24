@@ -23,6 +23,10 @@ celery_app.conf.update(
     accept_content=["json"],
     timezone="Asia/Shanghai",
     enable_utc=True,
+    # 历史 K 线回补可能持续数小时，必须大于任务最长执行时间，避免 Redis
+    # 在任务仍运行时回收未确认消息并重复投递同一个任务。
+    broker_transport_options={"visibility_timeout": 12 * 3600},
+    result_backend_transport_options={"visibility_timeout": 12 * 3600},
     # beat：每分钟一次 tick，读 schedules 表决定是否派发采集（取代旧内置 20s 轮询线程）
     beat_schedule={
         "scheduler-tick": {"task": "beat.tick", "schedule": 60.0},

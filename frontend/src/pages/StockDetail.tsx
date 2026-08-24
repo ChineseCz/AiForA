@@ -6,7 +6,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react"
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 
 import { errMsg } from "@/api/client";
-import { useFundamentals, useGenerateStockAiAnalysis, useGroupMutations, useGroups, useKline, useNews, useQuote, useStockAiAnalysis, useTradeMutations } from "@/api/hooks";
+import { useBondDetail, useFundamentals, useGenerateStockAiAnalysis, useGroupMutations, useGroups, useKline, useNews, useQuote, useStockAiAnalysis, useTradeMutations } from "@/api/hooks";
 import type { KlineBar } from "@/api/types";
 import MarkdownContent from "@/components/MarkdownContent";
 import { useIsMobile } from "@/hooks/useIsMobile";
@@ -79,6 +79,12 @@ function defaultSignalVisibility(mobile = false): Record<string, boolean> {
   BASIC_ITEMS.forEach((b) => { v[b.key] = true; });
   SIGNALS.forEach((s) => { v[s.key] = false; });
   if (!mobile) {
+    v.loose_ok = true;
+    v.strict_ok = true;
+    v.stop_loss_ok = true;
+    v.mid_reverse_ok = true;
+  } else {
+    // 移动端默认直接显示核心买卖点，避免用户必须先展开图例才能看到信号。
     v.loose_ok = true;
     v.strict_ok = true;
     v.stop_loss_ok = true;
@@ -172,13 +178,13 @@ function buildOption(bars: KlineBar[], dark: boolean, compact: boolean, visibili
           id: "buy",
           data: SIGNALS.filter((s) => s.dir === "buy").map((s) => s.name),
           selected: Object.fromEntries(SIGNALS.filter((s) => s.dir === "buy").map((s) => [s.name, visibility[s.key] ?? false])),
-          type: "scroll", show: true, top: 28, left: 9999, textStyle: lStyle,
+          type: "scroll", show: true, top: 28, left: compact ? 54 : 9999, textStyle: lStyle,
         },
         {
           id: "sell",
           data: SIGNALS.filter((s) => s.dir === "sell").map((s) => ({ name: s.name, icon: "path://M 0 5 L -6 -5 L 6 -5 Z" })),
           selected: Object.fromEntries(SIGNALS.filter((s) => s.dir === "sell").map((s) => [s.name, visibility[s.key] ?? false])),
-          type: "scroll", show: true, top: 52, left: 9999, textStyle: lStyle,
+          type: "scroll", show: true, top: 52, left: compact ? 54 : 9999, textStyle: lStyle,
         },
       ];
     })(),
@@ -364,7 +370,9 @@ export default function StockDetail() {
   };
   const [signalParams, setSignalParams] = useState<Record<string, number>>({});
   const spForQuery = Object.keys(signalParams).length ? signalParams : undefined;
+  const isBond = /^1[12]\d{4}$/.test(code);
   const { data: kline, isLoading } = useKline(code, spForQuery);
+  const { data: bondDetail } = useBondDetail(code);
   const { data: fund } = useFundamentals(code);
   const { data: news } = useNews(code);
   const { data: quote } = useQuote(code);
@@ -437,8 +445,8 @@ export default function StockDetail() {
   // 而是走下面的 useEffect 直接写入 ECharts 实例，保留缩放状态。legend.selected 的初始值
   // 只需要 mount 那一刻的 visibility，之后的变化由下面单独的 effect 增量同步。
   const initialVisibilityRef = useRef(defaultSignalVisibility(window.innerWidth < 768));
-  const [buyExpanded, setBuyExpanded] = useState(false);
-  const [sellExpanded, setSellExpanded] = useState(false);
+  const [buyExpanded, setBuyExpanded] = useState(() => window.innerWidth < 768);
+  const [sellExpanded, setSellExpanded] = useState(() => window.innerWidth < 768);
   const option = useMemo(
     () => buildOption(kline?.bars ?? [], dark, isMobile, initialVisibilityRef.current),
     [kline, dark, isMobile],
@@ -849,8 +857,20 @@ export default function StockDetail() {
 
       <Row gutter={[isMobile ? 8 : 16, isMobile ? 8 : 16]}>
         <Col xs={24} sm={24} md={8}>
-          <Card title="估值与财务" size="small">
-            <Descriptions column={1} size="small">
+          <Card title={isBond ? "转债信息" : "估值与财务"} size="small">
+            {isBond ? (
+              <Descriptions column={1} size="small">
+                <Descriptions.Item label="最新价">{fmtNum(bondDetail?.bond.close)}</Descriptions.Item>
+                <Descriptions.Item label="涨跌幅">{fmtNum(bondDetail?.bond.change_pct)}%</Descriptions.Item>
+                <Descriptions.Item label="成交额">{fmtYi(bondDetail?.bond.amount)}</Descriptions.Item>
+                <Descriptions.Item label="正股">{bondDetail?.bond.stock_name || bondDetail?.bond.stock_code || "-"}</Descriptions.Item>
+                <Descriptions.Item label="转股价">{fmtNum(bondDetail?.bond.convert_price)}</Descriptions.Item>
+                <Descriptions.Item label="转股价值">{fmtNum(bondDetail?.bond.conversion_value)}</Descriptions.Item>
+                <Descriptions.Item label="转股溢价率">{bondDetail?.bond.premium_rate == null ? "-" : `${fmtNum(bondDetail.bond.premium_rate)}%`}</Descriptions.Item>
+                <Descriptions.Item label="评级">{bondDetail?.bond.rating || "-"}</Descriptions.Item>
+                <Descriptions.Item label="强赎状态">{bondDetail?.bond.redeem_status || "-"}</Descriptions.Item>
+              </Descriptions>
+            ) : <Descriptions column={1} size="small">
               <Descriptions.Item label="市盈率(动)">{fmtNum(fund?.quote.pe_ttm)}</Descriptions.Item>
               <Descriptions.Item label="市净率">{fmtNum(fund?.quote.pb)}</Descriptions.Item>
               <Descriptions.Item label="总市值">{fmtYi(fund?.quote.total_mv)}</Descriptions.Item>
@@ -862,8 +882,8 @@ export default function StockDetail() {
                 <Descriptions.Item label="毛利率(%)">{fmtNum(fin.gross_margin)}</Descriptions.Item>
                 <Descriptions.Item label="报告期">{String(fin.report_date ?? "-")}</Descriptions.Item>
               </>}
-            </Descriptions>
-            <div style={{ marginTop: 12 }}>
+            </Descriptions>}
+            {!isBond && <div style={{ marginTop: 12 }}>
               <Typography.Text type="secondary">所属板块：</Typography.Text>
               <div style={{ marginTop: 6 }}>
                 {fund?.sectors?.length
@@ -872,9 +892,10 @@ export default function StockDetail() {
                     ))
                   : <Typography.Text type="secondary">（需先在后台全量同步板块成分股）</Typography.Text>}
               </div>
-            </div>
+            </div>}
           </Card>
         </Col>
+        {!isBond && <>
         <Col xs={24} sm={24} md={8}>
           <Card title="大V提及" size="small" styles={{ body: { maxHeight: 420, overflow: "auto" } }}>
             {fund?.mentions?.length ? (
@@ -907,6 +928,7 @@ export default function StockDetail() {
             ) : <Empty description="暂无新闻" />}
           </Card>
         </Col>
+        </>}
       </Row>
 
       {code && <AiAnalysisCard code={code} />}

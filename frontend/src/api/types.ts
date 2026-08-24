@@ -190,6 +190,25 @@ export interface Quote {
   error?: string;
 }
 
+export interface BondDetail {
+  code: string;
+  name: string | null;
+  close: number | null;
+  change_pct: number | null;
+  volume: number | null;
+  amount: number | null;
+  high: number | null;
+  low: number | null;
+  stock_code: string | null;
+  stock_name: string | null;
+  convert_price: number | null;
+  conversion_value: number | null;
+  premium_rate: number | null;
+  maturity_date: string | null;
+  rating: string | null;
+  redeem_status: string | null;
+}
+
 export interface Fundamentals {
   code: string;
   name: string;

@@ -241,7 +241,10 @@ const IDX_BUY_KEYS = INDEX_SIGNALS.filter((s) => s.dir === "buy").map((s) => s.k
 const IDX_SELL_KEYS = INDEX_SIGNALS.filter((s) => s.dir === "sell").map((s) => s.key);
 const IDX_STACK_PX = 13;
 
-function buildIndexOption(bars: KlineBar[], dark: boolean, showVol: boolean, showMacd: boolean, showKdj: boolean) {
+function buildIndexOption(
+  bars: KlineBar[], dark: boolean, showVol: boolean, showMacd: boolean, showKdj: boolean,
+  zoom?: { start: number; end: number },
+) {
   const dates = bars.map((b) => b.trade_date);
   const axisColor = dark ? "#9aa3ad" : "#666";
   const lineColor = dark ? "#3c3c3c" : "#ddd";
@@ -340,7 +343,8 @@ function buildIndexOption(bars: KlineBar[], dark: boolean, showVol: boolean, sho
     );
   }
 
-  const zoomStart = Math.max(0, 100 - (90 / Math.max(1, bars.length)) * 100);
+  const zoomStart = zoom?.start ?? Math.max(0, 100 - (90 / Math.max(1, bars.length)) * 100);
+  const zoomEnd = zoom?.end ?? 100;
   const allIdx = grids.map((_, i) => i);
   const lStyle = { fontSize: 11, color: dark ? "#c9c9c9" : "#333" };
 
@@ -380,9 +384,9 @@ function buildIndexOption(bars: KlineBar[], dark: boolean, showVol: boolean, sho
     yAxis: yAxes,
     series,
     dataZoom: [
-      { type: "inside", xAxisIndex: allIdx, start: zoomStart, end: 100, preventDefaultMouseMove: false, zoomRate: 0.3 },
+      { type: "inside", xAxisIndex: allIdx, start: zoomStart, end: zoomEnd, preventDefaultMouseMove: false, zoomRate: 0.3 },
       {
-        type: "slider", xAxisIndex: allIdx, bottom: 6, height: 18, start: zoomStart, end: 100,
+        type: "slider", xAxisIndex: allIdx, bottom: 6, height: 18, start: zoomStart, end: zoomEnd,
         textStyle: { color: axisColor, fontSize: 9 },
         handleStyle: { color: dark ? "#5b6779" : "#aaa" },
         fillerColor: dark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.04)",
@@ -478,6 +482,7 @@ function IndexChart({ dark, isMobile }: { dark: boolean; isMobile: boolean }) {
   const [buyExpanded, setBuyExpanded] = useState(false);
   const [sellExpanded, setSellExpanded] = useState(false);
   const chartRef = useRef<ReactECharts>(null);
+  const zoomRef = useRef<{ start: number; end: number } | undefined>(undefined);
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
   const [chartReady, setChartReady] = useState(false);
 
@@ -530,7 +535,7 @@ function IndexChart({ dark, isMobile }: { dark: boolean; isMobile: boolean }) {
   const trendWeak = bars.length > 0 && bars.slice(-14).some((b) => b.mid_reverse_ok);
 
   const option = useMemo(
-    () => (bars.length ? buildIndexOption(bars, dark, showVol, showMacd, showKdj) : {}),
+    () => (bars.length ? buildIndexOption(bars, dark, showVol, showMacd, showKdj, zoomRef.current) : {}),
     [bars, dark, showVol, showMacd, showKdj],
   );
   const height = 76 + 200 + 30 /* dataZoom */
@@ -553,6 +558,12 @@ function IndexChart({ dark, isMobile }: { dark: boolean; isMobile: boolean }) {
   };
 
   const onEvents = useMemo(() => ({
+    datazoom: (e: { start?: number; end?: number; batch?: { start?: number; end?: number }[] }) => {
+      const item = e?.batch?.[0] ?? e;
+      if (typeof item.start === "number" && typeof item.end === "number") {
+        zoomRef.current = { start: item.start, end: item.end };
+      }
+    },
     updateAxisPointer: (e: { axesInfo?: { value?: number }[] }) => {
       const v = e?.axesInfo?.[0]?.value;
       if (typeof v === "number" && v >= 0 && v < bars.length) setHoverIdx(v);
@@ -664,7 +675,7 @@ function IndexChart({ dark, isMobile }: { dark: boolean; isMobile: boolean }) {
               ref={chartRef}
               option={option}
               style={{ height, touchAction: "pan-y" }}
-              notMerge
+              notMerge={false}
               onEvents={onEvents}
               onChartReady={() => setChartReady(true)}
             />

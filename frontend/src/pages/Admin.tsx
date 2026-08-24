@@ -200,15 +200,17 @@ export default function Admin() {
       <Row gutter={[isMobile ? 8 : 16, isMobile ? 8 : 16]}>
         <Col xs={24} md={12}>
           <Typography.Title level={5}>数据同步</Typography.Title>
-          <JobPanel title="行情快照同步" desc="全市场A股最新行情快照" kind="stock_sync"
+          <JobPanel title="行情快照同步" desc="全市场A股 + ETF最新行情快照" kind="stock_sync"
             triggerPath="/api/stock/sync" statusPath="/api/stock/sync/status" />
+          <JobPanel title="转债资料同步" desc="转股价、到期日、信用等级等基础资料" kind="bond_basic_sync"
+            triggerPath="/api/bond/basic_sync" statusPath="/api/bond/basic_sync/status" />
           <JobPanel title="财务指标同步" desc="全市场最新一期财报指标" kind="finance_sync"
             triggerPath="/api/stock/finance_sync" statusPath="/api/stock/finance_sync/status" />
           <JobPanel title="板块名单同步" desc="行业/概念板块名录" kind="sector_sync"
             triggerPath="/api/stock/sync-sectors" statusPath="/api/stock/sync-sectors/status" />
           <JobPanel title="板块成分股全量同步" desc="供个股「所属板块」反查完整覆盖" kind="sector_members_sync"
             triggerPath="/api/stock/sync-sector-members" statusPath="/api/stock/sync-sector-members/status" />
-          <JobPanel title="历史K线回补" desc="均线类策略依赖，回补近60日数据" kind="stock_backfill"
+          <JobPanel title="历史K线回补" desc="股票 + 可转债近60日K线数据" kind="stock_backfill"
             triggerPath="/api/stock/backfill" statusPath="/api/stock/backfill/status" body={{ days: 60 }} />
           <JobPanel title="雪球板块同步" desc="申万134个行业（含半导体/软件开发等），耗时较长" kind="sync_xueqiu_sectors"
             triggerPath="/api/stock/sync-xueqiu-sectors" statusPath="/api/stock/sync-xueqiu-sectors/status" />
