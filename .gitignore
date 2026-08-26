@@ -31,3 +31,4 @@ dist/
 vite.config.js
 vite.config.d.ts
 frontend/android/
+natapp_backup*.sql.gz
