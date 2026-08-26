@@ -107,16 +107,19 @@ def get_kline_view(code: str, sp: dict | None = None, period: str = "day") -> di
     return {"code": code, "name": name, "period": period, "bars": out_bars}
 
 
-def get_index_kline_view(code: str) -> dict:
-    """大盘指数日线K线 + MA/MACD/KDJ，供看板首页画图。数据不落库，实时从新浪拉取。
+def get_index_kline_view(code: str, period: str = "day") -> dict:
+    """大盘指数日/周/月K线 + MA/MACD/KDJ，供看板首页画图。数据不落库，实时从新浪拉取。
 
     只返回历史 bars，不做实时合并——实时报价由前端通过 /api/stock/quote 单独轮询后在前端合并，
     与个股详情页保持一致的模式。
     """
+    if period not in ("day", "week", "month"):
+        period = "day"
     name = INDEX_NAMES.get(code, code)
     bars = sina.fetch_index_kline(code)
+    bars = _aggregate_bars(bars, period)
     if len(bars) < 23:
-        return {"code": code, "name": name, "bars": []}
+        return {"code": code, "name": name, "period": period, "bars": []}
 
     closes = [b["close"] for b in bars]
     ma5 = indicators.moving_avg(closes, 5)
@@ -139,7 +142,7 @@ def get_index_kline_view(code: str) -> dict:
             "strict_ok": strict_ok[i], "loose_ok": loose_ok[i], "golden_ok": golden_ok[i],
             "mid_reverse_ok": mid_reverse_ok[i], "stop_loss_ok": stop_loss_ok[i],
         })
-    return {"code": code, "name": name, "bars": out_bars}
+    return {"code": code, "name": name, "period": period, "bars": out_bars}
 
 
 def get_fundamentals_view(code: str, mention_days: int = 90) -> dict:

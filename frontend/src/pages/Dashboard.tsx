@@ -474,7 +474,8 @@ const INDICES = [
 
 function IndexChart({ dark, isMobile }: { dark: boolean; isMobile: boolean }) {
   const [selectedCode, setSelectedCode] = useState("sh000001");
-  const { data, isLoading } = useIndexKline(selectedCode);
+  const [period, setPeriod] = useState<"day" | "week" | "month">("day");
+  const { data, isLoading } = useIndexKline(selectedCode, period);
   const { data: quote } = useQuote(selectedCode);
   const [showVol, setShowVol] = useState(true);
   const [showMacd, setShowMacd] = useState(false);
@@ -491,7 +492,7 @@ function IndexChart({ dark, isMobile }: { dark: boolean; isMobile: boolean }) {
   // - 日期不同且 quote 更新（盘中/盘前当日无历史 bar）：追加一根今日 bar
   const bars = useMemo(() => {
     const raw = data?.bars ?? [];
-    if (!quote || quote.error || !raw.length) return raw;
+    if (period !== "day" || !quote || quote.error || !raw.length) return raw;
     const last = raw[raw.length - 1];
     if (last.trade_date === quote.trade_date) {
       // 同一天：覆盖 OHLCV
@@ -525,7 +526,7 @@ function IndexChart({ dark, isMobile }: { dark: boolean; isMobile: boolean }) {
       return [...raw, todayBar];
     }
     return raw;
-  }, [data, quote]);
+  }, [data, period, quote]);
 
   const activeIdx = hoverIdx != null && bars[hoverIdx] ? hoverIdx : bars.length - 1;
   const active = bars[activeIdx];
@@ -640,12 +641,20 @@ function IndexChart({ dark, isMobile }: { dark: boolean; isMobile: boolean }) {
   return (
     <Card
       title={
-        <Segmented
-          size="small"
-          value={selectedCode}
-          onChange={(v) => setSelectedCode(v as string)}
-          options={INDICES.map((i) => ({ label: i.label, value: i.code }))}
-        />
+        <Space wrap size={[8, 4]}>
+          <Segmented
+            size="small"
+            value={selectedCode}
+            onChange={(v) => setSelectedCode(v as string)}
+            options={INDICES.map((i) => ({ label: i.label, value: i.code }))}
+          />
+          <Segmented
+            size="small"
+            value={period}
+            onChange={(v) => setPeriod(v as "day" | "week" | "month")}
+            options={[{ label: "日线", value: "day" }, { label: "周线", value: "week" }, { label: "月线", value: "month" }]}
+          />
+        </Space>
       }
       style={{ marginTop: isMobile ? 8 : 16 }}
       extra={

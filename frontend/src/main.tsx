@@ -4,12 +4,17 @@ import zhCN from "antd/locale/zh_CN";
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
+import { Capacitor } from "@capacitor/core";
 
 import App from "./App";
 import { AuthProvider } from "./auth";
 import { ThemeModeProvider, useThemeMode } from "./theme";
 import { VisitorAuthProvider } from "./visitorAuth";
 import "./index.css";
+
+if (Capacitor.isNativePlatform()) {
+  document.documentElement.classList.add("capacitor-app");
+}
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 30_000, retry: 1, refetchOnWindowFocus: false } },

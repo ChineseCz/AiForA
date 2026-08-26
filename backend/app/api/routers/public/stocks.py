@@ -105,14 +105,19 @@ async def api_stock_intraday(
 
 
 @router.get("/index/kline")
-async def api_index_kline(code: str = Query(default="sh000001"), c: CacheService = Depends(cache)):
-    """大盘指数日线（看板首页），不落库，直连新浪，60s TTL 保证盘中实时刷新。"""
+async def api_index_kline(
+    code: str = Query(default="sh000001"),
+    period: str = Query(default="day"),
+    c: CacheService = Depends(cache),
+):
+    """大盘指数日/周/月线（看板首页），不落库，直连新浪。"""
     code = code.strip() or "sh000001"
-    key = await c.key("index_kline", code=code)
+    period = period if period in ("day", "week", "month") else "day"
+    key = await c.key("index_kline", code=code, period=period)
     hit = await c.get_json(key)
     if hit is not None:
         return hit
-    view = await run_in_threadpool(views.get_index_kline_view, code)
+    view = await run_in_threadpool(views.get_index_kline_view, code, period)
     view["error"] = ""
     await c.set_json(key, view, 10)
     return view

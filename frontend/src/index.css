@@ -198,6 +198,12 @@ body {
 }
 .app-header > .ant-btn, .app-header > .ant-dropdown-trigger { flex-shrink: 0; }
 
+/* Capacitor WebView 在部分 Android 版本采用 edge-to-edge，顶部内容会进入状态栏区域。 */
+.capacitor-app .app-header {
+  padding-top: 28px;
+  min-height: 92px;
+}
+
 /* 用 grid 固定列数而不是 flex-wrap：flex-wrap 换行位置取决于每格内容宽度，hover 切换K线时
    涨跌幅等数值文本长度变化（如 +3.95% 变 -12.34%）会改变换行点，导致行数、整体高度跳动。
    grid 固定列数后行数恒定，内容变化只在格内截断，不影响整体高度。 */
@@ -219,6 +225,7 @@ body {
   .stock-infobar { grid-template-columns: repeat(3, 1fr); gap: 4px 14px; padding: 8px 10px; overflow-x: visible; }
   .stock-infobar .cell { font-size: 12px; }
   .app-header { padding: 0 8px; }
+  .capacitor-app .app-header { padding-top: 28px; min-height: 92px; }
 }
 
 /* 帖子流信息流卡片，仿雪球动态列表；桌面/手机通用，图片在宽屏下大一点 */
