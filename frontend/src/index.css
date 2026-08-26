@@ -1,6 +1,9 @@
 * { box-sizing: border-box; }
 html, body, #root { height: 100%; margin: 0; }
 
+/* 与 index.html 的启动层保持一致；页面样式加载后继续兼容主题变量。 */
+#startup-splash { background: var(--bg-page, #101418); }
+
 :root {
   --bg-page: #f5f6f8;
   --bg-elevated: #fafafa;
