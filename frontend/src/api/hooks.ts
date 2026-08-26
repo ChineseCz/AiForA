@@ -53,8 +53,8 @@ export const useKline = (code: string, sp?: Record<string, number | boolean>, pe
   });
 };
 
-export const useIndexKline = (code: string) =>
-  useQuery({ queryKey: ["index_kline", code], queryFn: () => get<KlineView>("/api/index/kline", { code }), enabled: !!code, refetchInterval: 10_000 });
+export const useIndexKline = (code: string, period: "day" | "week" | "month" = "day") =>
+  useQuery({ queryKey: ["index_kline", code, period], queryFn: () => get<KlineView>("/api/index/kline", { code, period }), enabled: !!code, refetchInterval: period === "day" ? 10_000 : false });
 
 export const useFundamentals = (code: string) =>
   useQuery({ queryKey: ["fundamentals", code], queryFn: () => get<Fundamentals>("/api/stock/fundamentals", { code }), enabled: !!code });
