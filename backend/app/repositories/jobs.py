@@ -74,6 +74,12 @@ def finish_job(job_id: int, error: str = ""):
         ), {"id": job_id, "status": status, "now": now, "err": error})
 
 
+def get_status_sync(job_id: int) -> str | None:
+    """Read a job status from synchronous Celery task code."""
+    with sync_session() as s:
+        return s.execute(text("SELECT status FROM job_runs WHERE id = :id"), {"id": job_id}).scalar()
+
+
 async def get_job_status(session: AsyncSession, kind: str) -> dict:
     """获取某类任务的最新状态（用于轮询）。"""
     row = (await session.execute(text(
@@ -92,4 +98,26 @@ async def get_job_status(session: AsyncSession, kind: str) -> dict:
         from datetime import datetime, timezone, timedelta
         tz_cst = timezone(timedelta(hours=8))
         result["finished_at"] = datetime.fromtimestamp(row["finished_at"], tz=tz_cst).strftime("%Y-%m-%d %H:%M")
+    return result
+
+
+async def list_recent_jobs(session: AsyncSession, limit: int = 20) -> list[dict]:
+    """Return a compact cross-queue history for the admin dashboard."""
+    limit = max(1, min(limit, 100))
+    rows = (await session.execute(text(
+        """
+        SELECT id, kind, status, source, started_at, finished_at, error, RIGHT(COALESCE(log, ''), 12000) AS log
+        FROM job_runs
+        ORDER BY id DESC
+        LIMIT :limit
+        """
+    ), {"limit": limit})).mappings().all()
+    result = []
+    for row in rows:
+        item = dict(row)
+        if item["started_at"] and item["finished_at"]:
+            item["duration_seconds"] = max(0, item["finished_at"] - item["started_at"])
+        else:
+            item["duration_seconds"] = None
+        result.append(item)
     return result

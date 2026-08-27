@@ -66,6 +66,16 @@ def create_menu(access_token: str, menu: dict) -> dict:
     return r.json()
 
 
+def send_template_message(access_token: str, openid: str, template_id: str, data: dict, url: str = "") -> dict:
+    """发送公众号模板消息；模板字段需与公众平台配置一致。"""
+    r = requests.post(
+        f"https://api.weixin.qq.com/cgi-bin/message/template/send?access_token={access_token}",
+        json={"touser": openid, "template_id": template_id, "url": url, "data": data},
+        timeout=10,
+    )
+    return r.json()
+
+
 def build_text_reply(to_user: str, from_account: str, content: str) -> str:
     import time as _t
     return (

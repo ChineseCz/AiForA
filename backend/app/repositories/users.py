@@ -97,3 +97,16 @@ async def set_nickname(session: AsyncSession, sub: str, nickname: str) -> None:
     )
     await session.commit()
 
+
+async def change_email(session: AsyncSession, sub: str, email: str) -> dict | None:
+    """将当前登录账号绑定的邮箱改为已验证的新邮箱。"""
+    row = (await session.execute(
+        text(
+            "UPDATE users SET email=:email WHERE phone=:sub OR openid=:sub OR email=:sub "
+            "RETURNING id, email, is_admin"
+        ),
+        {"sub": sub, "email": email},
+    )).mappings().first()
+    await session.commit()
+    return dict(row) if row else None
+

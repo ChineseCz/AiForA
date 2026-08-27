@@ -11,9 +11,13 @@ from app.workers.runner import job_run
 @celery_app.task(name="stock.sync_snapshot", queue=QUEUE_DEFAULT)
 def task_stock_sync(source: str = "手动", job_id: int | None = None) -> int:
     from app.services import ingest
-    with job_run("stock_sync", source, invalidate_cache=True, job_id=job_id):
+    n = 0
+    with job_run("stock_sync", source, invalidate_cache=True, job_id=job_id) as current_job_id:
         n = ingest.sync_daily_snapshot()
-    task_recompute_indicators.delay(source="自动(快照后)")  # 快照更新 → 重算预计算指标
+    # job_run 会记录并吞掉异常；只有快照任务确实成功时才触发全表指标重算。
+    from app.repositories import jobs
+    if jobs.get_status_sync(current_job_id) == "success":
+        task_recompute_indicators.delay(source="自动(快照后)")  # 快照更新 → 重算预计算指标
     return n
 
 
@@ -31,7 +35,7 @@ def _in_trading_hours(now) -> bool:
 
 @celery_app.task(name="stock.auto_sync_tick", queue=QUEUE_DEFAULT)
 def task_auto_sync_tick() -> None:
-    """全市场行情定时同步（每10分钟一次，见 celery_app.py 的 beat_schedule）。
+    """全市场行情定时同步（每分钟检查，按后台配置的分钟间隔派发）。
 
     beat_schedule 的周期是进程启动时固定的静态配置，没法运行时开关；开关做在任务体内部，
     仿照 tasks/beat.py::scheduler_tick 读 schedules 表的模式——不满足就直接 return。
@@ -45,12 +49,30 @@ def task_auto_sync_tick() -> None:
     if not db.get_schedule().get("stock_auto_sync_enabled", True):
         return
     now = datetime.now()
+    interval = max(5, int(db.get_schedule().get("stock_sync_interval", 15) or 15))
     if not _in_trading_hours(now):
         return
     if jobs.is_running("stock_sync") or jobs.is_running("recompute_indicators"):
         print("… 上一轮行情同步/指标重算尚未结束，本轮跳过 …")
         return
-    task_stock_sync.delay(source="定时(10分钟)")
+    # 以 09:15 为交易日槽位起点；Redis SETNX 防止多个 beat 重复派发同一槽位。
+    import redis as sync_redis
+    from app.core.config import settings
+    trading_start = now.replace(hour=9, minute=15, second=0, microsecond=0)
+    slot = int((now - trading_start).total_seconds() // 60 // interval)
+    dedup_key = f"natapp:stock-sync:{now.date().isoformat()}:{slot}"
+    rc = sync_redis.from_url(settings.redis_url, decode_responses=True)
+    try:
+        if rc.set(dedup_key, "1", nx=True, ex=86400):
+            task_stock_sync.delay(source=f"定时({interval}分钟)")
+    finally:
+            rc.close()
+
+
+@celery_app.task(name="stock.signal_notifications", queue=QUEUE_DEFAULT)
+def task_signal_notifications() -> int:
+    from app.services.notifications import scan_signal_notifications
+    return scan_signal_notifications()
 
 
 @celery_app.task(name="stock.recompute_indicators", queue=QUEUE_DEFAULT)

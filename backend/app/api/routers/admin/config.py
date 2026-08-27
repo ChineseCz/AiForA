@@ -40,12 +40,17 @@ async def set_schedule(request: Request):
         interval = max(5, int(body.get("interval", 30) or 30))
     except (ValueError, TypeError):
         interval = 30
+    try:
+        stock_sync_interval = max(5, int(body.get("stock_sync_interval", 15) or 15))
+    except (ValueError, TypeError):
+        stock_sync_interval = 15
     cfg = {
         "enabled": bool(body.get("enabled", False)),
         "start": str(body.get("start", "08:00")),
         "end": str(body.get("end", "22:00")),
         "interval": interval,
         "stock_auto_sync_enabled": bool(body.get("stock_auto_sync_enabled", True)),
+        "stock_sync_interval": stock_sync_interval,
         "weekly_summary_enabled": bool(body.get("weekly_summary_enabled", True)),
     }
     return await run_in_threadpool(db.save_schedule, cfg)

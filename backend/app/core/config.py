@@ -111,6 +111,7 @@ class Settings(BaseSettings):
     wechat_appsecret: str = ""
     # 与公众平台"服务器配置"里填写的 Token 保持一致
     wechat_token: str = ""
+    wechat_notify_template_id: str = ""
 
     @model_validator(mode="after")
     def _check_jwt_secret(self) -> "Settings":

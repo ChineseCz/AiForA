@@ -10,7 +10,7 @@ from app.repositories import settings as settings_repo
 
 router = APIRouter(prefix="/api")
 
-_ALLOWED_KEYS = {"screen_params"}
+_ALLOWED_KEYS = {"screen_params", "notification_settings"}
 
 
 @router.get("/user/settings")

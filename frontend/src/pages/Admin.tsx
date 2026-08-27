@@ -1,13 +1,13 @@
 import {
   Button, Card, Checkbox, Col, DatePicker, Form, Input, InputNumber,
-  Row, Select, Space, Switch, Tag, Typography, message,
+  Collapse, Row, Select, Space, Statistic, Switch, Table, Tag, Typography, message,
 } from "antd";
 import dayjs, { type Dayjs } from "dayjs";
 import { useEffect, useState } from "react";
 
 import { api, errMsg } from "@/api/client";
 import {
-  useAuthSettings, useJobStatus, useSaveAuthSettings, useSaveSchedule, useSchedule, useUsers,
+  useAuthSettings, useBackfillFailures, useDataHealth, useJobStatus, useRecentJobs, useSaveAuthSettings, useSaveSchedule, useSchedule, useUsers,
 } from "@/api/hooks";
 import { useIsMobile } from "@/hooks/useIsMobile";
 
@@ -79,8 +79,11 @@ function SchedulePanel() {
           <Form.Item name="interval" label="间隔(分)" style={{ marginBottom: 0 }}><InputNumber min={5} /></Form.Item>
         </Space>
         <Space wrap style={{ marginBottom: 8, display: "block" }}>
-          <Form.Item name="stock_auto_sync_enabled" label="全市场行情10分钟同步" valuePropName="checked" style={{ marginBottom: 0, display: "inline-block", marginRight: 24 }}>
+          <Form.Item name="stock_auto_sync_enabled" label="全市场行情同步" valuePropName="checked" style={{ marginBottom: 0, display: "inline-block", marginRight: 24 }}>
             <Switch />
+          </Form.Item>
+          <Form.Item name="stock_sync_interval" label="行情间隔(分)" style={{ marginBottom: 0, display: "inline-block", marginRight: 24 }}>
+            <InputNumber min={5} max={240} />
           </Form.Item>
           <Form.Item name="weekly_summary_enabled" label="周三/周日周总结" valuePropName="checked" style={{ marginBottom: 0, display: "inline-block" }}>
             <Switch />
@@ -115,6 +118,115 @@ function AuthSettingsPanel() {
         </Typography.Text>
       </Space>
     </Card>
+  );
+}
+
+const JOB_LABELS: Record<string, string> = {
+  stock_sync: "行情快照",
+  stock_backfill: "历史K线回补",
+  finance_sync: "财务指标",
+  bond_sync: "转债行情",
+  bond_basic_sync: "转债资料",
+  sector_sync: "板块名单",
+  sector_members_sync: "板块成分股",
+  sync_xueqiu_sectors: "雪球板块",
+  crawl: "雪球采集",
+  summarize: "AI总结",
+};
+
+function formatJobTime(value?: number) {
+  return value ? dayjs.unix(value).format("MM-DD HH:mm") : "-";
+}
+
+function formatDuration(value?: number | null) {
+  if (value == null) return "-";
+  if (value < 60) return `${value}秒`;
+  return `${Math.floor(value / 60)}分${value % 60}秒`;
+}
+
+function MonitoringPanel() {
+  const { data: health, isLoading: healthLoading } = useDataHealth();
+  const { data: recent, isLoading: jobsLoading } = useRecentJobs();
+  const { data: failures, isLoading: failuresLoading } = useBackfillFailures();
+  const [retrying, setRetrying] = useState(false);
+  const retryFailures = () => {
+    setRetrying(true);
+    api.post("/api/stock/backfill", { days: 60, failed_only: true })
+      .then((r) => {
+        if (r.data?.started === false) message.warning(r.data?.error || "已有回补任务运行中");
+        else message.success("已提交失败标的重试任务");
+      })
+      .catch((e) => message.error(errMsg(e)))
+      .finally(() => setRetrying(false));
+  };
+  return (
+    <>
+      <Card size="small" title="数据健康">
+        <Row gutter={[12, 12]}>
+          <Col xs={12} md={6}><Statistic title="股票最新交易日" value={health?.stock_date || "暂无"} loading={healthLoading} /></Col>
+          <Col xs={12} md={6}><Statistic title="股票当天记录" value={health?.stock_count ?? 0} loading={healthLoading} /></Col>
+          <Col xs={12} md={6}><Statistic title="转债最新交易日" value={health?.bond_date || "暂无"} loading={healthLoading} /></Col>
+          <Col xs={12} md={6}><Statistic title="转债当天记录" value={health?.bond_count ?? 0} loading={healthLoading} /></Col>
+          <Col xs={12} md={6}>
+            <Statistic title="回补失败标的" value={health?.backfill_failures ?? 0} loading={healthLoading}
+              valueStyle={health?.backfill_failures ? { color: "#cf1322" } : undefined} />
+          </Col>
+        </Row>
+        <Typography.Text type="secondary" style={{ display: "block", marginTop: 10, fontSize: 12 }}>
+          最近行情同步：{health?.stock_sync_status === "running" ? "运行中" : health?.stock_sync_status === "success" ? "成功" : health?.stock_sync_status === "error" ? "失败" : "暂无记录"}
+          {health?.stock_sync_duration_seconds != null ? `，耗时 ${formatDuration(health.stock_sync_duration_seconds)}` : ""}
+          {health?.stock_sync_summary ? `，${health.stock_sync_summary}` : ""}
+        </Typography.Text>
+      </Card>
+      <Collapse defaultActiveKey={[]} style={{ marginTop: 12 }} items={[{
+        key: "recent-jobs",
+        label: `最近任务（${recent?.items?.length || 0}）`,
+        children: <Table
+          size="small"
+          loading={jobsLoading}
+          rowKey="id"
+          pagination={false}
+          scroll={{ x: 620 }}
+          dataSource={recent?.items || []}
+          expandable={{
+            expandedRowRender: (record) => (
+              <pre style={{ margin: 0, maxHeight: 260, overflow: "auto", whiteSpace: "pre-wrap", fontSize: 12 }}>
+                {record.log || record.error || "暂无详细日志"}
+              </pre>
+            ),
+            rowExpandable: (record) => !!record.log || !!record.error,
+          }}
+          columns={[
+            { title: "任务", dataIndex: "kind", render: (v: string) => JOB_LABELS[v] || v },
+            { title: "状态", dataIndex: "status", render: (v: string) => <Tag color={v === "running" ? "processing" : v === "success" || v === "done" ? "success" : "error"}>{v === "running" ? "运行中" : v === "success" || v === "done" ? "完成" : "失败"}</Tag> },
+            { title: "来源", dataIndex: "source" },
+            { title: "开始", dataIndex: "started_at", render: formatJobTime },
+            { title: "结束", dataIndex: "finished_at", render: formatJobTime },
+            { title: "耗时", dataIndex: "duration_seconds", render: formatDuration },
+            { title: "错误", dataIndex: "error", ellipsis: true },
+          ]}
+        />,
+      }]} />
+      <Collapse defaultActiveKey={[]} style={{ marginTop: 12 }} items={[{
+        key: "backfill-failures",
+        label: `回补失败清单（${failures?.items?.length || 0}）`,
+        extra: <Button size="small" type="primary" disabled={!failures?.items?.length} loading={retrying} onClick={(e) => { e.stopPropagation(); retryFailures(); }}>重试全部失败</Button>,
+        children: <Table
+          size="small"
+          loading={failuresLoading}
+          rowKey={(r) => `${r.asset_type}-${r.code}`}
+          pagination={{ pageSize: 10, hideOnSinglePage: true }}
+          scroll={{ x: 620 }}
+          dataSource={failures?.items || []}
+          columns={[
+            { title: "类型", dataIndex: "asset_type", render: (v: string) => v === "bond" ? "转债" : "股票" },
+            { title: "代码", dataIndex: "code" },
+            { title: "更新时间", dataIndex: "updated_at", render: (v: number) => formatJobTime(v) },
+            { title: "错误", dataIndex: "error", ellipsis: true },
+          ]}
+        />,
+      }]} />
+    </>
   );
 }
 
@@ -197,6 +309,8 @@ export default function Admin() {
           </Typography.Text>
         </Space>
       </Card>
+
+      <MonitoringPanel />
 
       <Row gutter={[isMobile ? 8 : 16, isMobile ? 8 : 16]}>
         <Col xs={24} md={12}>

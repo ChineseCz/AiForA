@@ -15,7 +15,9 @@ echo "==> Validating Compose configuration"
 docker compose config -q
 
 echo "==> Building and recreating application services"
-docker compose up -d --build api worker beat frontend
+# browser-worker copies the application into its image instead of mounting
+# ./app, so it must be rebuilt whenever browser task code changes.
+docker compose up -d --build api worker beat browser-worker frontend
 
 echo "==> Applying database migrations"
 docker compose exec -T api alembic upgrade head
@@ -32,4 +34,3 @@ echo "==> Health checks"
 curl --fail --silent --show-error http://127.0.0.1:8090/health >/dev/null
 curl --fail --silent --show-error http://127.0.0.1:8090/ >/dev/null
 echo "Deployment completed successfully."
-
