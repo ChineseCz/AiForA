@@ -303,12 +303,65 @@ export interface JobStatus {
   finished_at: string;
 }
 
+export interface WatchlistOverview {
+  total: number;
+  up: number;
+  down: number;
+  flat: number;
+  avg_change: number | null;
+  trade_date: string | null;
+  signals: { code: string; name: string; label: string }[];
+  gainers: { code: string; name: string; change_pct: number }[];
+  losers: { code: string; name: string; change_pct: number }[];
+}
+
+export interface RecentJob {
+  id: number;
+  kind: string;
+  status: string;
+  source?: string;
+  started_at?: number;
+  finished_at?: number;
+  error?: string;
+  duration_seconds?: number | null;
+  log?: string;
+}
+
+export interface DataHealth {
+  stock_date: string | null;
+  stock_count: number;
+  bond_date: string | null;
+  bond_count: number;
+  backfill_failures: number;
+  stock_sync_status: string | null;
+  stock_sync_started_at: number | null;
+  stock_sync_finished_at: number | null;
+  stock_sync_duration_seconds: number | null;
+  stock_sync_summary: string;
+  stock_sync_error: string | null;
+}
+
+export interface BackfillFailure {
+  asset_type: "stock" | "bond" | string;
+  code: string;
+  last_job_id: number | null;
+  error: string | null;
+  updated_at: number;
+}
+
+export interface NotificationSettings {
+  signal_enabled: boolean;
+  email_enabled: boolean;
+  wechat_enabled: boolean;
+}
+
 export interface ScheduleCfg {
   enabled: boolean;
   start: string;
   end: string;
   interval: number;
   stock_auto_sync_enabled: boolean;
+  stock_sync_interval: number;
   weekly_summary_enabled: boolean;
 }
 

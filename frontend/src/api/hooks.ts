@@ -3,9 +3,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { api } from "./client";
 import type {
-  AuthConfigResp, AuthSettingsCfg, BondDetail, Condition, Fundamentals, FieldMeta, GroupItem, GroupMember, JobStatus, KlineView, NewsItem,
-  Overview, PostsPage, Quote, ScheduleCfg, ScreenResp, SectorItem, SectorRankResp, StockAiAnalysisResp, SummaryResp, IntradayView,
-  TradeNote, TradeRecord, TradeStats, UserItem,
+  AuthConfigResp, AuthSettingsCfg, BondDetail, Condition, Fundamentals, FieldMeta, GroupItem, GroupMember, JobStatus, KlineView, NewsItem, WatchlistOverview,
+  Overview, PostsPage, Quote, ScheduleCfg, ScreenResp, SectorItem, SectorRankResp, StockAiAnalysisResp, SummaryResp, IntradayView, BackfillFailure,
+  TradeNote, TradeRecord, TradeStats, UserItem, RecentJob, DataHealth, NotificationSettings,
   ResetCaptchaResp, VisitorLoginResp, VisitorMeResp, WechatQrcodeResp, WechatPollResp,
 } from "./types";
 
@@ -90,6 +90,13 @@ export const useSectorRank = () =>
 export const useGroups = (isPaper = false) =>
   useQuery({ queryKey: ["groups", isPaper], queryFn: () => get<{ groups: GroupItem[] }>("/api/groups", { is_paper: isPaper || undefined }) });
 
+export const useWatchlistOverview = (isPaper = false) =>
+  useQuery({
+    queryKey: ["watchlist_overview", isPaper],
+    queryFn: () => get<WatchlistOverview>("/api/groups/overview", { is_paper: isPaper || undefined }),
+    refetchInterval: 30_000,
+  });
+
 export interface ScreenBody {
   strategies?: string[];
   conditions?: Condition[];
@@ -119,6 +126,15 @@ export const useJobStatus = (kind: string, path: string, polling: boolean) =>
     queryFn: () => get<JobStatus>(path),
     refetchInterval: polling ? 1500 : false,
   });
+
+export const useRecentJobs = () =>
+  useQuery({ queryKey: ["recent_jobs"], queryFn: () => get<{ items: RecentJob[] }>("/api/jobs/recent"), refetchInterval: 5000 });
+
+export const useDataHealth = () =>
+  useQuery({ queryKey: ["data_health"], queryFn: () => get<DataHealth>("/api/jobs/data-health"), refetchInterval: 30000 });
+
+export const useBackfillFailures = () =>
+  useQuery({ queryKey: ["backfill_failures"], queryFn: () => get<{ items: BackfillFailure[] }>("/api/jobs/backfill-failures"), refetchInterval: 10000 });
 
 export const useTrigger = (path: string, body?: object) =>
   useMutation({ mutationFn: () => post<{ started: boolean; running: boolean }>(path, body) });
@@ -382,6 +398,20 @@ export const useSaveUserSettings = () => {
     mutationFn: (body: { key: string; value: unknown }) =>
       api.put<{ error: string }>("/api/user/settings", body).then((r) => r.data),
     onSuccess: (_d, vars) => qc.invalidateQueries({ queryKey: ["user_settings", vars.key] }),
+  });
+};
+
+export const useNotificationSettings = () =>
+  useQuery({
+    queryKey: ["user_settings", "notification_settings"],
+    queryFn: () => get<{ value: NotificationSettings | null }>("/api/user/settings", { key: "notification_settings" }),
+  });
+
+export const useSaveNotificationSettings = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (value: NotificationSettings) => api.put("/api/user/settings", { key: "notification_settings", value }).then((r) => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["user_settings", "notification_settings"] }),
   });
 };
 

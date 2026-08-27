@@ -1,7 +1,7 @@
-import { DeleteOutlined, FolderOutlined, PlusOutlined, StarFilled, StarOutlined, UploadOutlined } from "@ant-design/icons";
+import { DeleteOutlined, FolderOutlined, PlusOutlined, ReloadOutlined, StarFilled, StarOutlined, UploadOutlined } from "@ant-design/icons";
 import {
   AutoComplete, Button, Col, DatePicker, Empty, Form, Input, InputNumber,
-  Modal, Pagination, Popconfirm, Progress, Row, Select, Space, Spin, Table, Tabs,
+  Modal, Pagination, Popconfirm, Progress, Row, Select, Space, Spin, Switch, Table, Tabs,
   Tag, Tooltip, Typography, Upload, message, theme,
 } from "antd";
 import { useState, useEffect, useRef } from "react";
@@ -9,9 +9,9 @@ import { Link } from "react-router-dom";
 
 import { errMsg, api } from "../api/client";
 import { useQueryClient, useQueries } from "@tanstack/react-query";
-import { useGroupMembers, useGroupMutations, useGroups, useDeleteNote, useFavoriteNote, useGenerateNote, useNote, useNoteList, useNoteMutation, usePaperAccount, useResetPaperAccount, useTradeMutations, useTrades, useTradeStats } from "../api/hooks";
+import { useGroupMembers, useGroupMutations, useGroups, useDeleteNote, useFavoriteNote, useGenerateNote, useNote, useNoteList, useNoteMutation, useNotificationSettings, usePaperAccount, useResetPaperAccount, useSaveNotificationSettings, useTradeMutations, useTrades, useTradeStats, useWatchlistOverview } from "../api/hooks";
 import { getToken, getVisitorToken } from "../api/client";
-import type { GroupItem, GroupMember, TradeNote, TradeRecord } from "../api/types";
+import type { GroupItem, GroupMember, NotificationSettings, TradeNote, TradeRecord } from "../api/types";
 import { useIsMobile } from "../hooks/useIsMobile";
 import { useVisitorAuth } from "../visitorAuth";
 import dayjs from "dayjs";
@@ -26,10 +26,18 @@ function WatchlistTab({ isPaper = false }: { isPaper?: boolean }) {
   const isMobile = useIsMobile();
   const { token } = theme.useToken();
   const { data: groupsData, isLoading: loadingGroups } = useGroups(isPaper);
+  const { data: overview, isLoading: loadingOverview } = useWatchlistOverview(isPaper);
   const groups = (groupsData?.groups ?? []) as GroupItem[];
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [sortBy, setSortBy] = useState<"added" | "change" | "close">("added");
+  const queryClient = useQueryClient();
   const { data: membersData, isLoading: loadingMembers } = useGroupMembers(selectedId);
   const members = (membersData?.items ?? []) as GroupMember[];
+  const sortedMembers = [...members].sort((a, b) => {
+    if (sortBy === "change") return (b.change_pct ?? -Infinity) - (a.change_pct ?? -Infinity);
+    if (sortBy === "close") return (b.close ?? -Infinity) - (a.close ?? -Infinity);
+    return (a.added_at ?? 0) - (b.added_at ?? 0);
+  });
   const muts = useGroupMutations(isPaper);
 
   const [createOpen, setCreateOpen] = useState(false);
@@ -37,6 +45,11 @@ function WatchlistTab({ isPaper = false }: { isPaper?: boolean }) {
   const [addOpen, setAddOpen] = useState(false);
   const [addCode, setAddCode] = useState("");
   const [addStockName, setAddStockName] = useState("");
+  const [stockOptions, setStockOptions] = useState<{ value: string; label: string; code: string; name: string }[]>([]);
+
+  useEffect(() => {
+    if (selectedId == null && groups.length) setSelectedId(groups[0].id);
+  }, [groups, selectedId]);
 
   const handleCreate = () => {
     const name = newName.trim();
@@ -74,6 +87,17 @@ function WatchlistTab({ isPaper = false }: { isPaper?: boolean }) {
         onError: (e) => message.error(errMsg(e, "添加失败")),
       },
     );
+  };
+
+  const handleStockSearch = async (value: string) => {
+    const q = value.trim();
+    if (!q) { setStockOptions([]); return; }
+    try {
+      const res = await api.get<{ items: { code: string; name: string }[] }>("/api/stock/search", { params: { q } });
+      setStockOptions(res.data.items.map((item) => ({ value: item.code, label: `${item.name}（${item.code}）`, code: item.code, name: item.name })));
+    } catch {
+      setStockOptions([]);
+    }
   };
 
   const memberCols = [
@@ -124,7 +148,28 @@ function WatchlistTab({ isPaper = false }: { isPaper?: boolean }) {
 
   const selectedGroup = groups.find((g) => g.id === selectedId);
 
+  const changeColor = (value?: number | null) => value && value > 0 ? token.colorError : value && value < 0 ? token.colorSuccess : undefined;
+  const rankList = (items: { code: string; name: string; change_pct: number }[], empty: string) => items.length ? (
+    <Space direction="vertical" size={3} style={{ width: "100%" }}>
+      {items.map((item) => <Link key={item.code} to={`/stock/${item.code}`} style={{ display: "flex", justifyContent: "space-between" }}>
+        <span>{item.name}</span><Text style={{ color: changeColor(item.change_pct) }}>{item.change_pct > 0 ? "+" : ""}{item.change_pct.toFixed(2)}%</Text>
+      </Link>)}
+    </Space>
+  ) : <Text type="secondary">{empty}</Text>;
+
   return (
+    <>
+      <Row gutter={[8, 8]} style={{ marginBottom: 16 }}>
+        <Col xs={12} sm={6}><div style={{ padding: 10, background: token.colorFillQuaternary, borderRadius: 6 }}><Text type="secondary">自选总数</Text><div style={{ fontSize: 22, fontWeight: 600 }}>{loadingOverview ? "-" : overview?.total ?? 0}</div></div></Col>
+        <Col xs={12} sm={6}><div style={{ padding: 10, background: token.colorFillQuaternary, borderRadius: 6 }}><Text type="secondary">上涨 / 下跌</Text><div style={{ fontSize: 22, fontWeight: 600 }}><span style={{ color: token.colorError }}>{overview?.up ?? 0}</span><Text type="secondary"> / </Text><span style={{ color: token.colorSuccess }}>{overview?.down ?? 0}</span></div></div></Col>
+        <Col xs={12} sm={6}><div style={{ padding: 10, background: token.colorFillQuaternary, borderRadius: 6 }}><Text type="secondary">平均涨跌</Text><div style={{ fontSize: 22, fontWeight: 600, color: changeColor(overview?.avg_change) }}>{overview?.avg_change != null ? `${overview.avg_change > 0 ? "+" : ""}${overview.avg_change.toFixed(2)}%` : "-"}</div></div></Col>
+        <Col xs={12} sm={6}><div style={{ padding: 10, background: token.colorFillQuaternary, borderRadius: 6 }}><Text type="secondary">买点信号</Text><div style={{ fontSize: 22, fontWeight: 600 }}>{overview?.signals.length ?? 0}</div></div></Col>
+      </Row>
+      <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
+        <Col xs={24} sm={8}><Text strong>涨幅榜</Text><div style={{ marginTop: 6 }}>{rankList(overview?.gainers ?? [], "暂无行情")}</div></Col>
+        <Col xs={24} sm={8}><Text strong>跌幅榜</Text><div style={{ marginTop: 6 }}>{rankList(overview?.losers ?? [], "暂无行情")}</div></Col>
+        <Col xs={24} sm={8}><Text strong>买点信号</Text><div style={{ marginTop: 6 }}><Space wrap>{overview?.signals.length ? overview.signals.map((item) => <Link key={item.code} to={`/stock/${item.code}`}><Tag color="volcano">{item.name} {item.label}</Tag></Link>) : <Text type="secondary">暂无买点信号</Text>}</Space></div></Col>
+      </Row>
     <Row gutter={[16, 16]}>
       {/* 左：分组列表 */}
       <Col xs={24} sm={8}>
@@ -194,13 +239,23 @@ function WatchlistTab({ isPaper = false }: { isPaper?: boolean }) {
         ) : (
           <>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-              <Text strong>{selectedGroup?.name ?? "成员列表"}</Text>
-              {(!AUTO_GROUP_NAMES.has(selectedGroup?.name ?? "")) && (
-                <Button size="small" icon={<PlusOutlined />} onClick={() => setAddOpen(true)}>添加股票</Button>
-              )}
+              <Space>
+                <Text strong>{selectedGroup?.name ?? "成员列表"}</Text>
+                <Tag>{members.length}只</Tag>
+              </Space>
+              <Space wrap>
+                <Select size="small" value={sortBy} onChange={setSortBy}
+                  options={[{ value: "added", label: "按添加顺序" }, { value: "change", label: "按涨跌幅" }, { value: "close", label: "按最新价" }]} />
+                <Button size="small" icon={<ReloadOutlined />} onClick={() => {
+                  if (selectedId != null) queryClient.invalidateQueries({ queryKey: ["group_members", selectedId] });
+                }}>刷新</Button>
+                {(!AUTO_GROUP_NAMES.has(selectedGroup?.name ?? "")) && (
+                  <Button size="small" icon={<PlusOutlined />} onClick={() => setAddOpen(true)}>添加股票</Button>
+                )}
+              </Space>
             </div>
             <Table<GroupMember>
-              dataSource={members}
+              dataSource={sortedMembers}
               columns={memberCols}
               rowKey="code"
               loading={loadingMembers}
@@ -239,10 +294,17 @@ function WatchlistTab({ isPaper = false }: { isPaper?: boolean }) {
         confirmLoading={muts.addMembers.isPending}
       >
         <Space direction="vertical" style={{ width: "100%" }}>
-          <Input
+          <AutoComplete
             value={addCode}
-            onChange={(e) => setAddCode(e.target.value)}
-            placeholder="股票代码（如 600519）"
+            options={stockOptions}
+            onSearch={handleStockSearch}
+            onChange={(value) => setAddCode(value)}
+            onSelect={(_value, option) => {
+              setAddCode(option.code);
+              setAddStockName(option.name);
+            }}
+            style={{ width: "100%" }}
+            placeholder="搜索股票名称或代码（如 贵州茅台 / 600519）"
             maxLength={10}
           />
           <Input
@@ -254,6 +316,43 @@ function WatchlistTab({ isPaper = false }: { isPaper?: boolean }) {
         </Space>
       </Modal>
     </Row>
+    </>
+  );
+}
+
+function NotificationTab() {
+  const { data, isLoading } = useNotificationSettings();
+  const save = useSaveNotificationSettings();
+  const [value, setValue] = useState<NotificationSettings>({ signal_enabled: true, email_enabled: true, wechat_enabled: false });
+
+  useEffect(() => {
+    if (data?.value) setValue({ signal_enabled: !!data.value.signal_enabled, email_enabled: !!data.value.email_enabled, wechat_enabled: !!data.value.wechat_enabled });
+  }, [data]);
+
+  const update = (key: keyof NotificationSettings, checked: boolean) => {
+    const next = { ...value, [key]: checked };
+    setValue(next);
+    save.mutate(next, { onSuccess: () => message.success("提醒设置已保存"), onError: (e) => message.error(errMsg(e, "保存失败")) });
+  };
+
+  return (
+    <Space direction="vertical" size={16} style={{ width: "100%" }}>
+      <Typography.Text type="secondary">
+        系统每 5 分钟扫描一次自选股的日线买卖信号；同一标的、同一交易日、同一信号只会提醒一次。
+      </Typography.Text>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+        <div><Text strong>买卖信号提醒</Text><div><Text type="secondary">严格买点、宽松买点、金叉买点、中期反转和止损信号</Text></div></div>
+        <Switch checked={value.signal_enabled} loading={isLoading || save.isPending} onChange={(v) => update("signal_enabled", v)} />
+      </div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+        <div><Text strong>邮件通知</Text><div><Text type="secondary">需要当前账号已绑定邮箱</Text></div></div>
+        <Switch checked={value.email_enabled} disabled={!value.signal_enabled} loading={save.isPending} onChange={(v) => update("email_enabled", v)} />
+      </div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+        <div><Text strong>微信公众号通知</Text><div><Text type="secondary">需要微信登录/绑定并关注公众号；管理员还需配置模板消息</Text></div></div>
+        <Switch checked={value.wechat_enabled} disabled={!value.signal_enabled} loading={save.isPending} onChange={(v) => update("wechat_enabled", v)} />
+      </div>
+    </Space>
   );
 }
 
@@ -1155,6 +1254,7 @@ export default function My() {
 
   const innerItems = (isPaper: boolean) => [
     { key: "watchlist", label: "自选股", children: <WatchlistTab isPaper={isPaper} /> },
+    { key: "notifications", label: "信号提醒", children: <NotificationTab /> },
     { key: "review", label: "操作复盘", children: <ReviewTab isPaper={isPaper} /> },
     { key: "notes", label: "复盘笔记", children: <NotesTab isPaper={isPaper} /> },
   ];

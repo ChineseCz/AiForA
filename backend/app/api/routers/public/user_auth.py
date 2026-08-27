@@ -5,6 +5,7 @@ import re
 import secrets
 import base64
 import html
+import time
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse, PlainTextResponse
@@ -55,6 +56,14 @@ def _reset_code_key(email: str) -> str:
 
 def _reset_resend_key(email: str) -> str:
     return f"passwordreset:resend:{email}"
+
+
+def _change_email_code_key(sub: str, email: str) -> str:
+    return f"emailchange:{sub}:{email}"
+
+
+def _change_email_resend_key(sub: str, email: str) -> str:
+    return f"emailchange:resend:{sub}:{email}"
 
 
 def _captcha_key(purpose: str, challenge_id: str) -> str:
@@ -314,6 +323,82 @@ async def email_reset_captcha(c: CacheService = Depends(cache)):
 @router.get("/email/register-captcha")
 async def email_register_captcha(c: CacheService = Depends(cache)):
     return await _issue_email_captcha(c, "email-register")
+
+
+@router.get("/email/change-captcha")
+async def email_change_captcha(c: CacheService = Depends(cache)):
+    return await _issue_email_captcha(c, "email-change")
+
+
+@router.post("/email/change-send-code")
+@limiter.limit(settings.rate_limit_email_send)
+async def email_change_send_code(
+    request: Request,
+    payload: dict = Depends(require_visitor_payload),
+    c: CacheService = Depends(cache),
+    session: AsyncSession = Depends(db_session),
+):
+    body = await _json_body(request)
+    email = str(body.get("email") or "").strip().lower()
+    challenge_id = str(body.get("captcha_id") or "").strip()
+    captcha_answer = str(body.get("captcha_answer") or "").strip()
+    sub = str(payload["sub"])
+    if not _EMAIL_RE.match(email):
+        return JSONResponse({"error": "邮箱格式不正确"}, status_code=400)
+    expected = await c.client.get(_captcha_key("email-change", challenge_id)) if challenge_id else None
+    await c.client.delete(_captcha_key("email-change", challenge_id))
+    if not expected or expected != captcha_answer:
+        return JSONResponse({"error": "图片验证码错误或已过期"}, status_code=400)
+    existing = await users_repo.get_by_email(session, email)
+    if existing:
+        return JSONResponse({"error": "该邮箱已被其他账号使用"}, status_code=400)
+    if await c.client.get(_change_email_resend_key(sub, email)):
+        return JSONResponse({"error": "发送太频繁，请稍后再试"}, status_code=429)
+    code = "".join(secrets.choice("0123456789") for _ in range(6))
+    await c.client.set(_change_email_code_key(sub, email), code, ex=settings.email_code_expire_seconds)
+    await c.client.set(_change_email_resend_key(sub, email), "1", ex=settings.email_resend_interval_seconds)
+    if not await run_in_threadpool(send_verification_email, email, code):
+        return JSONResponse({"error": "验证码发送失败，请稍后重试"}, status_code=502)
+    return {"error": ""}
+
+
+@router.post("/email/change")
+@limiter.limit(settings.rate_limit_login)
+async def email_change(
+    request: Request,
+    payload: dict = Depends(require_visitor_payload),
+    c: CacheService = Depends(cache),
+    session: AsyncSession = Depends(db_session),
+):
+    body = await _json_body(request)
+    email = str(body.get("email") or "").strip().lower()
+    code = str(body.get("code") or "").strip()
+    sub = str(payload["sub"])
+    if not _EMAIL_RE.match(email) or not code:
+        return JSONResponse({"error": "请输入新邮箱和验证码"}, status_code=400)
+    saved = await c.client.get(_change_email_code_key(sub, email))
+    if not saved or saved != code:
+        return JSONResponse({"error": "验证码错误或已过期"}, status_code=401)
+    existing = await users_repo.get_by_email(session, email)
+    if existing:
+        return JSONResponse({"error": "该邮箱已被其他账号使用"}, status_code=400)
+    user = await users_repo.change_email(session, sub, email)
+    if not user:
+        return JSONResponse({"error": "当前账号不存在，请重新登录"}, status_code=404)
+    await c.client.delete(_change_email_code_key(sub, email))
+    now = int(time.time())
+    remain_minutes = max(1, (int(payload.get("exp", now + settings.visitor_jwt_expire_minutes * 60)) - now + 59) // 60)
+    # 手机号/微信账号的 sub 是其稳定业务身份，不能因绑定邮箱而改变；
+    # 只有邮箱登录账号需要把 sub 切换到新邮箱，确保下次邮箱登录仍能找到同一用户。
+    login_style = str(payload.get("sty") or "email")
+    next_sub = email if login_style == "email" else sub
+    result = {
+        "email": email,
+        "access_token": create_access_token(next_sub, typ="visitor", expire_minutes=remain_minutes, sty=login_style),
+    }
+    if user.get("is_admin"):
+        result["admin_token"] = create_access_token(email, typ="admin", expire_minutes=remain_minutes, sty="email")
+    return result
 
 
 @router.post("/email/reset-password")

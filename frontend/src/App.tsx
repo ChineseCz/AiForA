@@ -6,7 +6,7 @@ import { Button, Dropdown, Input, Layout, Menu, Modal, theme, Typography, messag
 import { lazy, Suspense, useState } from "react";
 import { Navigate, Outlet, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 
-import { errMsg } from "./api/client";
+import { api, errMsg } from "./api/client";
 import { useSetNickname, useVisitorMe } from "./api/hooks";
 import { useAuth } from "./auth";
 import FeibiWidget from "./components/FeibiWidget";
@@ -51,13 +51,20 @@ function RequireVisitorOrAnon({ children }: { children: JSX.Element }) {
 
 // 访客登录后在 header 显示账号信息 + 改昵称 + 退出登录；游客（isGuest）只显示简单退出入口。
 function VisitorMenu() {
-  const { loggedIn, isGuest, logout } = useVisitorAuth();
-  const { logout: adminLogout } = useAuth();
+  const { loggedIn, isGuest, logout, login: visitorLogin } = useVisitorAuth();
+  const { logout: adminLogout, login: adminLogin } = useAuth();
   const { data: me } = useVisitorMe(loggedIn && !isGuest);
   const setNickname = useSetNickname();
   const nav = useNavigate();
   const [editOpen, setEditOpen] = useState(false);
   const [draft, setDraft] = useState("");
+  const [emailOpen, setEmailOpen] = useState(false);
+  const [newEmail, setNewEmail] = useState("");
+  const [emailCode, setEmailCode] = useState("");
+  const [captcha, setCaptcha] = useState<{ challenge_id: string; image: string } | null>(null);
+  const [captchaAnswer, setCaptchaAnswer] = useState("");
+  const [sendingCode, setSendingCode] = useState(false);
+  const [changingEmail, setChangingEmail] = useState(false);
   if (!loggedIn) return null;
 
   if (isGuest) {
@@ -93,6 +100,43 @@ function VisitorMenu() {
     });
   };
 
+  const loadEmailCaptcha = () => {
+    setCaptchaAnswer("");
+    api.get<{ challenge_id: string; image: string }>("/api/user/email/change-captcha")
+      .then((r) => setCaptcha(r.data))
+      .catch((e) => message.error(errMsg(e, "加载验证码失败")));
+  };
+
+  const openEmailChange = () => {
+    setNewEmail(""); setEmailCode(""); setEmailOpen(true); loadEmailCaptcha();
+  };
+
+  const sendEmailCode = () => {
+    const email = newEmail.trim().toLowerCase();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { message.warning("请输入正确的新邮箱"); return; }
+    setSendingCode(true);
+    api.post("/api/user/email/change-send-code", { email, captcha_id: captcha?.challenge_id || "", captcha_answer: captchaAnswer.trim() })
+      .then(() => { message.success("验证码已发送到新邮箱"); setCaptchaAnswer(""); })
+      .catch((e) => message.error(errMsg(e, "发送失败")))
+      .finally(() => { setSendingCode(false); loadEmailCaptcha(); });
+  };
+
+  const confirmEmailChange = () => {
+    const email = newEmail.trim().toLowerCase();
+    if (!emailCode.trim()) { message.warning("请输入邮箱验证码"); return; }
+    setChangingEmail(true);
+    api.post<{ email: string; access_token: string; admin_token?: string }>("/api/user/email/change", { email, code: emailCode.trim() })
+      .then((r) => {
+        visitorLogin(r.data.access_token);
+        if (r.data.admin_token) adminLogin(r.data.admin_token);
+        message.success("邮箱已更换，登录和邮件提醒已同步更新");
+        setEmailOpen(false);
+        window.setTimeout(() => window.location.reload(), 400);
+      })
+      .catch((e) => message.error(errMsg(e, "更换失败")))
+      .finally(() => setChangingEmail(false));
+  };
+
   return (
     <>
       <Dropdown
@@ -101,6 +145,7 @@ function VisitorMenu() {
             { key: "info", label: label ?? "账号", disabled: true },
             { type: "divider" },
             ...(me?.login_type !== "phone" ? [{ key: "edit-nickname", label: "修改昵称" }] : []),
+            { key: "change-email", label: "更换邮箱" },
             { key: "logout", label: "退出登录" },
           ],
           onClick: ({ key }) => {
@@ -111,6 +156,8 @@ function VisitorMenu() {
             } else if (key === "edit-nickname") {
               setDraft(me?.nickname || "");
               setEditOpen(true);
+            } else if (key === "change-email") {
+              openEmailChange();
             }
           },
         }}
@@ -125,6 +172,19 @@ function VisitorMenu() {
         confirmLoading={setNickname.isPending}
       >
         <Input value={draft} onChange={(e) => setDraft(e.target.value)} maxLength={20} placeholder="请输入昵称" />
+      </Modal>
+      <Modal title="更换邮箱" open={emailOpen} onCancel={() => setEmailOpen(false)} onOk={confirmEmailChange} confirmLoading={changingEmail} okText="确认更换">
+        <Typography.Paragraph type="secondary">新邮箱将用于邮箱登录和买卖信号邮件提醒。</Typography.Paragraph>
+        <Input value={newEmail} onChange={(e) => setNewEmail(e.target.value)} placeholder="请输入新邮箱" autoComplete="email" style={{ marginBottom: 10 }} />
+        <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+          {captcha?.image && <img src={captcha.image} alt="图片验证码" style={{ width: 120, height: 40, border: "1px solid #d9d9d9", borderRadius: 4 }} />}
+          <Input value={captchaAnswer} onChange={(e) => setCaptchaAnswer(e.target.value)} placeholder="图片算式答案" inputMode="numeric" maxLength={2} />
+          <Button onClick={loadEmailCaptcha}>换一张</Button>
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <Input value={emailCode} onChange={(e) => setEmailCode(e.target.value)} placeholder="新邮箱验证码" maxLength={6} />
+          <Button onClick={sendEmailCode} loading={sendingCode}>获取验证码</Button>
+        </div>
       </Modal>
     </>
   );

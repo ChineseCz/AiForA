@@ -133,6 +133,57 @@ async def stock_sync_status(session: AsyncSession = Depends(db_session)):
     return await jobs.get_job_status(session, "stock_sync")
 
 
+@router.get("/jobs/recent")
+async def recent_jobs(session: AsyncSession = Depends(db_session)):
+    """最近任务历史，供管理后台集中查看。"""
+    return {"items": await jobs.list_recent_jobs(session)}
+
+
+@router.get("/jobs/data-health")
+async def data_health(session: AsyncSession = Depends(db_session)):
+    """检查行情最新交易日、当天记录数和 K 线回补失败数。"""
+    from sqlalchemy import text
+
+    row = (await session.execute(text(
+        """
+        SELECT
+          (SELECT MAX(trade_date) FROM stock_daily) AS stock_date,
+          (SELECT COUNT(*) FROM stock_daily WHERE trade_date = (SELECT MAX(trade_date) FROM stock_daily)) AS stock_count,
+          (SELECT MAX(trade_date) FROM bond_daily) AS bond_date,
+          (SELECT COUNT(*) FROM bond_daily WHERE trade_date = (SELECT MAX(trade_date) FROM bond_daily)) AS bond_count,
+          (SELECT COUNT(*) FROM backfill_failures) AS backfill_failures,
+          (SELECT status FROM job_runs WHERE kind = 'stock_sync' ORDER BY id DESC LIMIT 1) AS stock_sync_status,
+          (SELECT started_at FROM job_runs WHERE kind = 'stock_sync' ORDER BY id DESC LIMIT 1) AS stock_sync_started_at,
+          (SELECT finished_at FROM job_runs WHERE kind = 'stock_sync' ORDER BY id DESC LIMIT 1) AS stock_sync_finished_at,
+          (SELECT log FROM job_runs WHERE kind = 'stock_sync' ORDER BY id DESC LIMIT 1) AS stock_sync_log,
+          (SELECT error FROM job_runs WHERE kind = 'stock_sync' ORDER BY id DESC LIMIT 1) AS stock_sync_error
+        """
+    ))).mappings().one()
+    result = dict(row)
+    log_lines = [line for line in (result.pop("stock_sync_log") or "").splitlines() if line.strip()]
+    result["stock_sync_summary"] = log_lines[-1] if log_lines else ""
+    if result["stock_sync_started_at"] and result["stock_sync_finished_at"]:
+        result["stock_sync_duration_seconds"] = max(0, result["stock_sync_finished_at"] - result["stock_sync_started_at"])
+    else:
+        result["stock_sync_duration_seconds"] = None
+    return result
+
+
+@router.get("/jobs/backfill-failures")
+async def backfill_failures(session: AsyncSession = Depends(db_session)):
+    """当前历史 K 线回补失败标的，供后台查看和重试。"""
+    from sqlalchemy import text
+
+    rows = (await session.execute(text(
+        """
+        SELECT asset_type, code, last_job_id, error, updated_at
+        FROM backfill_failures
+        ORDER BY updated_at DESC, asset_type, code
+        """
+    ))).mappings().all()
+    return {"items": [dict(row) for row in rows]}
+
+
 @router.post("/stock/backfill")
 async def stock_backfill(request: Request, session: AsyncSession = Depends(db_session)):
     from app.workers.tasks.browser import task_backfill
