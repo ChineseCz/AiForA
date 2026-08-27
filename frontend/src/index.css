@@ -201,6 +201,14 @@ body {
 }
 .app-header > .ant-btn, .app-header > .ant-dropdown-trigger { flex-shrink: 0; }
 
+.network-error-banner { border-radius: 0; z-index: 30; }
+.network-error-page {
+  position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center;
+  padding: 24px; background: var(--bg-page); text-align: center;
+}
+.network-error-page .ant-result { max-width: 440px; }
+.network-error-page .ant-result-icon { color: var(--link-h3); }
+
 /* Capacitor WebView 在部分 Android 版本采用 edge-to-edge，顶部内容会进入状态栏区域。 */
 .capacitor-app .app-header {
   padding-top: 28px;

@@ -10,6 +10,7 @@ import { errMsg } from "./api/client";
 import { useSetNickname, useVisitorMe } from "./api/hooks";
 import { useAuth } from "./auth";
 import FeibiWidget from "./components/FeibiWidget";
+import NetworkStatus from "./components/NetworkStatus";
 import { useIsMobile } from "./hooks/useIsMobile";
 import { useThemeMode } from "./theme";
 import { useVisitorAuth } from "./visitorAuth";
@@ -203,6 +204,7 @@ export default function App() {
 
   return (
     <Layout style={{ minHeight: "100vh" }}>
+      <NetworkStatus />
       {!isMobile && (
         <Sider
           theme={navTheme}

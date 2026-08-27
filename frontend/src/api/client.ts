@@ -24,7 +24,7 @@ export function clearVisitorToken() {
   localStorage.removeItem(VISITOR_TOKEN_KEY);
 }
 
-export const api = axios.create({ baseURL: "" });
+export const api = axios.create({ baseURL: "", timeout: 15_000 });
 
 // 两个 token 都可能存在（管理员同时也能过访客/匿名开关的只读接口）：管理员优先。
 api.interceptors.request.use((config) => {
@@ -34,8 +34,17 @@ api.interceptors.request.use((config) => {
 });
 
 api.interceptors.response.use(
-  (r) => r,
+  (r) => {
+    window.dispatchEvent(new Event("natapp-network-recovered"));
+    return r;
+  },
   (err) => {
+    const status = err?.response?.status;
+    if (!err?.response || [502, 503, 504].includes(status)) {
+      window.dispatchEvent(new CustomEvent("natapp-network-error", {
+        detail: { kind: err?.code === "ECONNABORTED" ? "timeout" : "server" },
+      }));
+    }
     if (err?.response?.status === 401) {
       // token 失效：清除请求时实际附带的那个 token，让对应的路由守卫把用户带回登录
       if (getToken()) {
