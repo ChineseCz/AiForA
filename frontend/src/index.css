@@ -201,7 +201,10 @@ body {
 }
 .app-header > .ant-btn, .app-header > .ant-dropdown-trigger { flex-shrink: 0; }
 
-.network-error-banner { border-radius: 0; z-index: 30; }
+.network-error-banner {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 1001;
+  border-radius: 0;
+}
 .network-error-page {
   position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center;
   padding: 24px; background: var(--bg-page); text-align: center;
