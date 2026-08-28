@@ -128,6 +128,44 @@ async def get_trade_stats(session: AsyncSession, user_id: str, is_paper: bool = 
     }
 
 
+async def get_backtest(session: AsyncSession, user_id: str, is_paper: bool = False) -> dict:
+    """按均价法回放成交，返回已平仓交易、累计收益和权益曲线。"""
+    rows = (await session.execute(text(
+        "SELECT code, stock_name, direction, price, quantity, trade_date FROM trade_records "
+        "WHERE user_id=:uid AND is_paper=:ip ORDER BY trade_date ASC, id ASC"
+    ), {"uid": user_id, "ip": is_paper})).mappings().all()
+    positions: dict[str, dict] = {}
+    deals: list[dict] = []
+    equity = 0.0
+    curve: list[dict] = []
+    for r in rows:
+        code = r["code"]
+        price = float(r["price"])
+        quantity = int(r["quantity"])
+        p = positions.setdefault(code, {"name": r["stock_name"], "cost": 0.0, "qty": 0})
+        if r["direction"] == "buy":
+            total = p["cost"] * p["qty"] + price * quantity
+            p["qty"] += quantity
+            p["cost"] = total / p["qty"] if p["qty"] else 0.0
+        elif p["qty"] > 0:
+            qty = min(quantity, p["qty"])
+            pnl = (price - p["cost"]) * qty
+            equity += pnl
+            deals.append({"code": code, "name": p["name"], "trade_date": r["trade_date"], "quantity": qty, "buy_price": round(p["cost"], 4), "sell_price": price, "pnl": round(pnl, 2)})
+            p["qty"] -= qty
+            if p["qty"] == 0:
+                p["cost"] = 0.0
+        curve.append({"trade_date": r["trade_date"], "equity": round(equity, 2)})
+    peak = 0.0
+    max_drawdown = 0.0
+    for point in curve:
+        peak = max(peak, point["equity"])
+        max_drawdown = max(max_drawdown, peak - point["equity"])
+    wins = sum(1 for d in deals if d["pnl"] > 0)
+    total = len(deals)
+    return {"total_return": round(equity, 2), "max_drawdown": round(max_drawdown, 2), "win_rate": round(wins / total, 4) if total else 0.0, "trade_count": total, "wins": wins, "losses": total - wins, "trades": deals, "curve": curve}
+
+
 async def bulk_import_trades(session: AsyncSession, user_id: str, records: list[dict], is_paper: bool = False) -> int:
     """批量导入，按 (user_id, code, trade_date, direction, price, quantity) 去重。"""
     now = int(time.time())

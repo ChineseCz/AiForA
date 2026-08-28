@@ -66,6 +66,14 @@ def _change_email_resend_key(sub: str, email: str) -> str:
     return f"emailchange:resend:{sub}:{email}"
 
 
+def _bind_email_code_key(sub: str, email: str) -> str:
+    return f"emailbind:{sub}:{email}"
+
+
+def _bind_email_resend_key(sub: str, email: str) -> str:
+    return f"emailbind:resend:{sub}:{email}"
+
+
 def _captcha_key(purpose: str, challenge_id: str) -> str:
     return f"captcha:{purpose}:{challenge_id}"
 
@@ -360,6 +368,69 @@ async def email_change_send_code(
     if not await run_in_threadpool(send_verification_email, email, code):
         return JSONResponse({"error": "验证码发送失败，请稍后重试"}, status_code=502)
     return {"error": ""}
+
+
+@router.post("/email/bind-send-code")
+@limiter.limit(settings.rate_limit_email_send)
+async def email_bind_send_code(
+    request: Request,
+    payload: dict = Depends(require_visitor_payload),
+    c: CacheService = Depends(cache),
+    session: AsyncSession = Depends(db_session),
+):
+    body = await _json_body(request)
+    email = str(body.get("email") or "").strip().lower()
+    challenge_id = str(body.get("captcha_id") or "").strip()
+    captcha_answer = str(body.get("captcha_answer") or "").strip()
+    sub = str(payload["sub"])
+    if not _EMAIL_RE.match(email):
+        return JSONResponse({"error": "邮箱格式不正确"}, status_code=400)
+    expected = await c.client.get(_captcha_key("email-bind", challenge_id)) if challenge_id else None
+    await c.client.delete(_captcha_key("email-bind", challenge_id))
+    if not expected or expected != captcha_answer:
+        return JSONResponse({"error": "图片验证码错误或已过期"}, status_code=400)
+    user = await users_repo.get_by_email(session, email)
+    if user:
+        return JSONResponse({"error": "该邮箱已被其他账号使用"}, status_code=400)
+    if await c.client.get(_bind_email_resend_key(sub, email)):
+        return JSONResponse({"error": "发送太频繁，请稍后再试"}, status_code=429)
+    code = "".join(secrets.choice("0123456789") for _ in range(6))
+    await c.client.set(_bind_email_code_key(sub, email), code, ex=settings.email_code_expire_seconds)
+    await c.client.set(_bind_email_resend_key(sub, email), "1", ex=settings.email_resend_interval_seconds)
+    if not await run_in_threadpool(send_verification_email, email, code):
+        return JSONResponse({"error": "验证码发送失败，请稍后重试"}, status_code=502)
+    return {"error": ""}
+
+
+@router.get("/email/bind-captcha")
+async def email_bind_captcha(c: CacheService = Depends(cache)):
+    return await _issue_email_captcha(c, "email-bind")
+
+
+@router.post("/email/bind")
+@limiter.limit(settings.rate_limit_login)
+async def email_bind(
+    request: Request,
+    payload: dict = Depends(require_visitor_payload),
+    c: CacheService = Depends(cache),
+    session: AsyncSession = Depends(db_session),
+):
+    body = await _json_body(request)
+    email = str(body.get("email") or "").strip().lower()
+    code = str(body.get("code") or "").strip()
+    sub = str(payload["sub"])
+    if not _EMAIL_RE.match(email) or not code:
+        return JSONResponse({"error": "请输入邮箱和验证码"}, status_code=400)
+    saved = await c.client.get(_bind_email_code_key(sub, email))
+    if not saved or saved != code:
+        return JSONResponse({"error": "验证码错误或已过期"}, status_code=401)
+    if await users_repo.get_by_email(session, email):
+        return JSONResponse({"error": "该邮箱已被其他账号使用"}, status_code=400)
+    user = await users_repo.bind_email(session, sub, email)
+    if not user:
+        return JSONResponse({"error": "当前账号已有邮箱或不存在"}, status_code=400)
+    await c.client.delete(_bind_email_code_key(sub, email))
+    return {"email": email, "error": ""}
 
 
 @router.post("/email/change")

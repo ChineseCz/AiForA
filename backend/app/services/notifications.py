@@ -41,6 +41,16 @@ def _finish(user_id: str, channel: str, event_key: str, status: str, error: str 
         ), {"u": user_id, "c": channel, "k": event_key, "s": status, "e": error[:1000], "t": int(time.time())})
 
 
+def _save_in_app(user_id: str, event_key: str, title: str, content: str) -> None:
+    with sync_session() as s:
+        s.execute(text(
+            "INSERT INTO notification_events "
+            "(user_id, channel, event_key, sent_at, status, title, content) "
+            "VALUES (:u, 'in_app', :e, :t, 'sent', :title, :content) "
+            "ON CONFLICT (user_id, channel, event_key) DO NOTHING"
+        ), {"u": user_id, "e": event_key, "t": int(time.time()), "title": title, "content": content})
+
+
 def _send_email(to_addr: str, subject: str, content: str) -> bool:
     if not settings.smtp_host:
         logger.info("[MOCK EMAIL] signal notification to %s: %s", to_addr, subject)
@@ -119,6 +129,7 @@ def scan_signal_notifications() -> int:
                     continue
                 event_key = f"{bar.get('trade_date')}:{member['code']}:{','.join(signals)}"
                 content = f"{member.get('name') or view.get('name') or member['code']}（{member['code']}）\n交易日：{bar.get('trade_date')}\n信号：{'、'.join(signals)}"
+                _save_in_app(user_id, event_key, f"自选股信号：{member['code']}", content)
                 for channel in channels:
                     if not _claim(user_id, channel, event_key):
                         continue

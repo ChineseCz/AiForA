@@ -68,6 +68,13 @@ function VisitorMenu() {
   const [captchaAnswer, setCaptchaAnswer] = useState("");
   const [sendingCode, setSendingCode] = useState(false);
   const [changingEmail, setChangingEmail] = useState(false);
+  const [bindOpen, setBindOpen] = useState(false);
+  const [bindEmail, setBindEmail] = useState("");
+  const [bindCode, setBindCode] = useState("");
+  const [bindAnswer, setBindAnswer] = useState("");
+  const [bindCaptcha, setBindCaptcha] = useState<{ challenge_id: string; image: string } | null>(null);
+  const [bindSending, setBindSending] = useState(false);
+  const [bindConfirming, setBindConfirming] = useState(false);
   if (!loggedIn) return null;
 
   if (isGuest) {
@@ -140,6 +147,21 @@ function VisitorMenu() {
       .finally(() => setChangingEmail(false));
   };
 
+  const loadBindCaptcha = () => api.get<{ challenge_id: string; image: string }>("/api/user/email/bind-captcha").then((r) => setBindCaptcha(r.data));
+  const openBindEmail = () => { setBindOpen(true); setBindEmail(""); setBindCode(""); setBindAnswer(""); loadBindCaptcha(); };
+  const sendBindEmailCode = () => {
+    setBindSending(true);
+    api.post("/api/user/email/bind-send-code", { email: bindEmail.trim().toLowerCase(), captcha_id: bindCaptcha?.challenge_id || "", captcha_answer: bindAnswer.trim() })
+      .then(() => message.success("验证码已发送到邮箱")).catch((e) => message.error(errMsg(e, "发送失败")))
+      .finally(() => { setBindSending(false); loadBindCaptcha(); });
+  };
+  const confirmBindEmail = () => {
+    setBindConfirming(true);
+    api.post("/api/user/email/bind", { email: bindEmail.trim().toLowerCase(), code: bindCode.trim() })
+      .then(() => { message.success("邮箱绑定成功"); setBindOpen(false); window.location.reload(); })
+      .catch((e) => message.error(errMsg(e, "绑定失败"))).finally(() => setBindConfirming(false));
+  };
+
   return (
     <>
       <Dropdown
@@ -148,7 +170,7 @@ function VisitorMenu() {
             { key: "info", label: label ?? "账号", disabled: true },
             { type: "divider" },
             ...(me?.login_type !== "phone" ? [{ key: "edit-nickname", label: "修改昵称" }] : []),
-            { key: "change-email", label: "更换邮箱" },
+            ...(me?.email ? [{ key: "change-email", label: "更换邮箱" }] : [{ key: "bind-email", label: "绑定邮箱" }]),
             { key: "logout", label: "退出登录" },
           ],
           onClick: ({ key }) => {
@@ -161,6 +183,8 @@ function VisitorMenu() {
               setEditOpen(true);
             } else if (key === "change-email") {
               openEmailChange();
+            } else if (key === "bind-email") {
+              openBindEmail();
             }
           },
         }}
@@ -187,6 +211,18 @@ function VisitorMenu() {
         <div style={{ display: "flex", gap: 8 }}>
           <Input value={emailCode} onChange={(e) => setEmailCode(e.target.value)} placeholder="新邮箱验证码" maxLength={6} />
           <Button onClick={sendEmailCode} loading={sendingCode}>获取验证码</Button>
+        </div>
+      </Modal>
+      <Modal title="绑定邮箱" open={bindOpen} onCancel={() => setBindOpen(false)} onOk={confirmBindEmail} confirmLoading={bindConfirming} okText="确认绑定">
+        <Input value={bindEmail} onChange={(e) => setBindEmail(e.target.value)} placeholder="请输入邮箱" style={{ marginBottom: 10 }} />
+        <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+          {bindCaptcha?.image && <img src={bindCaptcha.image} alt="图片验证码" style={{ width: 120, height: 40, border: "1px solid #d9d9d9", borderRadius: 4 }} />}
+          <Input value={bindAnswer} onChange={(e) => setBindAnswer(e.target.value)} placeholder="图片答案" inputMode="numeric" maxLength={2} />
+          <Button onClick={loadBindCaptcha}>换一张</Button>
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <Input value={bindCode} onChange={(e) => setBindCode(e.target.value)} placeholder="邮箱验证码" maxLength={6} />
+          <Button onClick={sendBindEmailCode} loading={bindSending}>获取验证码</Button>
         </div>
       </Modal>
     </>

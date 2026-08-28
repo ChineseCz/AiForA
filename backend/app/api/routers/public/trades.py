@@ -235,3 +235,12 @@ async def api_trade_stats(
 ):
     stats = await trades_repo.get_trade_stats(session, user_id, is_paper)
     return {"stats": stats, "error": ""}
+
+
+@router.get("/trades/backtest")
+async def api_trade_backtest(
+    is_paper: bool = False,
+    user_id: str = Depends(require_visitor),
+    session: AsyncSession = Depends(db_session),
+):
+    return {"backtest": await trades_repo.get_backtest(session, user_id, is_paper), "error": ""}

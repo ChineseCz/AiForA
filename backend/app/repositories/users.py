@@ -110,3 +110,16 @@ async def change_email(session: AsyncSession, sub: str, email: str) -> dict | No
     await session.commit()
     return dict(row) if row else None
 
+
+async def bind_email(session: AsyncSession, sub: str, email: str) -> dict | None:
+    """为没有邮箱的当前账号绑定邮箱，不改变其原有登录身份。"""
+    row = (await session.execute(
+        text(
+            "UPDATE users SET email=:email WHERE email IS NULL "
+            "AND (phone=:sub OR openid=:sub) RETURNING id, email, is_admin"
+        ),
+        {"sub": sub, "email": email},
+    )).mappings().first()
+    await session.commit()
+    return dict(row) if row else None
+

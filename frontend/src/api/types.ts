@@ -294,6 +294,12 @@ export interface TradeStats {
   total_realized_pnl: number;
 }
 
+export interface BacktestTrade { code: string; name: string; trade_date: string; quantity: number; buy_price: number; sell_price: number; pnl: number; }
+export interface BacktestResult {
+  total_return: number; max_drawdown: number; win_rate: number; trade_count: number; wins: number; losses: number;
+  trades: BacktestTrade[]; curve: { trade_date: string; equity: number }[];
+}
+
 export interface JobStatus {
   running: boolean;
   log: string[];
@@ -354,6 +360,7 @@ export interface NotificationSettings {
   email_enabled: boolean;
   wechat_enabled: boolean;
 }
+export interface NotificationItem { id: number; title: string; content: string; sent_at: number; read_at: number | null; }
 
 export interface ScheduleCfg {
   enabled: boolean;
