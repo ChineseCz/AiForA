@@ -5,6 +5,31 @@
 > **提交范围**：`7fc428b` ~ `0529712`  
 > 解决：腾讯云 Ubuntu 服务器上如何处理需要真实浏览器的抓取任务（雪球帖子、K 线回补、雪球板块）
 
+> **当前状态（2026-08-27）**：生产环境已经采用服务器 Docker 内的 Playwright `browser-worker`，Windows Edge Worker 和 SSH 隧道方案已停止使用。本文历史方案仍保留用于排障参考，实际部署以“方案 C”和下方命令为准。
+
+## 当前生产部署
+
+服务器 Compose 栈包含 8 个服务：`postgres`、`pgbouncer`、`redis`、`api`、`worker`、`beat`、`browser-worker`、`frontend`。
+
+```bash
+cd /data/app
+git pull --ff-only origin dev
+cd backend
+docker compose config -q
+docker compose up -d --build api worker beat browser-worker frontend
+docker compose exec -T api alembic upgrade head
+docker compose up -d --force-recreate frontend
+docker compose ps
+```
+
+`browser-worker` 的代码复制在 Docker 镜像中，没有挂载 `./app`。所以 `git pull` 只更新源码，必须使用 `--build` 重建；仅执行 `restart` 不会加载新的浏览器任务代码。
+
+查看任务日志：
+
+```bash
+docker compose logs -f browser-worker
+```
+
 ---
 
 ## 一、架构认知：Worker 和 Beat 是什么
@@ -79,7 +104,7 @@ Docker 容器内没有 Edge，Chromium 也无法稳定持有雪球登录态。
 
 ## 五、部署步骤
 
-### 5.1 服务器端（正常部署，无需改动）
+### 5.1 服务器端（当前部署方式）
 
 ```bash
 # 登录服务器
@@ -87,14 +112,14 @@ ssh ubuntu@124.222.169.60
 
 # 部署 Docker 栈
 cd /data/app/backend
-docker compose up -d --build
-
-# 执行数据库迁移
-docker compose exec api alembic upgrade head
+docker compose config -q
+docker compose up -d --build api worker beat browser-worker frontend
+docker compose exec -T api alembic upgrade head
+docker compose up -d --force-recreate frontend
 
 # 验证
 docker compose ps
-curl http://localhost:8090/api/health
+curl --fail http://localhost:8090/health
 ```
 
 ### 5.2 本机端：修改 .env
@@ -402,7 +427,7 @@ celery -A app.workers.celery_app worker -Q browser --pool=solo --loglevel=info
               └─ 方案 A（SSH 隧道 + 本机，配置最简单，但需本机在线）
 ```
 
-**当前建议**：先用方案 A 把服务器跑起来，验证其他功能正常后，再用方案 C 替换 browser worker 实现完全云端化。
+**当前建议**：使用方案 C 的服务器容器化 Playwright。方案 A 仅用于历史排障或临时回退，不应作为生产常驻方案。
 
 ---
 

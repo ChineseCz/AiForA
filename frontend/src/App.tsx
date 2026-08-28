@@ -3,7 +3,9 @@ import {
   MoreOutlined, RadarChartOutlined, SettingOutlined, StarOutlined, UserOutlined,
 } from "@ant-design/icons";
 import { Button, Dropdown, Input, Layout, Menu, Modal, theme, Typography, message } from "antd";
-import { lazy, Suspense, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { Capacitor } from "@capacitor/core";
+import { App as CapacitorApp } from "@capacitor/app";
 import { Navigate, Outlet, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 
 import { api, errMsg } from "./api/client";
@@ -12,6 +14,7 @@ import { useAuth } from "./auth";
 import FeibiWidget from "./components/FeibiWidget";
 import NetworkStatus from "./components/NetworkStatus";
 import { useIsMobile } from "./hooks/useIsMobile";
+import { useEdgeBackGesture } from "./hooks/useEdgeBackGesture";
 import { useThemeMode } from "./theme";
 import { useVisitorAuth } from "./visitorAuth";
 
@@ -230,6 +233,46 @@ export default function App() {
   const navTheme = mode === "dark" ? "dark" : "light";
   // Layout.Header 的默认背景是固定的深色 token（不随亮暗算法变），得自己接管颜色
   const { token } = theme.useToken();
+  const canGoBack = (window.history.state?.idx ?? 0) > 0;
+  const exitConfirmUntil = useRef(0);
+  const exitConfirmTimer = useRef<number | undefined>(undefined);
+  const goBack = useCallback(() => {
+    // 首页作为应用根页面处理：不回到登录页或之前的残留路由，交给双击返回退出逻辑。
+    if (loc.pathname !== "/" && canGoBack) {
+      nav(-1);
+      return true;
+    } else if (loc.pathname.startsWith("/stock/")) {
+      nav("/screener");
+      return true;
+    }
+    return false;
+  }, [canGoBack, loc.pathname, nav]);
+
+  const handleBack = useCallback(() => {
+    if (goBack()) return true;
+    if (Capacitor.isNativePlatform()) {
+      const now = Date.now();
+      if (now <= exitConfirmUntil.current) {
+        void CapacitorApp.exitApp();
+      } else {
+        exitConfirmUntil.current = now + 2000;
+        message.info("再滑动一次退出应用");
+        window.clearTimeout(exitConfirmTimer.current);
+        exitConfirmTimer.current = window.setTimeout(() => {
+          exitConfirmUntil.current = 0;
+        }, 2000);
+      }
+      return true;
+    }
+    return false;
+  }, [goBack]);
+
+  useEffect(() => () => window.clearTimeout(exitConfirmTimer.current), []);
+
+  useEdgeBackGesture({
+    enabled: isMobile && Capacitor.isNativePlatform(),
+    onBack: handleBack,
+  });
 
   // Menu 自带的 dark/light theme 是固定色板（暗色是那种深蓝 #001529），跟 Content/Header
   // 用 colorBgContainer 算出来的近黑背景不是一套色系。把 Menu 背景设透明，让它显出外层容器
