@@ -453,7 +453,8 @@ async def email_change(
     existing = await users_repo.get_by_email(session, email)
     if existing:
         return JSONResponse({"error": "该邮箱已被其他账号使用"}, status_code=400)
-    user = await users_repo.change_email(session, sub, email)
+    login_style = str(payload.get("sty") or "email")
+    user = await users_repo.change_email(session, sub, email, migrate_data=login_style == "email")
     if not user:
         return JSONResponse({"error": "当前账号不存在，请重新登录"}, status_code=404)
     await c.client.delete(_change_email_code_key(sub, email))
@@ -461,7 +462,6 @@ async def email_change(
     remain_minutes = max(1, (int(payload.get("exp", now + settings.visitor_jwt_expire_minutes * 60)) - now + 59) // 60)
     # 手机号/微信账号的 sub 是其稳定业务身份，不能因绑定邮箱而改变；
     # 只有邮箱登录账号需要把 sub 切换到新邮箱，确保下次邮箱登录仍能找到同一用户。
-    login_style = str(payload.get("sty") or "email")
     next_sub = email if login_style == "email" else sub
     result = {
         "email": email,
