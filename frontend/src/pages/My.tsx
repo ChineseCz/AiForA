@@ -541,9 +541,14 @@ function ReviewTab({ isPaper = false }: { isPaper?: boolean }) {
 
   const tradeCols = [
     { title: "日期", dataIndex: "trade_date", width: 100 },
-    { title: "代码", dataIndex: "code", width: 80 },
-    { title: "名称", dataIndex: "stock_name", ellipsis: true,
-      render: (name: string, r: TradeRecord) => <Link to={`/stock/${r.code}`}>{name}</Link>,
+    // 手机端隐藏代码列，名称单独展示完整名称；点击名称进入详情，桌面端仍显示代码。
+    { title: "代码", dataIndex: "code", width: 80, responsive: ["sm" as const] },
+    { title: "名称", dataIndex: "stock_name", width: 150,
+      render: (name: string, r: TradeRecord) => (
+        <Tooltip title={`代码：${r.code}`}>
+          <Link to={`/stock/${r.code}`} style={{ whiteSpace: "nowrap" }}>{name || r.code}</Link>
+        </Tooltip>
+      ),
     },
     {
       title: "方向",
@@ -561,7 +566,7 @@ function ReviewTab({ isPaper = false }: { isPaper?: boolean }) {
       width: 90,
       render: (_: unknown, r: TradeRecord) => (((r.price ?? 0) * (r.quantity ?? 0)).toFixed(0)),
     },
-    { title: "备注", dataIndex: "note", ellipsis: true },
+    { title: "备注", dataIndex: "note", ellipsis: true, responsive: ["md" as const] },
     {
       title: "",
       key: "del",
@@ -691,7 +696,7 @@ function ReviewTab({ isPaper = false }: { isPaper?: boolean }) {
         size="small"
         pagination={{ pageSize: 20, showSizeChanger: false }}
         locale={{ emptyText: "暂无交易记录" }}
-        scroll={{ x: isMobile ? 560 : undefined }}
+        scroll={{ x: isMobile ? 540 : undefined }}
       />
 
       {summary.length > 0 && (
