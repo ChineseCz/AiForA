@@ -101,12 +101,17 @@ function WatchlistTab({ isPaper = false }: { isPaper?: boolean }) {
   };
 
   const memberCols = [
-    { title: "代码", dataIndex: "code", width: 90 },
+    // 手机端代码信息放到名称 Tooltip 中，给名称和行情留出空间；桌面端继续单独显示代码。
+    { title: "代码", dataIndex: "code", width: 90, responsive: ["sm" as const] },
     {
       title: "名称",
       dataIndex: "name",
-      ellipsis: true,
-      render: (name: string, row: GroupMember) => <Link to={`/stock/${row.code}`}>{name}</Link>,
+      width: 150,
+      render: (name: string, row: GroupMember) => (
+        <Tooltip title={`代码：${row.code}`}>
+          <Link to={`/stock/${row.code}`} style={{ whiteSpace: "nowrap" }}>{name}</Link>
+        </Tooltip>
+      ),
     },
     {
       title: "最新价",
