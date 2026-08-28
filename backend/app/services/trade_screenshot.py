@@ -33,11 +33,11 @@ def extract_trades(images: list[tuple[bytes, str]]) -> list[dict]:
     }]
     for data, mime in images:
         encoded = base64.b64encode(data).decode("ascii")
-        content.append({"type": "image_url", "image_url": {"url": f"data:{mime};base64,{encoded}"}})
+        content.append({"type": "input_image", "image_url": f"data:{mime};base64,{encoded}"})
     client = OpenAI(api_key=settings.effective_image_key, base_url=settings.relay_api_url, timeout=120)
-    response = client.chat.completions.create(
+    # gpt-5.6-luna is Responses-only on the configured relay endpoint.
+    response = client.responses.create(
         model=settings.effective_vision_model,
-        messages=[{"role": "user", "content": content}],
-        temperature=0,
+        input=[{"role": "user", "content": content}],
     )
-    return _json_text(response.choices[0].message.content or "")
+    return _json_text(response.output_text or "")
