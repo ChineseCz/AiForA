@@ -434,6 +434,7 @@ function StatsCards({ isPaper = false }: { isPaper?: boolean }) {
 function ReviewTab({ isPaper = false }: { isPaper?: boolean }) {
   const isMobile = useIsMobile();
   const { token } = theme.useToken();
+  const queryClient = useQueryClient();
   const [filterCode, setFilterCode] = useState<string | undefined>(undefined);
   const { data, isLoading } = useTrades(filterCode, isPaper);
   const trades = (data?.items ?? []) as TradeRecord[];
@@ -443,6 +444,37 @@ function ReviewTab({ isPaper = false }: { isPaper?: boolean }) {
   const resetPaper = useResetPaperAccount();
   const [resetOpen, setResetOpen] = useState(false);
   const [resetCapital, setResetCapital] = useState(100000);
+  const [screenshotFiles, setScreenshotFiles] = useState<File[]>([]);
+  const [screenshotItems, setScreenshotItems] = useState<any[]>([]);
+  const [screenshotOpen, setScreenshotOpen] = useState(false);
+  const [screenshotLoading, setScreenshotLoading] = useState(false);
+  const [screenshotConfirming, setScreenshotConfirming] = useState(false);
+
+  const previewScreenshots = async () => {
+    if (!screenshotFiles.length) { message.warning("请先选择截图"); return; }
+    const fd = new FormData();
+    screenshotFiles.forEach((file) => fd.append("files", file));
+    setScreenshotLoading(true);
+    try {
+      const res = await api.post<{ items: any[]; new_count: number }>("/api/trades/screenshot/preview", fd, { params: { is_paper: isPaper || undefined } });
+      setScreenshotItems(res.data.items ?? []);
+      setScreenshotOpen(true);
+    } catch (e) { message.error(errMsg(e, "截图识别失败")); }
+    finally { setScreenshotLoading(false); }
+  };
+
+  const confirmScreenshots = async () => {
+    setScreenshotConfirming(true);
+    try {
+      const res = await api.post<{ imported: number; skipped: number }>("/api/trades/screenshot/confirm", { items: screenshotItems.filter((item) => !item.duplicate) }, { params: { is_paper: isPaper || undefined } });
+      message.success(`已导入 ${res.data.imported} 条，跳过 ${res.data.skipped} 条`);
+      setScreenshotOpen(false); setScreenshotFiles([]); setScreenshotItems([]);
+      queryClient.invalidateQueries({ queryKey: ["trades"] });
+      queryClient.invalidateQueries({ queryKey: ["trade_stats"] });
+      queryClient.invalidateQueries({ queryKey: ["trade_backtest"] });
+    } catch (e) { message.error(errMsg(e, "导入失败")); }
+    finally { setScreenshotConfirming(false); }
+  };
 
   const summary = !filterCode ? pnlSummary(trades) : [];
   const activeCodes = summary.map((p) => p.code);
@@ -634,6 +666,16 @@ function ReviewTab({ isPaper = false }: { isPaper?: boolean }) {
             <Button icon={<UploadOutlined />} loading={muts.importTxt.isPending}>导入TXT</Button>
           </Upload>
         )}
+        <Upload
+          accept="image/*"
+          multiple
+          beforeUpload={(file) => { setScreenshotFiles((prev) => [...prev, file as File]); return false; }}
+          onRemove={(file) => { setScreenshotFiles((prev) => prev.filter((item) => item.name !== file.name)); }}
+          showUploadList
+        >
+          <Button icon={<UploadOutlined />}>选择截图</Button>
+        </Upload>
+        <Button onClick={previewScreenshots} loading={screenshotLoading} disabled={!screenshotFiles.length}>识别截图</Button>
       </div>
 
       <Table
@@ -710,6 +752,35 @@ function ReviewTab({ isPaper = false }: { isPaper?: boolean }) {
         </>
       )}
 
+      <Modal
+        title="截图识别预览"
+        open={screenshotOpen}
+        width={900}
+        onCancel={() => setScreenshotOpen(false)}
+        onOk={confirmScreenshots}
+        confirmLoading={screenshotConfirming}
+        okText="确认导入"
+      >
+        <Typography.Paragraph type="secondary">日期为空的当日成交默认按今天处理；重复记录会自动跳过。没有匹配到代码的记录不能导入。</Typography.Paragraph>
+        <Table
+          size="small"
+          rowKey={(_, index) => `${index}`}
+          dataSource={screenshotItems}
+          pagination={false}
+          scroll={{ x: 760, y: 360 }}
+          rowClassName={(row) => row.duplicate ? "screenshot-duplicate-row" : ""}
+          columns={[
+            { title: "状态", width: 80, render: (_: unknown, row: any) => row.duplicate ? <Tag color="default">跳过</Tag> : row.code ? <Tag color="green">新增</Tag> : <Tag color="red">待匹配</Tag> },
+            { title: "日期", dataIndex: "trade_date", width: 105 },
+            { title: "时间", dataIndex: "trade_time", width: 90 },
+            { title: "名称", dataIndex: "stock_name", width: 130 },
+            { title: "代码", width: 150, render: (_: unknown, row: any, index: number) => row.code ? row.code : <Select size="small" placeholder="选择代码" style={{ width: 140 }} options={(row.candidates ?? []).map((c: any) => ({ value: c.code, label: `${c.name} ${c.code}` }))} onChange={(value) => setScreenshotItems((items) => items.map((item, i) => i === index ? { ...item, code: value, duplicate: false } : item))} /> },
+            { title: "方向", width: 70, render: (_: unknown, row: any) => row.direction === "buy" ? "买入" : "卖出" },
+            { title: "价格", dataIndex: "price", width: 80 },
+            { title: "数量", dataIndex: "quantity", width: 80 },
+          ]}
+        />
+      </Modal>
       <Modal
         title="添加交易记录"
         open={addOpen}

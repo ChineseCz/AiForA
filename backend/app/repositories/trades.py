@@ -174,14 +174,15 @@ async def bulk_import_trades(session: AsyncSession, user_id: str, records: list[
         existing = (await session.execute(text(
             """SELECT id FROM trade_records
                WHERE user_id=:uid AND code=:code AND trade_date=:trade_date
+                 AND COALESCE(trade_time, '') = COALESCE(:trade_time, '')
                  AND direction=:direction AND price=:price AND quantity=:quantity AND is_paper=:ip"""
         ), {**r, "uid": user_id, "ip": is_paper})).first()
         if existing:
             continue
         await session.execute(text(
-            """INSERT INTO trade_records (code, stock_name, direction, price, quantity, trade_date, note, created_at, user_id, is_paper)
-               VALUES (:code, :stock_name, :direction, :price, :quantity, :trade_date, :note, :created_at, :user_id, :is_paper)"""
-        ), {**r, "note": r.get("note", ""), "created_at": now, "user_id": user_id, "is_paper": is_paper})
+            """INSERT INTO trade_records (code, stock_name, direction, price, quantity, trade_date, trade_time, note, created_at, user_id, is_paper)
+               VALUES (:code, :stock_name, :direction, :price, :quantity, :trade_date, :trade_time, :note, :created_at, :user_id, :is_paper)"""
+        ), {**r, "trade_time": r.get("trade_time"), "note": r.get("note", ""), "created_at": now, "user_id": user_id, "is_paper": is_paper})
         imported += 1
     await session.commit()
     return imported

@@ -5,6 +5,7 @@ from datetime import date
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,10 +14,99 @@ from app.api.deps import db_session, require_visitor
 from app.repositories import groups as groups_repo
 from app.repositories import trades as trades_repo
 from app.repositories import paper_accounts as paper_repo
+from app.services.trade_screenshot import extract_trades
 
 router = APIRouter(prefix="/api")
 
 _DIRECTIONS = {"买入", "卖出"}
+
+
+def _screenshot_key(row: dict) -> tuple:
+    return (row.get("code", ""), row.get("stock_name", ""), row.get("direction", ""),
+            float(row.get("price", 0)), int(row.get("quantity", 0)), row.get("trade_date", ""),
+            row.get("trade_time") or "")
+
+
+async def _prepare_screenshot_items(session: AsyncSession, user_id: str, raw: list[dict], is_paper: bool, default_date: str) -> list[dict]:
+    result: list[dict] = []
+    seen: set[tuple] = set()
+    for item in raw:
+        name = str(item.get("stock_name") or "").strip()
+        direction = str(item.get("direction") or "").strip()
+        direction = "买入" if direction in ("买入", "buy") else "卖出" if direction in ("卖出", "sell") else ""
+        try:
+            price, quantity = float(item.get("price")), int(item.get("quantity"))
+        except (TypeError, ValueError):
+            continue
+        if not name or not direction or price <= 0 or quantity <= 0:
+            continue
+        trade_date = str(item.get("trade_date") or default_date)[:10]
+        trade_time = str(item.get("trade_time") or "")[:8] or None
+        candidates = (await session.execute(text(
+            "SELECT code, name FROM stock_daily WHERE trade_date=(SELECT MAX(trade_date) FROM stock_daily) AND name ILIKE :name LIMIT 5"
+        ), {"name": f"%{name}%"})).mappings().all()
+        code = str(item.get("code") or "").strip()
+        matched_name = name
+        if not code and len(candidates) == 1:
+            code, matched_name = candidates[0]["code"], candidates[0]["name"]
+        row = {"code": code, "stock_name": matched_name, "direction": "buy" if direction == "买入" else "sell", "price": price, "quantity": quantity, "trade_date": trade_date, "trade_time": trade_time, "amount": item.get("amount")}
+        key = _screenshot_key(row)
+        exists = False
+        if code:
+            exists = bool((await session.execute(text(
+                "SELECT 1 FROM trade_records WHERE user_id=:u AND is_paper=:p AND code=:c AND trade_date=:d AND COALESCE(trade_time,'')=COALESCE(:tt,'') AND direction=:dir AND price=:price AND quantity=:q LIMIT 1"
+            ), {"u": user_id, "p": is_paper, "c": code, "d": trade_date, "tt": trade_time, "dir": row["direction"], "price": price, "q": quantity})).first())
+        row["duplicate"] = exists or key in seen or not code or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", trade_date)
+        row["candidates"] = [{"code": c["code"], "name": c["name"]} for c in candidates]
+        seen.add(key)
+        result.append(row)
+    return result
+
+
+@router.post("/trades/screenshot/preview")
+async def api_screenshot_preview(
+    files: list[UploadFile] = File(...),
+    is_paper: bool = False,
+    user_id: str = Depends(require_visitor),
+    session: AsyncSession = Depends(db_session),
+):
+    if not files or len(files) > 6:
+        raise HTTPException(400, "最多上传 6 张截图")
+    images = []
+    for file in files:
+        data = await file.read()
+        if len(data) > 8 * 1024 * 1024:
+            raise HTTPException(400, "单张截图不能超过 8MB")
+        images.append((data, file.content_type or "image/jpeg"))
+    try:
+        raw = await run_in_threadpool(extract_trades, images)
+        items = await _prepare_screenshot_items(session, user_id, raw, is_paper, date.today().isoformat())
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(400, f"截图识别失败：{exc}") from exc
+    return {"items": items, "new_count": sum(not item["duplicate"] for item in items), "error": ""}
+
+
+@router.post("/trades/screenshot/confirm")
+async def api_screenshot_confirm(
+    body: dict,
+    is_paper: bool = False,
+    user_id: str = Depends(require_visitor),
+    session: AsyncSession = Depends(db_session),
+):
+    records = []
+    for item in body.get("items", []):
+        if item.get("duplicate") or not item.get("code"):
+            continue
+        try:
+            records.append({"code": str(item["code"]), "stock_name": str(item.get("stock_name") or ""), "direction": item["direction"], "price": float(item["price"]), "quantity": int(item["quantity"]), "trade_date": str(item["trade_date"]), "trade_time": item.get("trade_time"), "note": "截图导入"})
+        except (KeyError, TypeError, ValueError):
+            continue
+    imported = await trades_repo.bulk_import_trades(session, user_id, records, is_paper)
+    if is_paper:
+        await groups_repo.sync_paper_auto_groups(session, user_id)
+    else:
+        await groups_repo.sync_auto_groups(session, user_id)
+    return {"imported": imported, "skipped": len(records) - imported, "error": ""}
 
 
 def _parse_pingan_txt(content: bytes, filename: str = "") -> list[dict]:
