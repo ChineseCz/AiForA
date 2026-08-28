@@ -667,10 +667,10 @@ function IndexChart({ dark, isMobile }: { dark: boolean; isMobile: boolean }) {
     >
       {trendWeak && (
         <Alert
-          type="warning"
+          type="error"
           showIcon
-          message="大盘近14个交易日出现中期反转信号，趋势偏弱，注意风险"
-          style={{ marginBottom: 8 }}
+          message={<span style={{ color: "#cf1322", fontWeight: 700 }}>大盘近14个交易日出现中期反转信号，趋势偏弱，注意风险</span>}
+          style={{ marginBottom: 8, background: "#fff1f0", borderColor: "#ff4d4f" }}
           closable
         />
       )}
@@ -994,6 +994,9 @@ export default function Dashboard() {
         )}
       </Card>
 
+      {/* 大盘指数：放在热度榜之后，优先展示核心行情 */}
+      <IndexChart dark={dark} isMobile={isMobile} />
+
       {/* 图表区 */}
       <Row gutter={[isMobile ? 8 : 16, isMobile ? 8 : 16]} style={{ marginTop: isMobile ? 8 : 16 }}>
         {!isMobile && (
@@ -1007,15 +1010,7 @@ export default function Dashboard() {
             </Card>
           </Col>
         )}
-        <Col xs={24} md={12}>
-          <Card title="月度发帖量">
-            <ReactECharts option={monthlyOpt} style={{ height: isMobile ? 180 : 220 }} />
-          </Card>
-        </Col>
       </Row>
-
-      {/* 大盘指数 */}
-      <IndexChart dark={dark} isMobile={isMobile} />
 
       {/* 最新动态 */}
       <Card title="最新动态" style={{ marginTop: isMobile ? 8 : 16 }}>
@@ -1042,6 +1037,11 @@ export default function Dashboard() {
             )}
           />
         ) : <Empty description="暂无数据，请先在后台采集" />}
+      </Card>
+
+      {/* 月度发帖量放到页面末尾，避免占用首屏核心行情位置 */}
+      <Card title="月度发帖量" style={{ marginTop: isMobile ? 8 : 16 }}>
+        <ReactECharts option={monthlyOpt} style={{ height: isMobile ? 180 : 220 }} />
       </Card>
     </Spin>
   );
