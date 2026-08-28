@@ -9,7 +9,7 @@ import { Link } from "react-router-dom";
 
 import { errMsg, api } from "../api/client";
 import { useQueryClient, useQueries } from "@tanstack/react-query";
-import { useGroupMembers, useGroupMutations, useGroups, useDeleteNote, useFavoriteNote, useGenerateNote, useNote, useNoteList, useNoteMutation, useNotificationSettings, usePaperAccount, useResetPaperAccount, useSaveNotificationSettings, useTradeMutations, useTrades, useTradeStats, useWatchlistOverview } from "../api/hooks";
+import { useGroupMembers, useGroupMutations, useGroups, useDeleteNote, useFavoriteNote, useGenerateNote, useNote, useNoteList, useNoteMutation, useNotificationSettings, useNotifications, useMarkAllNotificationsRead, usePaperAccount, useResetPaperAccount, useSaveNotificationSettings, useTradeBacktest, useTradeMutations, useTrades, useTradeStats, useWatchlistOverview } from "../api/hooks";
 import { getToken, getVisitorToken } from "../api/client";
 import type { GroupItem, GroupMember, NotificationSettings, TradeNote, TradeRecord } from "../api/types";
 import { useIsMobile } from "../hooks/useIsMobile";
@@ -356,6 +356,23 @@ function NotificationTab() {
   );
 }
 
+function InAppNotificationTab() {
+  const { token } = theme.useToken();
+  const { data, isLoading } = useNotifications();
+  const markAll = useMarkAllNotificationsRead();
+  if (isLoading) return <Spin />;
+  return <Space direction="vertical" style={{ width: "100%" }}>
+    <Button size="small" onClick={() => markAll.mutate()} disabled={!data?.unread}>全部标为已读</Button>
+    {!data?.items?.length ? <Empty description="暂无站内消息" /> : data.items.map((item) => (
+      <div key={item.id} style={{ padding: 10, borderRadius: 8, background: item.read_at ? token.colorFillQuaternary : token.colorPrimaryBg }}>
+        <Text strong>{item.title}</Text>
+        <div style={{ whiteSpace: "pre-wrap", marginTop: 4 }}>{item.content}</div>
+        <Text type="secondary" style={{ fontSize: 12 }}>{new Date(item.sent_at * 1000).toLocaleString()}</Text>
+      </div>
+    ))}
+  </Space>;
+}
+
 // ─── 操作复盘 ─────────────────────────────────────────────────────────────────
 
 function pnlSummary(trades: TradeRecord[]) {
@@ -422,6 +439,7 @@ function ReviewTab({ isPaper = false }: { isPaper?: boolean }) {
   const trades = (data?.items ?? []) as TradeRecord[];
   const muts = useTradeMutations(isPaper);
   const { data: accountData } = usePaperAccount();
+  const { data: backtestData } = useTradeBacktest(isPaper);
   const resetPaper = useResetPaperAccount();
   const [resetOpen, setResetOpen] = useState(false);
   const [resetCapital, setResetCapital] = useState(100000);
@@ -527,6 +545,16 @@ function ReviewTab({ isPaper = false }: { isPaper?: boolean }) {
   return (
     <>
       <StatsCards isPaper={isPaper} />
+      <div style={{ marginBottom: 16 }}>
+        <Text strong>收益回测</Text>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 8 }}>
+          {[{ label: "累计收益", value: backtestData?.backtest.total_return ?? 0 }, { label: "最大回撤", value: -(backtestData?.backtest.max_drawdown ?? 0) }].map((x) => (
+            <div key={x.label} style={{ background: token.colorFillQuaternary, borderRadius: 8, padding: "8px 14px", minWidth: 110 }}><div style={{ fontSize: 11, color: token.colorTextSecondary }}>{x.label}</div><div style={{ fontSize: 18, fontWeight: 600, color: x.value > 0 ? token.colorError : x.value < 0 ? token.colorSuccess : undefined }}>{x.value > 0 ? "+" : ""}{x.value.toFixed(0)} 元</div></div>
+          ))}
+          <div style={{ background: token.colorFillQuaternary, borderRadius: 8, padding: "8px 14px", minWidth: 110 }}><div style={{ fontSize: 11, color: token.colorTextSecondary }}>回测胜率</div><div style={{ fontSize: 18, fontWeight: 600 }}>{((backtestData?.backtest.win_rate ?? 0) * 100).toFixed(1)}%</div></div>
+        </div>
+        {!!backtestData?.backtest.trades.length && <Table size="small" pagination={{ pageSize: 5 }} rowKey={(r) => `${r.code}-${r.trade_date}-${r.quantity}`} dataSource={backtestData.backtest.trades} columns={[{ title: "日期", dataIndex: "trade_date" }, { title: "标的", render: (_: unknown, r: any) => `${r.name} (${r.code})` }, { title: "买入", dataIndex: "buy_price" }, { title: "卖出", dataIndex: "sell_price" }, { title: "盈亏", dataIndex: "pnl", render: (v: number) => <Text type={v >= 0 ? "danger" : "success"}>{v > 0 ? "+" : ""}{v.toFixed(2)}</Text> }]} />}
+      </div>
       {isPaper && balance != null && (
         <>
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 8 }}>
@@ -1255,6 +1283,7 @@ export default function My() {
   const innerItems = (isPaper: boolean) => [
     { key: "watchlist", label: "自选股", children: <WatchlistTab isPaper={isPaper} /> },
     { key: "notifications", label: "信号提醒", children: <NotificationTab /> },
+    { key: "in-app-notifications", label: "站内消息", children: <InAppNotificationTab /> },
     { key: "review", label: "操作复盘", children: <ReviewTab isPaper={isPaper} /> },
     { key: "notes", label: "复盘笔记", children: <NotesTab isPaper={isPaper} /> },
   ];

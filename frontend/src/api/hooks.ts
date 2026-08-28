@@ -5,7 +5,7 @@ import { api } from "./client";
 import type {
   AuthConfigResp, AuthSettingsCfg, BondDetail, Condition, Fundamentals, FieldMeta, GroupItem, GroupMember, JobStatus, KlineView, NewsItem, WatchlistOverview,
   Overview, PostsPage, Quote, ScheduleCfg, ScreenResp, SectorItem, SectorRankResp, StockAiAnalysisResp, SummaryResp, IntradayView, BackfillFailure,
-  TradeNote, TradeRecord, TradeStats, UserItem, RecentJob, DataHealth, NotificationSettings,
+  TradeNote, TradeRecord, TradeStats, BacktestResult, UserItem, RecentJob, DataHealth, NotificationSettings, NotificationItem,
   ResetCaptchaResp, VisitorLoginResp, VisitorMeResp, WechatQrcodeResp, WechatPollResp,
 } from "./types";
 
@@ -234,6 +234,15 @@ export const useSetNickname = () => {
   });
 };
 
+export const useNotifications = () => useQuery({
+  queryKey: ["notifications"],
+  queryFn: () => get<{ items: NotificationItem[]; unread: number }>("/api/notifications"),
+});
+export const useMarkAllNotificationsRead = () => {
+  const qc = useQueryClient();
+  return useMutation({ mutationFn: () => post("/api/notifications/read-all"), onSuccess: () => qc.invalidateQueries({ queryKey: ["notifications"] }) });
+};
+
 export const useWechatQrcode = () =>
   useQuery({ queryKey: ["wechat_qrcode"], queryFn: () => get<WechatQrcodeResp>("/api/user/wechat/qrcode") });
 
@@ -381,6 +390,12 @@ export const useTradeStats = (isPaper = false) =>
   useQuery({
     queryKey: ["trade_stats", isPaper],
     queryFn: () => get<{ stats: TradeStats }>("/api/trades/stats", { is_paper: isPaper || undefined }),
+  });
+
+export const useTradeBacktest = (isPaper = false) =>
+  useQuery({
+    queryKey: ["trade_backtest", isPaper],
+    queryFn: () => get<{ backtest: BacktestResult }>("/api/trades/backtest", { is_paper: isPaper || undefined }),
   });
 
 // ===== 用户级与系统级设置 =====

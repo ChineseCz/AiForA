@@ -1,6 +1,6 @@
 import { ReloadOutlined, WifiOutlined } from "@ant-design/icons";
 import { Alert, Button, Result } from "antd";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
 type NetworkIssue = "offline" | "server" | "timeout" | null;
@@ -15,15 +15,23 @@ export default function NetworkStatus() {
   const queryClient = useQueryClient();
   const [issue, setIssue] = useState<NetworkIssue>(() => (navigator.onLine === false ? "offline" : null));
   const [retrying, setRetrying] = useState(false);
+  const issueTimer = useRef<number | undefined>(undefined);
 
   useEffect(() => {
     const offline = () => setIssue("offline");
     const online = () => setIssue((current) => current === "offline" ? null : current);
     const failed = (event: Event) => {
       const kind = (event as CustomEvent<{ kind?: NetworkIssue }>).detail?.kind;
-      setIssue(kind === "timeout" ? "timeout" : "server");
+      window.clearTimeout(issueTimer.current);
+      // 实时行情每秒轮询，单次超时/502 很常见；持续失败后再打扰用户。
+      issueTimer.current = window.setTimeout(() => {
+        setIssue(kind === "timeout" ? "timeout" : "server");
+      }, 1500);
     };
-    const recovered = () => setIssue(null);
+    const recovered = () => {
+      window.clearTimeout(issueTimer.current);
+      setIssue(null);
+    };
     window.addEventListener("offline", offline);
     window.addEventListener("online", online);
     window.addEventListener("natapp-network-error", failed);
@@ -33,6 +41,7 @@ export default function NetworkStatus() {
       window.removeEventListener("online", online);
       window.removeEventListener("natapp-network-error", failed);
       window.removeEventListener("natapp-network-recovered", recovered);
+      window.clearTimeout(issueTimer.current);
     };
   }, []);
 

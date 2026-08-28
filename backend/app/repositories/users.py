@@ -98,12 +98,32 @@ async def set_nickname(session: AsyncSession, sub: str, nickname: str) -> None:
     await session.commit()
 
 
-async def change_email(session: AsyncSession, sub: str, email: str) -> dict | None:
-    """将当前登录账号绑定的邮箱改为已验证的新邮箱。"""
+async def change_email(session: AsyncSession, sub: str, email: str, migrate_data: bool = False) -> dict | None:
+    """更换邮箱；邮箱登录账号同时迁移所有以旧邮箱为 user_id 的业务数据。"""
+    if migrate_data and sub != email:
+        # 旧设计用登录标识作为 user_id；邮箱变化时必须同步更新历史业务数据。
+        for table in ("stock_groups", "trade_records", "trade_notes", "paper_accounts", "user_settings", "notification_events"):
+            await session.execute(
+                text(f"UPDATE {table} SET user_id=:new_sub WHERE user_id=:old_sub"),
+                {"old_sub": sub, "new_sub": email},
+            )
     row = (await session.execute(
         text(
             "UPDATE users SET email=:email WHERE phone=:sub OR openid=:sub OR email=:sub "
             "RETURNING id, email, is_admin"
+        ),
+        {"sub": sub, "email": email},
+    )).mappings().first()
+    await session.commit()
+    return dict(row) if row else None
+
+
+async def bind_email(session: AsyncSession, sub: str, email: str) -> dict | None:
+    """为没有邮箱的当前账号绑定邮箱，不改变其原有登录身份。"""
+    row = (await session.execute(
+        text(
+            "UPDATE users SET email=:email WHERE email IS NULL "
+            "AND (phone=:sub OR openid=:sub) RETURNING id, email, is_admin"
         ),
         {"sub": sub, "email": email},
     )).mappings().first()
