@@ -44,6 +44,9 @@ class Settings(BaseSettings):
     max_pages: int = 10
     fetch_full_text: bool = True
     request_delay: float = 1.5
+    # 微信文章请求间隔，使用随机范围降低固定频率特征。
+    wechat_request_delay_min: float = 8.0
+    wechat_request_delay_max: float = 18.0
     headless: bool = False
     browser_channel: str = "msedge"  # Linux 服务器设为空字符串以使用 Chromium
     # 帖子正文超过这个字数才在抓取后自动生成一句话总结（brief），短帖子直接全文展示不用调LLM

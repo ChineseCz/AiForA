@@ -1,9 +1,19 @@
 """微信公众号文章导入任务。"""
+import random
 import time
 
+from app.core.config import settings
 from app.workers.celery_app import celery_app
 from app.workers.queues import QUEUE_BROWSER
 from app.workers.runner import job_run
+
+
+def _wait_between_wechat_requests(index: int) -> None:
+    if index <= 1:
+        return
+    low = max(0.0, min(settings.wechat_request_delay_min, settings.wechat_request_delay_max))
+    high = max(low, settings.wechat_request_delay_max)
+    time.sleep(random.uniform(low, high))
 
 
 @celery_app.task(name="wechat.import_article", queue=QUEUE_BROWSER)
@@ -19,6 +29,7 @@ def task_import_article(urls: list[str] | str, source: str = "手动", job_id: i
         print(f"开始导入微信公众号文章：{len(unique_urls)} 篇")
         summary_targets: set[tuple[str, str, str]] = set()
         for index, url in enumerate(unique_urls, 1):
+            _wait_between_wechat_requests(index)
             try:
                 article = parse_article(url)
                 db.upsert_post(article)
@@ -27,8 +38,6 @@ def task_import_article(urls: list[str] | str, source: str = "手动", job_id: i
                 summary_targets.add((article["user_id"], article["user_name"], article["date"]))
             except Exception as exc:  # noqa: BLE001
                 print(f"[{index}/{len(unique_urls)}] 导入失败：{url}；{exc}")
-            if index < len(unique_urls):
-                time.sleep(4)
         for user_id, user_name, date_str in summary_targets:
             task_summarize_daily_one.delay(user_id, user_name, date_str, regen=True)
         if summary_targets:
@@ -51,6 +60,7 @@ def task_discover(keyword: str, pages: int = 1, source: str = "手动", job_id: 
             return
         summary_targets: set[tuple[str, str, str]] = set()
         for index, url in enumerate(resolved, 1):
+            _wait_between_wechat_requests(index)
             try:
                 article = parse_article(url)
                 db.upsert_post(article)
@@ -59,8 +69,6 @@ def task_discover(keyword: str, pages: int = 1, source: str = "手动", job_id: 
                 print(f"[{index}/{len(resolved)}] 已导入：{article['title']}")
             except Exception as exc:  # noqa: BLE001
                 print(f"[{index}/{len(resolved)}] 导入失败：{url}；{exc}")
-            if index < len(resolved):
-                time.sleep(4)
         for user_id, user_name, date_str in summary_targets:
             task_summarize_daily_one.delay(user_id, user_name, date_str, regen=True)
         if summary_targets:
