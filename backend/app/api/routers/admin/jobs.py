@@ -4,8 +4,10 @@
 注：Phase 3 将给整个 admin/ 加鉴权；当前公开只读模型下这些是"写/触发"操作，暂未鉴权。
 """
 import json
+import csv
+import io
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Request, UploadFile, File
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -52,6 +54,67 @@ async def crawl(request: Request, session: AsyncSession = Depends(db_session)):
 @router.get("/crawl/status")
 async def crawl_status(session: AsyncSession = Depends(db_session)):
     return await jobs.get_job_status(session, "crawl")
+
+
+@router.post("/wechat/import")
+async def wechat_import(request: Request, session: AsyncSession = Depends(db_session)):
+    from app.workers.tasks.wechat import task_import_article
+    body = await _json_body(request)
+    raw_urls = body.get("urls") if isinstance(body.get("urls"), list) else [body.get("url")]
+    urls = list(dict.fromkeys(str(url).strip() for url in raw_urls if str(url).strip()))
+    if not urls:
+        return JSONResponse({"error": "请输入微信公众号文章链接"}, status_code=400)
+    if len(urls) > 200:
+        return JSONResponse({"error": "单次最多导入 200 篇文章"}, status_code=400)
+    return await _trigger(session, "wechat_import", task_import_article, urls, source="手动")
+
+
+@router.get("/wechat/import/status")
+async def wechat_import_status(session: AsyncSession = Depends(db_session)):
+    return await jobs.get_job_status(session, "wechat_import")
+
+
+@router.post("/wechat/import-csv")
+async def wechat_import_csv(file: UploadFile = File(...), session: AsyncSession = Depends(db_session)):
+    """Import the url column from the CSV exported by the article crawler."""
+    if not file.filename or not file.filename.lower().endswith(".csv"):
+        return JSONResponse({"error": "请上传 CSV 文件"}, status_code=400)
+    raw = await file.read()
+    try:
+        text = raw.decode("utf-8-sig")
+        rows = csv.DictReader(io.StringIO(text))
+        fieldnames = {str(name).strip().lower() for name in (rows.fieldnames or []) if name}
+        if "url" not in fieldnames:
+            return JSONResponse({"error": "CSV 必须包含 url 列"}, status_code=400)
+        urls = []
+        for row in rows:
+            value = next((v for k, v in row.items() if str(k).strip().lower() == "url"), "")
+            value = (value or "").strip()
+            if value and value.startswith(("http://", "https://")):
+                urls.append(value)
+    except (UnicodeDecodeError, csv.Error) as exc:
+        return JSONResponse({"error": f"CSV 解析失败：{exc}"}, status_code=400)
+    urls = list(dict.fromkeys(urls))
+    if not urls:
+        return JSONResponse({"error": "CSV 中没有有效文章链接"}, status_code=400)
+    if len(urls) > 200:
+        return JSONResponse({"error": "单次最多导入 200 篇文章"}, status_code=400)
+    from app.workers.tasks.wechat import task_import_article
+    return await _trigger(session, "wechat_import", task_import_article, urls, source="CSV 批量导入")
+
+
+@router.post("/wechat/discover")
+async def wechat_discover(request: Request, session: AsyncSession = Depends(db_session)):
+    from app.workers.tasks.wechat import task_discover
+    body = await _json_body(request)
+    keyword = str(body.get("keyword") or "主升龙神").strip()
+    pages = max(1, min(3, int(body.get("pages", 1) or 1)))
+    return await _trigger(session, "wechat_discover", task_discover, keyword, pages, source="手动")
+
+
+@router.get("/wechat/discover/status")
+async def wechat_discover_status(session: AsyncSession = Depends(db_session)):
+    return await jobs.get_job_status(session, "wechat_discover")
 
 
 # ================= 总结生成 =================

@@ -50,4 +50,4 @@ celery_app.conf.update(
 
 # 注册任务：import 使 @celery_app.task 装饰器执行。task 内部对 playwright/openai 均为延迟导入，
 # 因此容器 worker（无 playwright）import 这些模块不会报错，只有执行浏览器任务才需要。
-from app.workers.tasks import beat, browser, stock, summarize  # noqa: E402,F401
+from app.workers.tasks import beat, browser, stock, summarize, wechat  # noqa: E402,F401

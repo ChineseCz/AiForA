@@ -1,6 +1,6 @@
 import {
   Button, Card, Checkbox, Col, DatePicker, Form, Input, InputNumber,
-  Collapse, Row, Select, Space, Statistic, Switch, Table, Tag, Typography, message,
+  Collapse, Row, Select, Space, Statistic, Switch, Table, Tag, Typography, Upload, message,
 } from "antd";
 import dayjs, { type Dayjs } from "dayjs";
 import { useEffect, useState } from "react";
@@ -131,6 +131,8 @@ const JOB_LABELS: Record<string, string> = {
   sector_members_sync: "板块成分股",
   sync_xueqiu_sectors: "雪球板块",
   crawl: "雪球采集",
+  wechat_import: "微信公众号导入",
+  wechat_discover: "公众号历史发现",
   summarize: "AI总结",
 };
 
@@ -334,12 +336,82 @@ export default function Admin() {
           <Typography.Title level={5}>采集与总结</Typography.Title>
           <JobPanel title="雪球采集" desc="抓取大V新帖（Playwright+Chromium）" kind="crawl"
             triggerPath="/api/crawl" statusPath="/api/crawl/status" body={{ summarize: true }} />
+          <WechatImportPanel />
+          <WechatDiscoverPanel />
           <SummarizePanel />
           <SchedulePanel />
           <AuthSettingsPanel />
         </Col>
       </Row>
     </Space>
+  );
+}
+
+function WechatImportPanel() {
+  const [urls, setUrls] = useState("");
+  const [polling, setPolling] = useState(true);
+  const { data: status } = useJobStatus("wechat_import", "/api/wechat/import/status", polling);
+  useEffect(() => { setPolling(!!status?.running); }, [status?.running]);
+  const trigger = () => {
+    const values = urls.split(/\r?\n/).map((value) => value.trim()).filter(Boolean);
+    if (!values.length) { message.warning("请输入微信公众号文章链接"); return; }
+    api.post("/api/wechat/import", { urls: values })
+      .then((r) => {
+        if (r.data?.started === false && r.data?.running) message.warning("公众号导入任务正在运行");
+        else message.success("已提交公众号文章导入");
+        setPolling(true);
+      })
+      .catch((e) => message.error(errMsg(e)));
+  };
+  const uploadCsv = (file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    api.post("/api/wechat/import-csv", form)
+      .then((r) => {
+        if (r.data?.started === false && r.data?.running) message.warning("公众号导入任务正在运行");
+        else message.success("已提交 CSV 批量导入，并自动生成 AI 总结");
+        setPolling(true);
+      })
+      .catch((e) => message.error(errMsg(e)));
+  };
+  return (
+    <Card size="small" title="微信公众号文章导入" style={{ marginBottom: 12 }}>
+      <Space.Compact style={{ width: "100%" }}>
+        <Input.TextArea value={urls} onChange={(e) => setUrls(e.target.value)} autoSize={{ minRows: 2, maxRows: 6 }} placeholder="每行粘贴一个 mp.weixin.qq.com/s/... 文章链接" />
+        <Button type="primary" onClick={trigger} loading={status?.running}>导入</Button>
+      </Space.Compact>
+      <Upload accept=".csv,text/csv" showUploadList={false} beforeUpload={(file) => { uploadCsv(file); return false; }} disabled={status?.running}>
+        <Button style={{ marginTop: 8 }} disabled={status?.running}>上传 CSV 批量导入</Button>
+      </Upload>
+      <Typography.Text type="secondary" style={{ display: "block", fontSize: 12, marginTop: 6 }}>
+        每篇串行抓取，间隔约 4 秒；重复文章自动覆盖更新，不会重复新增。
+      </Typography.Text>
+      {status?.log?.length ? <Typography.Text type="secondary" style={{ fontSize: 12 }}>{status.log[status.log.length - 1]}</Typography.Text> : null}
+      {status?.error ? <div style={{ color: "#cf1322", fontSize: 12 }}>{status.error}</div> : null}
+    </Card>
+  );
+}
+
+function WechatDiscoverPanel() {
+  const [keyword, setKeyword] = useState("主升龙神");
+  const [polling, setPolling] = useState(true);
+  const { data: status } = useJobStatus("wechat_discover", "/api/wechat/discover/status", polling);
+  useEffect(() => { setPolling(!!status?.running); }, [status?.running]);
+  const trigger = () => api.post("/api/wechat/discover", { keyword, pages: 1 })
+    .then(() => { message.success("已提交低频历史发现"); setPolling(true); })
+    .catch((e) => message.error(errMsg(e)));
+  return (
+    <Card size="small" title="公众号历史文章发现" style={{ marginBottom: 12 }}>
+      <Space.Compact style={{ width: "100%" }}>
+        <Input value={keyword} onChange={(e) => setKeyword(e.target.value)} placeholder="公众号名称" />
+        <Button onClick={trigger} loading={status?.running}>发现一页</Button>
+      </Space.Compact>
+      <Typography.Text type="secondary" style={{ display: "block", fontSize: 12, marginTop: 6 }}>
+        低频搜索一页并自动尝试导入；搜狗触发验证时，请使用上方链接批量导入。
+      </Typography.Text>
+      {status?.log?.length ? <Typography.Text type="secondary" style={{ fontSize: 12 }}>{status.log[status.log.length - 1]}</Typography.Text> : null}
+      {status?.error ? <div style={{ color: "#cf1322", fontSize: 12 }}>{status.error}</div> : null}
+    </Card>
   );
 }
 void dayjs;
