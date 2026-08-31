@@ -19,7 +19,8 @@ WECHAT_UA = (
 
 def _article_id(url: str) -> str:
     parsed = urlparse(url)
-    canonical = f"https://mp.weixin.qq.com{parsed.path}"
+    # WeChat article URLs use /s?..., so the query identifies the article.
+    canonical = f"https://mp.weixin.qq.com{parsed.path}?{parsed.query}"
     return "wechat:" + hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:32]
 
 
@@ -69,7 +70,9 @@ def _article_timestamp(html: str, publish_node, publish_time: str) -> int:
 def parse_article(url: str) -> dict:
     """Fetch one public article with the WeChat mobile-browser user agent."""
     parsed = urlparse(url)
-    if parsed.netloc not in {"mp.weixin.qq.com", "mp.weixin.qq.com."} or not parsed.path.startswith("/s/"):
+    if parsed.netloc not in {"mp.weixin.qq.com", "mp.weixin.qq.com."} or not (
+        parsed.path == "/s" or parsed.path.startswith("/s/")
+    ):
         raise ValueError("请输入 mp.weixin.qq.com/s/... 格式的公众号文章链接")
 
     response = requests.get(
