@@ -1,4 +1,4 @@
-import { DeleteOutlined, FolderOutlined, PlusOutlined, ReloadOutlined, StarFilled, StarOutlined, UploadOutlined } from "@ant-design/icons";
+import { DeleteOutlined, FolderOutlined, MobileOutlined, PlusOutlined, ReloadOutlined, StarFilled, StarOutlined, UploadOutlined } from "@ant-design/icons";
 import {
   AutoComplete, Button, Col, DatePicker, Empty, Form, Input, InputNumber,
   Modal, Pagination, Popconfirm, Progress, Row, Select, Space, Spin, Switch, Table, Tabs,
@@ -371,11 +371,54 @@ function InAppNotificationTab() {
     {!data?.items?.length ? <Empty description="暂无站内消息" /> : data.items.map((item) => (
       <div key={item.id} style={{ padding: 10, borderRadius: 8, background: item.read_at ? token.colorFillQuaternary : token.colorPrimaryBg }}>
         <Text strong>{item.title}</Text>
-        <div style={{ whiteSpace: "pre-wrap", marginTop: 4 }}>{item.content}</div>
+        <div style={{ whiteSpace: "pre-wrap", marginTop: 4 }}>{renderNotificationContent(item.content)}</div>
         <Text type="secondary" style={{ fontSize: 12 }}>{new Date(item.sent_at * 1000).toLocaleString()}</Text>
       </div>
     ))}
   </Space>;
+}
+
+function exchangePrefix(code: string): string {
+  return /^[569]/.test(code) ? "SH" : /^[48]/.test(code) ? "BJ" : "SZ";
+}
+
+function openXueqiu(code: string) {
+  const symbol = `${exchangePrefix(code)}${code}`;
+  const appUrl = `xueqiu://s/${symbol}`;
+  const webUrl = `https://xueqiu.com/S/${symbol}`;
+  let fallback: ReturnType<typeof setTimeout> | null = setTimeout(() => {
+    window.open(webUrl, "_blank", "noreferrer");
+  }, 1500);
+  const cancel = () => {
+    if (fallback) { clearTimeout(fallback); fallback = null; }
+    window.removeEventListener("blur", cancel);
+  };
+  window.addEventListener("blur", cancel, { once: true });
+  window.location.href = appUrl;
+}
+
+function renderNotificationContent(content: string) {
+  return content.split("\n").map((line, index) => {
+    // Signal notifications use: 股票名称（六位代码） followed by the detail text.
+    const match = line.match(/^(.*?)[（(](\d{6})[）)](.*)$/);
+    if (!match) return <span key={index}>{line}{index < content.split("\n").length - 1 ? "\n" : ""}</span>;
+    const [, name, code, suffix] = match;
+    return (
+      <span key={index}>
+        <Link to={`/stock/${code}`} style={{ fontWeight: 600 }}>{name}</Link>
+        <Text type="secondary">（{code}）</Text>{suffix}
+        <span style={{ whiteSpace: "nowrap", marginLeft: 8 }}>
+          <Button type="link" size="small" style={{ padding: 0, height: "auto" }}>
+            <Link to={`/stock/${code}`}>日线</Link>
+          </Button>
+          <Button type="link" size="small" icon={<MobileOutlined />} onClick={() => openXueqiu(code)} style={{ padding: 0, height: "auto" }}>
+            雪球
+          </Button>
+        </span>
+        {index < content.split("\n").length - 1 ? "\n" : ""}
+      </span>
+    );
+  });
 }
 
 // ─── 操作复盘 ─────────────────────────────────────────────────────────────────

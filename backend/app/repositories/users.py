@@ -98,15 +98,66 @@ async def set_nickname(session: AsyncSession, sub: str, nickname: str) -> None:
     await session.commit()
 
 
+async def _migrate_email_data(session: AsyncSession, old_sub: str, new_sub: str) -> None:
+    """Merge old login-keyed data into the new email without unique-key failures."""
+    # Merge same-name groups first, preserving all members and avoiding duplicate codes.
+    await session.execute(text(
+        """INSERT INTO stock_group_members (group_id, code, name, added_at)
+           SELECT new_g.id, m.code, m.name, m.added_at
+           FROM stock_groups old_g
+           JOIN stock_groups new_g ON new_g.user_id=:new_sub
+            AND new_g.name=old_g.name AND new_g.is_paper=old_g.is_paper
+           JOIN stock_group_members m ON m.group_id=old_g.id
+           WHERE old_g.user_id=:old_sub
+           ON CONFLICT (group_id, code) DO NOTHING"""),
+        {"old_sub": old_sub, "new_sub": new_sub})
+    await session.execute(text(
+        """DELETE FROM stock_group_members m USING stock_groups old_g, stock_groups new_g
+           WHERE m.group_id=old_g.id AND old_g.user_id=:old_sub
+            AND new_g.user_id=:new_sub AND new_g.name=old_g.name
+            AND new_g.is_paper=old_g.is_paper"""),
+        {"old_sub": old_sub, "new_sub": new_sub})
+    await session.execute(text(
+        """DELETE FROM stock_groups old_g USING stock_groups new_g
+           WHERE old_g.user_id=:old_sub AND new_g.user_id=:new_sub
+            AND new_g.name=old_g.name AND new_g.is_paper=old_g.is_paper"""),
+        {"old_sub": old_sub, "new_sub": new_sub})
+
+    # Keep the target-side copy when a user retries a partially completed change.
+    await session.execute(text(
+        """DELETE FROM trade_notes old_n USING trade_notes new_n
+           WHERE old_n.user_id=:old_sub AND new_n.user_id=:new_sub
+            AND old_n.note_date=new_n.note_date AND old_n.is_paper=new_n.is_paper"""),
+        {"old_sub": old_sub, "new_sub": new_sub})
+    await session.execute(text(
+        """DELETE FROM user_settings old_s USING user_settings new_s
+           WHERE old_s.user_id=:old_sub AND new_s.user_id=:new_sub
+            AND old_s.key=new_s.key"""), {"old_sub": old_sub, "new_sub": new_sub})
+    await session.execute(text(
+        """DELETE FROM notification_events old_n USING notification_events new_n
+           WHERE old_n.user_id=:old_sub AND new_n.user_id=:new_sub
+            AND old_n.channel=new_n.channel AND old_n.event_key=new_n.event_key"""),
+        {"old_sub": old_sub, "new_sub": new_sub})
+
+    # The old account is authoritative: a failed first attempt may have created an empty target account.
+    await session.execute(text(
+        """INSERT INTO paper_accounts (user_id, balance, created_at)
+           SELECT :new_sub, balance, created_at FROM paper_accounts
+           WHERE user_id=:old_sub
+           ON CONFLICT (user_id) DO UPDATE
+             SET balance=EXCLUDED.balance, created_at=EXCLUDED.created_at"""),
+        {"old_sub": old_sub, "new_sub": new_sub})
+    await session.execute(text("DELETE FROM paper_accounts WHERE user_id=:old_sub"), {"old_sub": old_sub})
+
+    for table in ("stock_groups", "trade_records", "trade_notes", "user_settings", "notification_events"):
+        await session.execute(text(f"UPDATE {table} SET user_id=:new_sub WHERE user_id=:old_sub"),
+                              {"old_sub": old_sub, "new_sub": new_sub})
+
+
 async def change_email(session: AsyncSession, sub: str, email: str, migrate_data: bool = False) -> dict | None:
     """更换邮箱；邮箱登录账号同时迁移所有以旧邮箱为 user_id 的业务数据。"""
     if migrate_data and sub != email:
-        # 旧设计用登录标识作为 user_id；邮箱变化时必须同步更新历史业务数据。
-        for table in ("stock_groups", "trade_records", "trade_notes", "paper_accounts", "user_settings", "notification_events"):
-            await session.execute(
-                text(f"UPDATE {table} SET user_id=:new_sub WHERE user_id=:old_sub"),
-                {"old_sub": sub, "new_sub": email},
-            )
+        await _migrate_email_data(session, sub, email)
     row = (await session.execute(
         text(
             "UPDATE users SET email=:email WHERE phone=:sub OR openid=:sub OR email=:sub "
