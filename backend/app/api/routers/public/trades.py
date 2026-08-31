@@ -19,6 +19,14 @@ from app.services.trade_screenshot import extract_trades
 router = APIRouter(prefix="/api")
 
 _DIRECTIONS = {"买入", "卖出"}
+_SCREENSHOT_CODE_ALIASES = {
+    "石油ETF鹏华": "159697",
+}
+
+
+def _unmatched_code(name: str) -> str:
+    """Stable internal code so an unrecognized screenshot trade can still be imported."""
+    return f"UNMATCHED:{name}"
 
 
 def _screenshot_key(row: dict) -> tuple:
@@ -47,8 +55,12 @@ async def _prepare_screenshot_items(session: AsyncSession, user_id: str, raw: li
         ), {"name": f"%{name}%"})).mappings().all()
         code = str(item.get("code") or "").strip()
         matched_name = name
+        if not code:
+            code = _SCREENSHOT_CODE_ALIASES.get(name, "")
         if not code and len(candidates) == 1:
             code, matched_name = candidates[0]["code"], candidates[0]["name"]
+        if not code:
+            code = _unmatched_code(name)
         row = {"code": code, "stock_name": matched_name, "direction": "buy" if direction == "买入" else "sell", "price": price, "quantity": quantity, "trade_date": trade_date, "trade_time": trade_time, "amount": item.get("amount")}
         key = _screenshot_key(row)
         exists = False
@@ -56,7 +68,8 @@ async def _prepare_screenshot_items(session: AsyncSession, user_id: str, raw: li
             exists = bool((await session.execute(text(
                 "SELECT 1 FROM trade_records WHERE user_id=:u AND is_paper=:p AND code=:c AND trade_date=:d AND COALESCE(trade_time,'')=COALESCE(:tt,'') AND direction=:dir AND price=:price AND quantity=:q LIMIT 1"
             ), {"u": user_id, "p": is_paper, "c": code, "d": trade_date, "tt": trade_time, "dir": row["direction"], "price": price, "q": quantity})).first())
-        row["duplicate"] = exists or key in seen or not code or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", trade_date)
+        row["unmatched_code"] = code.startswith("UNMATCHED:")
+        row["duplicate"] = exists or key in seen or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", trade_date)
         row["candidates"] = [{"code": c["code"], "name": c["name"]} for c in candidates]
         seen.add(key)
         result.append(row)

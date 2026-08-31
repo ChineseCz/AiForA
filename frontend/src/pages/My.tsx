@@ -461,7 +461,11 @@ function ReviewTab({ isPaper = false }: { isPaper?: boolean }) {
     screenshotFiles.forEach((file) => fd.append("files", file));
     setScreenshotLoading(true);
     try {
-      const res = await api.post<{ items: any[]; new_count: number }>("/api/trades/screenshot/preview", fd, { params: { is_paper: isPaper || undefined } });
+      const res = await api.post<{ items: any[]; new_count: number }>("/api/trades/screenshot/preview", fd, {
+        params: { is_paper: isPaper || undefined },
+        // Vision relay requests can take tens of seconds; keep the normal API timeout unchanged.
+        timeout: 180_000,
+      });
       setScreenshotItems(res.data.items ?? []);
       setScreenshotOpen(true);
     } catch (e) { message.error(errMsg(e, "截图识别失败")); }
@@ -771,7 +775,7 @@ function ReviewTab({ isPaper = false }: { isPaper?: boolean }) {
         confirmLoading={screenshotConfirming}
         okText="确认导入"
       >
-        <Typography.Paragraph type="secondary">日期为空的当日成交默认按今天处理；重复记录会自动跳过。没有匹配到代码的记录不能导入。</Typography.Paragraph>
+        <Typography.Paragraph type="secondary">日期为空的当日成交默认按今天处理；重复记录会自动跳过。没有匹配到代码的记录也可以导入，后续可在复盘记录中补充代码。</Typography.Paragraph>
         <Table
           size="small"
           rowKey={(_, index) => `${index}`}
@@ -780,11 +784,11 @@ function ReviewTab({ isPaper = false }: { isPaper?: boolean }) {
           scroll={{ x: 760, y: 360 }}
           rowClassName={(row) => row.duplicate ? "screenshot-duplicate-row" : ""}
           columns={[
-            { title: "状态", width: 80, render: (_: unknown, row: any) => row.duplicate ? <Tag color="default">跳过</Tag> : row.code ? <Tag color="green">新增</Tag> : <Tag color="red">待匹配</Tag> },
+            { title: "状态", width: 100, render: (_: unknown, row: any) => row.duplicate ? <Tag color="default">跳过</Tag> : row.unmatched_code ? <Tag color="orange">未匹配可导入</Tag> : <Tag color="green">新增</Tag> },
             { title: "日期", dataIndex: "trade_date", width: 105 },
             { title: "时间", dataIndex: "trade_time", width: 90 },
             { title: "名称", dataIndex: "stock_name", width: 130 },
-            { title: "代码", width: 150, render: (_: unknown, row: any, index: number) => row.code ? row.code : <Select size="small" placeholder="选择代码" style={{ width: 140 }} options={(row.candidates ?? []).map((c: any) => ({ value: c.code, label: `${c.name} ${c.code}` }))} onChange={(value) => setScreenshotItems((items) => items.map((item, i) => i === index ? { ...item, code: value, duplicate: false } : item))} /> },
+            { title: "代码", width: 150, render: (_: unknown, row: any, index: number) => row.unmatched_code ? <span style={{ color: "#d48806" }}>未找到（可导入）</span> : row.code ? row.code : <Select size="small" placeholder="选择代码" style={{ width: 140 }} options={(row.candidates ?? []).map((c: any) => ({ value: c.code, label: `${c.name} ${c.code}` }))} onChange={(value) => setScreenshotItems((items) => items.map((item, i) => i === index ? { ...item, code: value, unmatched_code: false, duplicate: false } : item))} /> },
             { title: "方向", width: 70, render: (_: unknown, row: any) => row.direction === "buy" ? "买入" : "卖出" },
             { title: "价格", dataIndex: "price", width: 80 },
             { title: "数量", dataIndex: "quantity", width: 80 },
