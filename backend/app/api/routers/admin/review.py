@@ -31,3 +31,13 @@ async def extract_opinions(request: Request, session: AsyncSession = Depends(db_
         opinions.mark_pending(post_id)
         task_extract_opinions.delay(post_id)
     return {"started": True, "count": len(post_ids)}
+
+
+@router.patch("/claim/{claim_id}")
+async def update_opinion_claim(claim_id: int, request: Request):
+    body = await request.json()
+    code = body.get("code") if isinstance(body, dict) else None
+    name = body.get("name") if isinstance(body, dict) else None
+    if code is not None and (not isinstance(code, str) or (code and not code.isdigit())):
+        return {"updated": False, "error": "股票代码必须是数字"}
+    return {"updated": opinions.update_claim(claim_id, code=code, name=name)}

@@ -464,6 +464,18 @@ function BigvReviewPanel() {
         pagination={{ pageSize: 10, hideOnSinglePage: true }}
         scroll={{ x: 900 }}
         dataSource={items}
+        expandable={{
+          expandedRowRender: (record: Record<string, any>) => (
+            <Space direction="vertical" size={4} style={{ width: "100%" }}>
+              {record.claims?.length ? record.claims.map((claim: Record<string, any>) => (
+                <Typography.Text key={claim.id} type="secondary">
+                  {claim.name || "未命名标的"} · {claim.direction} · 置信度 {claim.confidence ?? "-"} · {claim.claim || "无观点摘要"}
+                  {claim.evidence ? `；证据：${claim.evidence}` : ""}
+                </Typography.Text>
+              )) : <Typography.Text type="secondary">尚未完成结构化观点提取，请点击“补提取观点”。</Typography.Text>}
+            </Space>
+          ),
+        }}
         columns={[
           { title: "日期", dataIndex: "date", width: 100 },
           { title: "大 V", dataIndex: "user_name", width: 120 },

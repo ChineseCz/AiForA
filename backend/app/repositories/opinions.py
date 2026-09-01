@@ -62,3 +62,23 @@ def get_claims(post_ids: list[str]) -> dict[str, list[dict]]:
     for row in rows:
         result.setdefault(row["post_id"], []).append(dict(row))
     return result
+
+
+def update_claim(claim_id: int, code: str | None = None, name: str | None = None) -> bool:
+    values = {"id": claim_id}
+    assignments = []
+    if code is not None:
+        assignments.append("code = :code")
+        values["code"] = code.strip() or None
+    if name is not None:
+        assignments.append("name = :name")
+        values["name"] = name.strip() or None
+    if not assignments:
+        return False
+    assignments.append("updated_at = :updated_at")
+    values["updated_at"] = int(time.time())
+    with sync_session() as session:
+        result = session.execute(text(
+            f"UPDATE opinion_claims SET {', '.join(assignments)} WHERE id = :id"
+        ), values)
+    return result.rowcount > 0
