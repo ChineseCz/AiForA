@@ -50,21 +50,39 @@ export default function BigvReviewPanel() {
       <Table size="small" loading={loading} rowKey="id" pagination={{ pageSize: 10, hideOnSinglePage: true }} scroll={{ x: 900 }}
         dataSource={items}
         expandable={{ expandedRowRender: (record) => <Space direction="vertical" size={4} style={{ width: "100%" }}>
+          {record.targets?.length ? record.targets.map((target: Record<string, any>) => <TargetPerformance key={target.code} target={target} />) : null}
           {record.claims?.length ? record.claims.map((claim: Record<string, any>) => <OpinionClaimEditor key={claim.id} claim={claim} onSaved={load} editable={isAdmin} />)
             : <Typography.Text type="secondary">尚未完成观点提取，请点击“补提取观点”。</Typography.Text>}
         </Space> }}
         columns={[
           { title: "日期", dataIndex: "date", width: 100 },
           { title: "大V", dataIndex: "user_name", width: 120 },
-          { title: "文章", dataIndex: "title", ellipsis: true },
+          { title: "文章", width: 260, ellipsis: true, render: (_: unknown, r: Record<string, any>) => r.title || r.text?.split(/\r?\n/)[0]?.slice(0, 80) || "无标题文章" },
           { title: "方向", dataIndex: "direction", width: 80, render: (v: string) => <Tag color={v === "看多" ? "red" : v === "看空" ? "green" : "default"}>{v}</Tag> },
-          { title: "标的", width: 180, render: (_: unknown, r: Record<string, any>) => r.targets?.map((t: Record<string, string>) => `${t.name}(${t.code})`).join("、") || "未识别" },
+          { title: "标的", width: 240, render: (_: unknown, r: Record<string, any>) => r.targets?.map((t: Record<string, any>) => `${t.name}(${t.code})[${(t.available_windows || []).join("/") || "待验证"}]`).join("、") || "未识别" },
           { title: "验证", dataIndex: "verdict", width: 90 },
-          { title: "复盘", width: 90, render: (_: unknown, r: Record<string, any>) => r.targets?.[0]?.performance?.["5"] != null ? `5日 ${r.targets[0].performance["5"]}%` : "暂无数据" },
+          { title: "复盘", width: 150, render: (_: unknown, r: Record<string, any>) => {
+            const values = (r.targets || []).map((t: Record<string, any>) => t.performance?.["5"]).filter((v: unknown): v is number => typeof v === "number");
+            return values.length ? `5日均值 ${(values.reduce((a: number, b: number) => a + b, 0) / values.length).toFixed(2)}%（${values.length}/${r.targets.length}）` : "5日尚无数据";
+          } },
         ]}
       />
     </Card>
   );
+}
+
+function TargetPerformance({ target }: { target: Record<string, any> }) {
+  return <Card size="small" type="inner" title={`${target.name} (${target.code})`} styles={{ body: { padding: "6px 10px" } }}>
+    <Space wrap size={[12, 4]}>
+      {[1, 3, 5, 10, 20].map((window) => {
+        const value = target.performance?.[String(window)];
+        const excess = target.excess?.[String(window)];
+        return <Typography.Text key={window} type={value == null ? "secondary" : undefined}>
+          {window}日：{value == null ? "未到期" : `${value}%（超额 ${excess ?? "-"}%）`}
+        </Typography.Text>;
+      })}
+    </Space>
+  </Card>;
 }
 
 function OpinionClaimEditor({ claim, onSaved, editable }: { claim: Record<string, any>; onSaved: () => void; editable: boolean }) {

@@ -125,17 +125,32 @@ async def review_posts(
                     if performance[str(window)] is not None and _pct(benchmark_first, bench_price) is not None
                     else None
                 )
-            item = {"code": target["code"], "name": target["name"], "performance": performance, "excess": excess}
+            item = {
+                "code": target["code"], "name": target["name"],
+                "performance": performance, "excess": excess,
+                "available_windows": [str(window) for window in WINDOWS if performance[str(window)] is not None],
+                "quote_count": len(quotes),
+            }
             if target.get("claim"):
                 item["claim"] = target["claim"]
             items.append(item)
+        available_windows = sorted({
+            window for target in items for window in target.get("available_windows", [])
+        }, key=int)
+        if not items:
+            verdict = "待验证"
+        elif len(available_windows) < len(WINDOWS):
+            verdict = "部分可验证"
+        else:
+            verdict = "可验证"
         results.append({
             "id": post["id"], "user_id": post["user_id"], "user_name": post["user_name"],
             "date": post["date"], "title": post["title"], "url": post["url"],
             "direction": direction, "targets": items,
             "claims": stored_claims,
             "extraction_status": stored_claims[0]["status"] if stored_claims else "missing",
-            "verdict": "可验证" if items else "无法验证",
+            "verdict": verdict,
+            "available_windows": available_windows,
         })
     summary = _summary(results)
     return {"total": len(results), "items": results, "windows": WINDOWS, "summary": summary}
