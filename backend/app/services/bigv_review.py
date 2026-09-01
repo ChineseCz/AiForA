@@ -100,6 +100,8 @@ async def review_posts(
     claims_by_post = opinions.get_claims([str(row["id"]) for row in rows])
     snapshots_by_post = opinions.get_review_snapshots([str(row["id"]) for row in rows])
     results = []
+    pending = []
+    required_codes = set()
     for post in rows:
         post_id = str(post["id"])
         stored_claims = claims_by_post.get(post_id, [])
@@ -133,22 +135,49 @@ async def review_posts(
                 if alias in content:
                     names.update({item["code"]: item for item in alias_items})
             direction = _direction(content)
+        required_codes.update(names)
+        pending.append((post, stored_claims, ready_claims, names, direction))
+
+    # A review only needs bars after the earliest article date. Avoid loading
+    # the complete history for every matched code into API memory.
+    min_post_date = min((post["date"] for post, *_ in pending), default="")
+    if required_codes and min_post_date:
+        code_params = {f"c{i}": code for i, code in enumerate(sorted(required_codes))}
+        code_placeholders = ", ".join(f":c{i}" for i in range(len(code_params)))
+        code_params["min_post_date"] = min_post_date
+        quote_rows = (await session.execute(text(f"""
+            SELECT code, trade_date, close
+            FROM stock_daily
+            WHERE code IN ({code_placeholders}) AND trade_date > :min_post_date
+            ORDER BY code, trade_date
+        """), code_params)).mappings().all()
+    else:
+        quote_rows = []
+    quotes_by_code = {}
+    for row in quote_rows:
+        quotes_by_code.setdefault(str(row["code"]), []).append(row)
+    benchmark_rows = (await session.execute(text("""
+        SELECT trade_date, close FROM index_daily
+        WHERE code = 'sh000300' AND trade_date > :min_post_date
+        ORDER BY trade_date
+    """), {"min_post_date": min_post_date})).mappings().all()
+    benchmark_by_date = {}
+    benchmark_dates = [row["trade_date"] for row in benchmark_rows]
+    for post, *_ in pending:
+        start_index = next((index for index, date in enumerate(benchmark_dates) if date > post["date"]), len(benchmark_rows))
+        future = benchmark_rows[start_index:start_index + 121]
+        benchmark_by_date[post["date"]] = future
+
+    pending_snapshots = []
+    for post, stored_claims, ready_claims, names, direction in pending:
         items = []
         for target in names.values():
-            quotes = (await session.execute(text("""
-                SELECT trade_date, close FROM stock_daily
-                WHERE code = :code AND trade_date > :post_date
-                ORDER BY trade_date LIMIT 121
-            """), {"code": target["code"], "post_date": post["date"]})).mappings().all()
+            quotes = [row for row in quotes_by_code.get(target["code"], []) if row["trade_date"] > post["date"]][:121]
             if not quotes:
                 items.append({"code": target["code"], "name": target["name"], "performance": {}, "excess": {},
                               "available_windows": [], "quote_count": 0, "data_status": "no_future_quotes"})
                 continue
-            baseline = (await session.execute(text("""
-                SELECT trade_date, close FROM index_daily
-                WHERE code = 'sh000300' AND trade_date > :post_date
-                ORDER BY trade_date LIMIT 121
-            """), {"post_date": post["date"]})).mappings().all()
+            baseline = benchmark_by_date.get(post["date"], [])
             first = quotes[0]["close"]
             benchmark_first = baseline[0]["close"] if baseline else None
             performance = {}
@@ -197,14 +226,14 @@ async def review_posts(
         }
         results.append(result)
         finalized = bool(
-            ready_claims and items
-            and all(len(target.get("available_windows", [])) == len(WINDOWS) for target in items)
+            items and all(len(target.get("available_windows", [])) == len(WINDOWS) for target in items)
         )
-        opinions.save_review_snapshot(
-            post_id,
+        pending_snapshots.append((
+            str(post["id"]),
             {"version": 1, "claims_signature": _claims_signature(stored_claims), "result": result},
             finalized,
-        )
+        ))
+    opinions.save_review_snapshots(pending_snapshots)
     article_total = len(results)
     has_more = bool(limit_value and article_total >= limit_value)
     if group_by_day:

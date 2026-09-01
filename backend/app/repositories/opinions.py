@@ -131,6 +131,27 @@ def save_review_snapshot(post_id: str, payload: dict, finalized: bool) -> None:
             "finalized": finalized, "updated_at": int(time.time())})
 
 
+def save_review_snapshots(items: list[tuple[str, dict, bool]]) -> None:
+    if not items:
+        return
+    now = int(time.time())
+    with sync_session() as session:
+        session.execute(text(
+            "INSERT INTO bigv_review_snapshots (post_id, payload, finalized, updated_at) "
+            "VALUES (:post_id, :payload, :finalized, :updated_at) "
+            "ON CONFLICT (post_id) DO UPDATE SET payload=EXCLUDED.payload, "
+            "finalized=EXCLUDED.finalized, updated_at=EXCLUDED.updated_at"
+        ), [
+            {
+                "post_id": post_id,
+                "payload": json.dumps(payload, ensure_ascii=False),
+                "finalized": finalized,
+                "updated_at": now,
+            }
+            for post_id, payload, finalized in items
+        ])
+
+
 def delete_review_snapshot(post_id: str) -> None:
     with sync_session() as session:
         session.execute(text("DELETE FROM bigv_review_snapshots WHERE post_id = :post_id"), {"post_id": post_id})
