@@ -1,3 +1,5 @@
+import re
+
 from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -38,6 +40,6 @@ async def update_opinion_claim(claim_id: int, request: Request):
     body = await request.json()
     code = body.get("code") if isinstance(body, dict) else None
     name = body.get("name") if isinstance(body, dict) else None
-    if code is not None and (not isinstance(code, str) or (code and not code.isdigit())):
-        return {"updated": False, "error": "股票代码必须是数字"}
+    if code is not None and (not isinstance(code, str) or (code and not re.fullmatch(r"\d{6}", code.strip()))):
+        return {"updated": False, "error": "股票代码必须是 6 位数字"}
     return {"updated": opinions.update_claim(claim_id, code=code, name=name)}

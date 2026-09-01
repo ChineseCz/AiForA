@@ -1,5 +1,5 @@
 import {
-  Button, Card, Checkbox, Col, DatePicker, Form, Input, InputNumber,
+  AutoComplete, Button, Card, Checkbox, Col, DatePicker, Form, Input, InputNumber,
   Collapse, Row, Select, Space, Statistic, Switch, Table, Tag, Typography, Upload, message,
 } from "antd";
 import dayjs, { type Dayjs } from "dayjs";
@@ -487,10 +487,7 @@ function BigvReviewPanel() {
           expandedRowRender: (record: Record<string, any>) => (
             <Space direction="vertical" size={4} style={{ width: "100%" }}>
               {record.claims?.length ? record.claims.map((claim: Record<string, any>) => (
-                <Typography.Text key={claim.id} type="secondary">
-                  {claim.name || "未命名标的"} · {claim.direction} · 置信度 {claim.confidence ?? "-"} · {claim.claim || "无观点摘要"}
-                  {claim.evidence ? `；证据：${claim.evidence}` : ""}
-                </Typography.Text>
+                <OpinionClaimEditor key={claim.id} claim={claim} onSaved={load} />
               )) : <Typography.Text type="secondary">尚未完成结构化观点提取，请点击“补提取观点”。</Typography.Text>}
             </Space>
           ),
@@ -506,6 +503,77 @@ function BigvReviewPanel() {
         ]}
       />
     </Card>
+  );
+}
+
+function OpinionClaimEditor({ claim, onSaved }: { claim: Record<string, any>; onSaved: () => void }) {
+  const [code, setCode] = useState(String(claim.code || ""));
+  const [name, setName] = useState(String(claim.name || ""));
+  const [options, setOptions] = useState<Array<{ value: string; label: string; code: string }>>([]);
+  const [searching, setSearching] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const searchStocks = (value: string) => {
+    const query = value.trim();
+    setName(value);
+    if (query.length < 2) {
+      setOptions([]);
+      return;
+    }
+    setSearching(true);
+    api.get("/api/stock/search", { params: { q: query, limit: 20 } })
+      .then((r) => setOptions((r.data?.items || []).map((item: { code: string; name: string }) => ({
+        value: item.name,
+        label: `${item.name} (${item.code})`,
+        code: item.code,
+      }))))
+      .catch(() => setOptions([]))
+      .finally(() => setSearching(false));
+  };
+
+  useEffect(() => {
+    if (name.trim().length >= 2) searchStocks(name);
+    // Only load suggestions when the claim already has a usable name.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const save = () => {
+    const normalizedCode = code.trim();
+    if (normalizedCode && !/^\d{6}$/.test(normalizedCode)) {
+      message.error("股票代码必须是 6 位数字");
+      return;
+    }
+    setSaving(true);
+    api.patch(`/api/bigv-review/claim/${claim.id}`, { code: normalizedCode, name: name.trim() })
+      .then((r) => { if (r.data?.updated) { message.success("观点标的已更新"); onSaved(); } else message.error(r.data?.error || "更新失败"); })
+      .catch((e) => message.error(errMsg(e)))
+      .finally(() => setSaving(false));
+  };
+  return (
+    <Space direction="vertical" size={4} style={{ width: "100%" }}>
+      <Typography.Text type="secondary">
+        {claim.direction} · 置信度 {claim.confidence ?? "-"} · {claim.claim || "无观点摘要"}
+        {claim.evidence ? `；证据：${claim.evidence}` : ""}
+      </Typography.Text>
+      <Space.Compact>
+        <AutoComplete
+          size="small"
+          value={name}
+          options={options}
+          onSearch={searchStocks}
+          onSelect={(value, option) => {
+            setName(value);
+            setCode(String(option.code || ""));
+          }}
+          notFoundContent={searching ? "搜索中..." : "暂无匹配股票"}
+          style={{ minWidth: 220 }}
+        >
+          <Input placeholder="输入股票名称/代码" />
+        </AutoComplete>
+        <Input size="small" value={code} onChange={(e) => setCode(e.target.value)} placeholder="6位代码" maxLength={6} />
+        <Button size="small" loading={saving} onClick={save}>确认映射</Button>
+      </Space.Compact>
+    </Space>
   );
 }
 void dayjs;
