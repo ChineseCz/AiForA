@@ -46,13 +46,15 @@ export default function BigvReviewPanel() {
       {summary ? <Row gutter={[8, 8]} style={{ marginBottom: 10 }}>
         <Col xs={12} sm={6}><Statistic title={groupByDay ? "日期数" : "文章数"} value={summary.posts ?? 0} /><Typography.Text type="secondary">文章 {summary.article_total ?? summary.posts ?? 0}</Typography.Text></Col>
         <Col xs={12} sm={6}><Statistic title="可验证率" value={summary.verification_rate ?? "-"} suffix="%" /></Col>
+        <Col xs={12} sm={6}><Statistic title="1日平均收益" value={summary.windows?.["1"]?.average_return ?? "-"} suffix="%" /></Col>
         <Col xs={12} sm={6}><Statistic title="5日平均收益" value={summary.windows?.["5"]?.average_return ?? "-"} suffix="%" /></Col>
-        <Col xs={12} sm={6}><Statistic title="5日平均超额" value={summary.windows?.["5"]?.average_excess ?? "-"} suffix="%" /></Col>
+        <Col xs={12} sm={6}><Statistic title="20日平均收益" value={summary.windows?.["20"]?.average_return ?? "-"} suffix="%" /></Col>
+        <Col xs={12} sm={6}><Statistic title="60日平均收益" value={summary.windows?.["60"]?.average_return ?? "-"} suffix="%" /></Col>
       </Row> : null}
       <Table size="small" loading={loading} rowKey="id" pagination={{ pageSize: 10, hideOnSinglePage: true }} scroll={{ x: 900 }}
         dataSource={items}
         expandable={{ expandedRowRender: (record) => <Space direction="vertical" size={4} style={{ width: "100%" }}>
-          {record.targets?.length ? record.targets.map((target: Record<string, any>) => <TargetPerformance key={target.code} target={target} />) : null}
+          {record.targets?.length ? <TargetPerformanceTable targets={record.targets} /> : null}
           {record.claims?.length ? record.claims.map((claim: Record<string, any>) => <OpinionClaimEditor key={claim.id} claim={claim} onSaved={load} editable={isAdmin} />)
             : <Typography.Text type="secondary">尚未完成观点提取，请点击“补提取观点”。</Typography.Text>}
         </Space> }}
@@ -61,30 +63,57 @@ export default function BigvReviewPanel() {
           { title: "大V", dataIndex: "user_name", width: 120 },
           { title: "文章", width: 300, ellipsis: true, render: (_: unknown, r: Record<string, any>) => r.title || r.source_title || r.text?.split(/\r?\n/)[0]?.slice(0, 80) || "无标题文章" },
           { title: "方向", dataIndex: "direction", width: 80, render: (v: string) => <Tag color={v === "看多" ? "red" : v === "看空" ? "green" : "default"}>{v}</Tag> },
-          { title: "标的", width: 280, render: (_: unknown, r: Record<string, any>) => r.targets?.map((t: Record<string, any>) => <Typography.Text key={t.code} style={{ color: t.direction === "看多" ? "#f5222d" : t.direction === "看空" ? "#52c41a" : undefined, marginRight: 8 }}>{t.name}({t.code})[{t.quote_count === 0 ? "暂无行情" : (t.available_windows || []).join("/") || "待验证"}]</Typography.Text>) || "未识别" },
+          { title: "标的", width: 280, render: (_: unknown, r: Record<string, any>) => r.targets?.map((t: Record<string, any>) => <Typography.Text key={t.code} style={{ color: targetColor(t.direction), marginRight: 8 }}>{t.name}({t.code})</Typography.Text>) || "未识别" },
           { title: "验证", dataIndex: "verdict", width: 90 },
-          { title: "复盘", width: 220, render: (_: unknown, r: Record<string, any>) => r.targets?.length
-            ? r.targets.map((t: Record<string, any>) => <div key={t.code} style={{ color: t.direction === "看多" ? "#f5222d" : t.direction === "看空" ? "#52c41a" : undefined }}>{t.name}：5日 {t.performance?.["5"] == null ? "未到期" : `${t.performance["5"]}%`}</div>)
-            : "没有可复盘标的" },
+          { title: "短线 1/3/5日", width: 220, render: (_: unknown, r: Record<string, any>) => <TargetHorizonList targets={r.targets} windows={["1", "3", "5"]} /> },
+          { title: "中线 7/10/20日", width: 230, render: (_: unknown, r: Record<string, any>) => <TargetHorizonList targets={r.targets} windows={["7", "10", "20"]} /> },
+          { title: "长线 60/120日", width: 220, render: (_: unknown, r: Record<string, any>) => <TargetHorizonList targets={r.targets} windows={["60", "120"]} /> },
         ]}
       />
     </Card>
   );
 }
 
-function TargetPerformance({ target }: { target: Record<string, any> }) {
-  const color = target.direction === "看多" ? "#f5222d" : target.direction === "看空" ? "#52c41a" : undefined;
-  return <Card size="small" type="inner" title={<span style={{ color }}>{target.name} ({target.code}) · {target.direction || "未定向"}</span>} styles={{ body: { padding: "6px 10px" } }}>
-    <Space wrap size={[12, 4]}>
-      {[1, 3, 5, 10, 20].map((window) => {
-        const value = target.performance?.[String(window)];
-        const excess = target.excess?.[String(window)];
-        return <Typography.Text key={window} type={value == null ? "secondary" : undefined} style={{ color: value == null ? undefined : color }}>
-          {window}日：{target.quote_count === 0 ? "暂无后续行情" : value == null ? "未到期" : `${value}%（超额 ${excess ?? "-"}%）`}
+function targetColor(direction?: string) {
+  return direction === "看多" ? "#f5222d" : direction === "看空" ? "#52c41a" : undefined;
+}
+
+function TargetHorizonList({ targets, windows }: { targets?: Array<Record<string, any>>; windows: string[] }) {
+  if (!targets?.length) return <Typography.Text type="secondary">-</Typography.Text>;
+  return <Space direction="vertical" size={2}>
+    {targets.map((target) => <div key={target.code} style={{ color: targetColor(target.direction) }}>
+      <Typography.Text strong style={{ color: targetColor(target.direction) }}>{target.name}</Typography.Text>
+      <Typography.Text type="secondary">：{windows.map((window) => {
+        const value = target.performance?.[window];
+        return `${window}日 ${target.quote_count === 0 ? "暂无" : value == null ? "未到期" : `${value}%`}`;
+      }).join(" / ")}</Typography.Text>
+    </div>)}
+  </Space>;
+}
+
+function TargetPerformanceTable({ targets }: { targets: Array<Record<string, any>> }) {
+  return <Table
+    size="small"
+    pagination={false}
+    rowKey="code"
+    dataSource={targets}
+    scroll={{ x: 700 }}
+    columns={[{
+      title: "标的 / 方向",
+      width: 150,
+      render: (_: unknown, target: Record<string, any>) => <Typography.Text style={{ color: targetColor(target.direction) }}>{target.name} ({target.code}) · {target.direction || "未定向"}</Typography.Text>,
+    }, ...["1", "3", "5", "7", "10", "20", "60", "120"].map((window) => ({
+      title: `${window}日`,
+      width: 130,
+      render: (_: unknown, target: Record<string, any>) => {
+        const value = target.performance?.[window];
+        const excess = target.excess?.[window];
+        return <Typography.Text style={{ color: value == null ? undefined : targetColor(target.direction) }}>
+          {target.quote_count === 0 ? "暂无行情" : value == null ? "未到期" : <>{value}% <Typography.Text type="secondary">(超额 {excess ?? "-"}%)</Typography.Text></>}
         </Typography.Text>;
-      })}
-    </Space>
-  </Card>;
+      },
+    }))]}
+  />;
 }
 
 function OpinionClaimEditor({ claim, onSaved, editable }: { claim: Record<string, any>; onSaved: () => void; editable: boolean }) {

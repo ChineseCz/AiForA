@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.repositories import opinions
 
 
-WINDOWS = (1, 3, 5, 10, 20)
+WINDOWS = (1, 3, 5, 7, 10, 20, 60, 120)
 CODE_RE = re.compile(r"(?<!\d)(\d{6})(?!\d)")
 POSITIVE = ("看多", "上涨", "启动", "突破", "机会", "买入", "加仓", "利好", "龙头")
 NEGATIVE = ("看空", "下跌", "回落", "风险", "卖出", "减仓", "利空", "见顶")
@@ -106,7 +106,7 @@ async def review_posts(
             quotes = (await session.execute(text("""
                 SELECT trade_date, close FROM stock_daily
                 WHERE code = :code AND trade_date > :post_date
-                ORDER BY trade_date LIMIT 21
+                ORDER BY trade_date LIMIT 121
             """), {"code": target["code"], "post_date": post["date"]})).mappings().all()
             if not quotes:
                 items.append({"code": target["code"], "name": target["name"], "performance": {}, "excess": {},
@@ -115,7 +115,7 @@ async def review_posts(
             baseline = (await session.execute(text("""
                 SELECT trade_date, close FROM index_daily
                 WHERE code = 'sh000300' AND trade_date > :post_date
-                ORDER BY trade_date LIMIT 21
+                ORDER BY trade_date LIMIT 121
             """), {"post_date": post["date"]})).mappings().all()
             first = quotes[0]["close"]
             benchmark_first = baseline[0]["close"] if baseline else None
