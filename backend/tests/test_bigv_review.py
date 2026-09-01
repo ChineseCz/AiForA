@@ -1,4 +1,4 @@
-from app.services.bigv_review import _direction, _pct, _summary
+from app.services.bigv_review import _claims_signature, _direction, _pct, _summary
 
 
 def test_direction_uses_more_specific_signal_count():
@@ -13,6 +13,13 @@ def test_pct_handles_normal_and_invalid_values():
     assert _pct(100, 95) == -5.0
     assert _pct(0, 100) is None
     assert _pct(None, 100) is None
+
+
+def test_claims_signature_is_stable_and_changes_with_mapping():
+    claim = {"id": 1, "code": "600000", "name": "浦发银行", "direction": "看多", "status": "ready", "ignored": False}
+    assert _claims_signature([claim]) == _claims_signature([dict(claim)])
+    changed = {**claim, "code": "000001"}
+    assert _claims_signature([claim]) != _claims_signature([changed])
 
 
 def test_summary_ignores_missing_windows_and_aggregates_excess():
