@@ -1,4 +1,6 @@
 """Evaluate stock mentions in public-account articles against later market data."""
+import hashlib
+import json
 import re
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -27,6 +29,21 @@ def _pct(start: float | None, end: float | None) -> float | None:
     if start is None or end is None or start == 0:
         return None
     return round((end / start - 1) * 100, 2)
+
+
+def _claims_signature(claims: list[dict]) -> str:
+    """Identify the extracted and mapped opinion state used by a snapshot."""
+    relevant = [
+        {
+            "id": claim.get("id"), "code": claim.get("code"), "name": claim.get("name"),
+            "direction": claim.get("direction"), "claim": claim.get("claim"),
+            "evidence": claim.get("evidence"), "confidence": claim.get("confidence"),
+            "status": claim.get("status"), "ignored": claim.get("ignored"),
+        }
+        for claim in claims
+    ]
+    encoded = json.dumps(relevant, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
 async def _instrument_aliases(session: AsyncSession) -> dict[str, list[dict[str, str]]]:
@@ -81,10 +98,21 @@ async def review_posts(
     alias_map = await _instrument_aliases(session)
     by_code = {item["code"]: item for items in alias_map.values() for item in items}
     claims_by_post = opinions.get_claims([str(row["id"]) for row in rows])
+    snapshots_by_post = opinions.get_review_snapshots([str(row["id"]) for row in rows])
     results = []
     for post in rows:
+        post_id = str(post["id"])
+        stored_claims = claims_by_post.get(post_id, [])
+        snapshot = snapshots_by_post.get(post_id)
+        if (
+            snapshot and snapshot.get("finalized")
+            and snapshot["payload"].get("version") == 1
+            and snapshot["payload"].get("claims_signature") == _claims_signature(stored_claims)
+            and isinstance(snapshot["payload"].get("result"), dict)
+        ):
+            results.append(snapshot["payload"]["result"])
+            continue
         content = f"{post['title'] or ''}\n{post['text'] or ''}"
-        stored_claims = claims_by_post.get(str(post["id"]), [])
         ready_claims = [claim for claim in stored_claims if claim.get("status") == "ready" and not claim.get("ignored")]
         names = {}
         if ready_claims:
@@ -155,7 +183,7 @@ async def review_posts(
             verdict = "部分可验证"
         else:
             verdict = "可验证"
-        results.append({
+        result = {
             "id": post["id"], "user_id": post["user_id"], "user_name": post["user_name"],
             "date": post["date"], "title": summary_titles.get((str(post["user_id"] or ""), str(post["date"] or ""))) or post["title"], "url": post["url"],
             "text": post["text"],
@@ -166,7 +194,17 @@ async def review_posts(
             "extraction_status": stored_claims[0]["status"] if stored_claims else "missing",
             "verdict": verdict,
             "available_windows": available_windows,
-        })
+        }
+        results.append(result)
+        finalized = bool(
+            ready_claims and items
+            and all(len(target.get("available_windows", [])) == len(WINDOWS) for target in items)
+        )
+        opinions.save_review_snapshot(
+            post_id,
+            {"version": 1, "claims_signature": _claims_signature(stored_claims), "result": result},
+            finalized,
+        )
     article_total = len(results)
     has_more = bool(limit_value and article_total >= limit_value)
     if group_by_day:
