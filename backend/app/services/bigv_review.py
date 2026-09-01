@@ -78,7 +78,7 @@ async def review_posts(
     for post in rows:
         content = f"{post['title'] or ''}\n{post['text'] or ''}"
         stored_claims = claims_by_post.get(str(post["id"]), [])
-        ready_claims = [claim for claim in stored_claims if claim.get("status") == "ready"]
+        ready_claims = [claim for claim in stored_claims if claim.get("status") == "ready" and not claim.get("ignored")]
         names = {}
         if ready_claims:
             for claim in ready_claims:
@@ -137,4 +137,59 @@ async def review_posts(
             "extraction_status": stored_claims[0]["status"] if stored_claims else "missing",
             "verdict": "可验证" if items else "无法验证",
         })
-    return {"total": len(results), "items": results, "windows": WINDOWS}
+    summary = _summary(results)
+    return {"total": len(results), "items": results, "windows": WINDOWS, "summary": summary}
+
+
+def _summary(results: list[dict]) -> dict:
+    """Aggregate only observations with actual prices; missing data is not a zero return."""
+    observations = {str(window): [] for window in WINDOWS}
+    excess_observations = {str(window): [] for window in WINDOWS}
+    direction_counts: dict[str, int] = {}
+    by_user: dict[str, dict] = {}
+    verified = 0
+    claim_count = 0
+    target_count = 0
+    for item in results:
+        direction = item.get("direction") or "未定"
+        direction_counts[direction] = direction_counts.get(direction, 0) + 1
+        claim_count += sum(1 for claim in item.get("claims", []) if claim.get("status") == "ready" and not claim.get("ignored"))
+        targets = item.get("targets") or []
+        target_count += len(targets)
+        if targets:
+            verified += 1
+        user_key = str(item.get("user_id") or "")
+        user_stat = by_user.setdefault(user_key, {"user_id": item.get("user_id"), "user_name": item.get("user_name"), "posts": 0, "verified": 0, "targets": 0})
+        user_stat["posts"] += 1
+        user_stat["verified"] += bool(targets)
+        user_stat["targets"] += len(targets)
+        for target in targets:
+            for window in WINDOWS:
+                key = str(window)
+                value = target.get("performance", {}).get(key)
+                excess = target.get("excess", {}).get(key)
+                if value is not None:
+                    observations[key].append(value)
+                if excess is not None:
+                    excess_observations[key].append(excess)
+    windows = {}
+    for window in WINDOWS:
+        key = str(window)
+        values = observations[key]
+        excess_values = excess_observations[key]
+        windows[key] = {
+            "samples": len(values),
+            "average_return": round(sum(values) / len(values), 2) if values else None,
+            "average_excess": round(sum(excess_values) / len(excess_values), 2) if excess_values else None,
+            "positive_rate": round(sum(value > 0 for value in values) / len(values) * 100, 2) if values else None,
+        }
+    return {
+        "posts": len(results),
+        "verified_posts": verified,
+        "verification_rate": round(verified / len(results) * 100, 2) if results else None,
+        "claims": claim_count,
+        "targets": target_count,
+        "direction_counts": direction_counts,
+        "windows": windows,
+        "by_user": list(by_user.values()),
+    }

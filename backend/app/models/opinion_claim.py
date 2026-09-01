@@ -1,5 +1,5 @@
 """Structured claims extracted from an article for later market review."""
-from sqlalchemy import BigInteger, Double, Index, String, Text
+from sqlalchemy import BigInteger, Boolean, Double, Index, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -17,6 +17,7 @@ class OpinionClaim(Base):
     evidence: Mapped[str | None] = mapped_column(Text)
     confidence: Mapped[float | None] = mapped_column(Double)
     status: Mapped[str] = mapped_column(String, nullable=False, default="ready")
+    ignored: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     error: Mapped[str | None] = mapped_column(Text)
     raw_json: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[int] = mapped_column(BigInteger, nullable=False)

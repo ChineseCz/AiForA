@@ -451,6 +451,7 @@ function BigvReviewPanel() {
   const [end, setEnd] = useState<Dayjs | null>(null);
   const [loading, setLoading] = useState(false);
   const [items, setItems] = useState<Array<Record<string, any>>>([]);
+  const [summary, setSummary] = useState<Record<string, any> | null>(null);
   const load = () => {
     setLoading(true);
     api.get("/api/bigv-review", { params: {
@@ -458,7 +459,10 @@ function BigvReviewPanel() {
       start: start?.format("YYYY-MM-DD") || "",
       end: end?.format("YYYY-MM-DD") || "",
       limit: 200,
-    } }).then((r) => setItems(r.data?.items || []))
+    } }).then((r) => {
+      setItems(r.data?.items || []);
+      setSummary(r.data?.summary || null);
+    })
       .catch((e) => message.error(errMsg(e)))
       .finally(() => setLoading(false));
   };
@@ -476,6 +480,14 @@ function BigvReviewPanel() {
           补提取观点
         </Button>
       </Space>
+      {summary ? (
+        <Row gutter={[8, 8]} style={{ marginBottom: 10 }}>
+          <Col xs={12} sm={6}><Statistic title="文章数" value={summary.posts ?? 0} /></Col>
+          <Col xs={12} sm={6}><Statistic title="可验证率" value={summary.verification_rate ?? "-"} suffix="%" /></Col>
+          <Col xs={12} sm={6}><Statistic title="5日平均收益" value={summary.windows?.["5"]?.average_return ?? "-"} suffix="%" /></Col>
+          <Col xs={12} sm={6}><Statistic title="5日平均超额" value={summary.windows?.["5"]?.average_excess ?? "-"} suffix="%" /></Col>
+        </Row>
+      ) : null}
       <Table
         size="small"
         loading={loading}
@@ -509,6 +521,7 @@ function BigvReviewPanel() {
 function OpinionClaimEditor({ claim, onSaved }: { claim: Record<string, any>; onSaved: () => void }) {
   const [code, setCode] = useState(String(claim.code || ""));
   const [name, setName] = useState(String(claim.name || ""));
+  const [ignored, setIgnored] = useState(Boolean(claim.ignored));
   const [options, setOptions] = useState<Array<{ value: string; label: string; code: string }>>([]);
   const [searching, setSearching] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -549,12 +562,22 @@ function OpinionClaimEditor({ claim, onSaved }: { claim: Record<string, any>; on
       .catch((e) => message.error(errMsg(e)))
       .finally(() => setSaving(false));
   };
+  const toggleIgnored = (value: boolean) => {
+    setIgnored(value);
+    api.patch(`/api/bigv-review/claim/${claim.id}`, { ignored: value })
+      .then((r) => { if (r.data?.updated) onSaved(); else { setIgnored(!value); message.error(r.data?.error || "更新失败"); } })
+      .catch((e) => { setIgnored(!value); message.error(errMsg(e)); });
+  };
   return (
     <Space direction="vertical" size={4} style={{ width: "100%" }}>
       <Typography.Text type="secondary">
         {claim.direction} · 置信度 {claim.confidence ?? "-"} · {claim.claim || "无观点摘要"}
         {claim.evidence ? `；证据：${claim.evidence}` : ""}
       </Typography.Text>
+      <Space size={8}>
+        <Switch size="small" checked={ignored} onChange={toggleIgnored} />
+        <Typography.Text type="secondary">{ignored ? "已忽略，不纳入复盘" : "纳入复盘"}</Typography.Text>
+      </Space>
       <Space.Compact>
         <AutoComplete
           size="small"

@@ -53,7 +53,7 @@ def get_claims(post_ids: list[str]) -> dict[str, list[dict]]:
     placeholders = ", ".join(f":p{i}" for i in range(len(post_ids)))
     with sync_session() as session:
         rows = session.execute(text(f"""
-            SELECT post_id, code, name, direction, claim, evidence, confidence, status, error
+            SELECT id, post_id, code, name, direction, claim, evidence, confidence, status, error, ignored
             FROM opinion_claims
             WHERE post_id IN ({placeholders})
             ORDER BY id
@@ -64,7 +64,12 @@ def get_claims(post_ids: list[str]) -> dict[str, list[dict]]:
     return result
 
 
-def update_claim(claim_id: int, code: str | None = None, name: str | None = None) -> bool:
+def update_claim(
+    claim_id: int,
+    code: str | None = None,
+    name: str | None = None,
+    ignored: bool | None = None,
+) -> bool:
     values = {"id": claim_id}
     assignments = []
     if code is not None:
@@ -73,6 +78,9 @@ def update_claim(claim_id: int, code: str | None = None, name: str | None = None
     if name is not None:
         assignments.append("name = :name")
         values["name"] = name.strip() or None
+    if ignored is not None:
+        assignments.append("ignored = :ignored")
+        values["ignored"] = ignored
     if not assignments:
         return False
     assignments.append("updated_at = :updated_at")

@@ -40,6 +40,9 @@ async def update_opinion_claim(claim_id: int, request: Request):
     body = await request.json()
     code = body.get("code") if isinstance(body, dict) else None
     name = body.get("name") if isinstance(body, dict) else None
+    ignored = body.get("ignored") if isinstance(body, dict) else None
     if code is not None and (not isinstance(code, str) or (code and not re.fullmatch(r"\d{6}", code.strip()))):
         return {"updated": False, "error": "股票代码必须是 6 位数字"}
-    return {"updated": opinions.update_claim(claim_id, code=code, name=name)}
+    if ignored is not None and not isinstance(ignored, bool):
+        return {"updated": False, "error": "ignored 必须是布尔值"}
+    return {"updated": opinions.update_claim(claim_id, code=code, name=name, ignored=ignored)}
