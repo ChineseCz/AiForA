@@ -11,6 +11,7 @@ import { useLocation } from "react-router-dom";
 import { errMsg } from "@/api/client";
 import { useAsk, usePosts, useSummary, useSummaryKeys, useUsers } from "@/api/hooks";
 import MarkdownContent from "@/components/MarkdownContent";
+import BigvReviewPanel from "@/components/BigvReviewPanel";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { usePageContext } from "@/pageContext";
 import type { PostItem } from "@/api/types";
@@ -242,6 +243,7 @@ export default function Feed() {
         items={[
           { key: "posts", label: "帖子流", children: <PostsTab active={activeTab === "posts"} /> },
           { key: "summary", label: "AI 总结", children: <SummaryTab active={activeTab === "summary"} initialUserId={stateUserId} /> },
+          { key: "review", label: "观点复盘", children: <BigvReviewPanel /> },
         ]}
       />
     </Space>

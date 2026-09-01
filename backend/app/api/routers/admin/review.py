@@ -1,21 +1,12 @@
 import re
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.api.deps import db_session
+
 from app.repositories import opinions
-from app.services.bigv_review import review_posts
 
 router = APIRouter(prefix="/api/bigv-review")
-
-
-@router.get("")
-async def bigv_review(
-    user: str = Query(""), start: str = Query(""), end: str = Query(""),
-    limit: int = Query(100, ge=1, le=200), session: AsyncSession = Depends(db_session),
-):
-    return await review_posts(session, user_id=user, start=start, end=end, limit=limit)
 
 
 @router.post("/extract")
@@ -23,7 +14,10 @@ async def extract_opinions(request: Request, session: AsyncSession = Depends(db_
     from app.repositories import posts as posts_repo
     from app.workers.tasks.opinions import task_extract_opinions
 
-    body = await request.json()
+    try:
+        body = await request.json()
+    except ValueError:
+        body = {}
     post_ids = body.get("post_ids") if isinstance(body, dict) else []
     if not isinstance(post_ids, list) or not post_ids:
         rows = await posts_repo.get_posts(session, limit=200, offset=0)

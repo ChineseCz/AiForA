@@ -63,8 +63,8 @@ def create_app() -> FastAPI:
     app.include_router(user_auth.auth_config_router, tags=["user-auth"])
 
     # 公开只读路由（登录/纯匿名开关由 require_visitor_or_anonymous 决定是否需要鉴权）
-    from app.api.routers.public import groups, health, meta, overview, posts, screen, sectors, settings as pub_settings, stocks, summaries, trades, notes, notifications
-    for mod in (meta, overview, posts, summaries, screen, stocks, sectors, groups, trades, notes, pub_settings, notifications):
+    from app.api.routers.public import bigv_review, groups, health, meta, overview, posts, screen, sectors, settings as pub_settings, stocks, summaries, trades, notes, notifications
+    for mod in (meta, overview, posts, summaries, screen, stocks, sectors, groups, trades, notes, pub_settings, notifications, bigv_review):
         app.include_router(mod.router, tags=["public"], dependencies=[Depends(require_visitor_or_anonymous)])
 
     # 健康检查（容器编排探针，始终开放）
