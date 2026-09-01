@@ -72,6 +72,8 @@ async def review_posts(
         ORDER BY created_at DESC LIMIT :limit
     """), params)).mappings().all()
 
+    summary_titles = await _daily_summary_titles(session, rows)
+
     alias_map = await _instrument_aliases(session)
     by_code = {item["code"]: item for items in alias_map.values() for item in items}
     claims_by_post = opinions.get_claims([str(row["id"]) for row in rows])
@@ -130,6 +132,7 @@ async def review_posts(
                 )
             item = {
                 "code": target["code"], "name": target["name"],
+                "direction": (target.get("claim") or {}).get("direction") or direction,
                 "performance": performance, "excess": excess,
                 "available_windows": [str(window) for window in WINDOWS if performance[str(window)] is not None],
                 "quote_count": len(quotes),
@@ -150,8 +153,10 @@ async def review_posts(
             verdict = "可验证"
         results.append({
             "id": post["id"], "user_id": post["user_id"], "user_name": post["user_name"],
-            "date": post["date"], "title": post["title"], "url": post["url"],
+            "date": post["date"], "title": summary_titles.get((str(post["user_id"] or ""), str(post["date"] or ""))) or post["title"], "url": post["url"],
             "text": post["text"],
+            "source_title": post["title"],
+            "summary_title": summary_titles.get((str(post["user_id"] or ""), str(post["date"] or ""))),
             "direction": direction, "targets": items,
             "claims": stored_claims,
             "extraction_status": stored_claims[0]["status"] if stored_claims else "missing",
@@ -164,6 +169,30 @@ async def review_posts(
     summary = _summary(results)
     summary["article_total"] = article_total
     return {"total": len(results), "article_total": article_total, "items": results, "windows": WINDOWS, "summary": summary}
+
+
+async def _daily_summary_titles(session: AsyncSession, rows) -> dict[tuple[str, str], str]:
+    pairs = {(str(row["user_id"] or ""), str(row["date"] or "")) for row in rows if row["user_id"] and row["date"]}
+    if not pairs:
+        return {}
+    clauses = []
+    params = {}
+    for index, (user_id, period_key) in enumerate(pairs):
+        clauses.append(f"(user_id = :su{index} AND period_key = :sd{index})")
+        params[f"su{index}"] = user_id
+        params[f"sd{index}"] = period_key
+    rows = (await session.execute(text(
+        "SELECT user_id, period_key, content FROM summaries "
+        "WHERE period_type = 'daily' AND (" + " OR ".join(clauses) + ")"
+    ), params)).mappings().all()
+    result = {}
+    for row in rows:
+        for line in str(row["content"] or "").splitlines():
+            heading = line.strip()
+            if heading.startswith("## "):
+                result[(str(row["user_id"]), str(row["period_key"]))] = heading[3:].strip()
+                break
+    return result
 
 
 def _merge_daily_results(results: list[dict]) -> list[dict]:
@@ -188,7 +217,7 @@ def _merge_daily_results(results: list[dict]) -> list[dict]:
         current["direction"] = max(set(directions), key=directions.count) if directions else current.get("direction")
     merged = []
     for item in grouped.values():
-        item["title"] = "；".join(item.pop("titles")) or "当日观点"
+        item["title"] = item.get("summary_title") or "；".join(item.pop("titles")) or "当日观点"
         item["text"] = ""
         available = sorted({window for target in item["targets"] for window in target.get("available_windows", [])}, key=int)
         item["available_windows"] = available

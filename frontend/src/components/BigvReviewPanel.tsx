@@ -59,12 +59,12 @@ export default function BigvReviewPanel() {
         columns={[
           { title: "日期", dataIndex: "date", width: 100 },
           { title: "大V", dataIndex: "user_name", width: 120 },
-          { title: "文章", width: 260, ellipsis: true, render: (_: unknown, r: Record<string, any>) => r.title || r.text?.split(/\r?\n/)[0]?.slice(0, 80) || "无标题文章" },
+          { title: "文章", width: 300, ellipsis: true, render: (_: unknown, r: Record<string, any>) => r.title || r.source_title || r.text?.split(/\r?\n/)[0]?.slice(0, 80) || "无标题文章" },
           { title: "方向", dataIndex: "direction", width: 80, render: (v: string) => <Tag color={v === "看多" ? "red" : v === "看空" ? "green" : "default"}>{v}</Tag> },
-          { title: "标的", width: 240, render: (_: unknown, r: Record<string, any>) => r.targets?.map((t: Record<string, any>) => `${t.name}(${t.code})[${t.quote_count === 0 ? "暂无行情" : (t.available_windows || []).join("/") || "待验证"}]`).join("、") || "未识别" },
+          { title: "标的", width: 280, render: (_: unknown, r: Record<string, any>) => r.targets?.map((t: Record<string, any>) => <Typography.Text key={t.code} style={{ color: t.direction === "看多" ? "#f5222d" : t.direction === "看空" ? "#52c41a" : undefined, marginRight: 8 }}>{t.name}({t.code})[{t.quote_count === 0 ? "暂无行情" : (t.available_windows || []).join("/") || "待验证"}]</Typography.Text>) || "未识别" },
           { title: "验证", dataIndex: "verdict", width: 90 },
           { title: "复盘", width: 220, render: (_: unknown, r: Record<string, any>) => r.targets?.length
-            ? r.targets.map((t: Record<string, any>) => <div key={t.code}>{t.name}：5日 {t.performance?.["5"] == null ? "未到期" : `${t.performance["5"]}%`}</div>)
+            ? r.targets.map((t: Record<string, any>) => <div key={t.code} style={{ color: t.direction === "看多" ? "#f5222d" : t.direction === "看空" ? "#52c41a" : undefined }}>{t.name}：5日 {t.performance?.["5"] == null ? "未到期" : `${t.performance["5"]}%`}</div>)
             : "没有可复盘标的" },
         ]}
       />
@@ -73,12 +73,13 @@ export default function BigvReviewPanel() {
 }
 
 function TargetPerformance({ target }: { target: Record<string, any> }) {
-  return <Card size="small" type="inner" title={`${target.name} (${target.code})`} styles={{ body: { padding: "6px 10px" } }}>
+  const color = target.direction === "看多" ? "#f5222d" : target.direction === "看空" ? "#52c41a" : undefined;
+  return <Card size="small" type="inner" title={<span style={{ color }}>{target.name} ({target.code}) · {target.direction || "未定向"}</span>} styles={{ body: { padding: "6px 10px" } }}>
     <Space wrap size={[12, 4]}>
       {[1, 3, 5, 10, 20].map((window) => {
         const value = target.performance?.[String(window)];
         const excess = target.excess?.[String(window)];
-        return <Typography.Text key={window} type={value == null ? "secondary" : undefined}>
+        return <Typography.Text key={window} type={value == null ? "secondary" : undefined} style={{ color: value == null ? undefined : color }}>
           {window}日：{target.quote_count === 0 ? "暂无后续行情" : value == null ? "未到期" : `${value}%（超额 ${excess ?? "-"}%）`}
         </Typography.Text>;
       })}
