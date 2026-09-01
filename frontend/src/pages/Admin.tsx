@@ -338,6 +338,7 @@ export default function Admin() {
             triggerPath="/api/crawl" statusPath="/api/crawl/status" body={{ summarize: true }} />
           <WechatImportPanel />
           <WechatDiscoverPanel />
+          <BigvReviewPanel />
           <SummarizePanel />
           <SchedulePanel />
           <AuthSettingsPanel />
@@ -411,6 +412,54 @@ function WechatDiscoverPanel() {
       </Typography.Text>
       {status?.log?.length ? <Typography.Text type="secondary" style={{ fontSize: 12 }}>{status.log[status.log.length - 1]}</Typography.Text> : null}
       {status?.error ? <div style={{ color: "#cf1322", fontSize: 12 }}>{status.error}</div> : null}
+    </Card>
+  );
+}
+
+function BigvReviewPanel() {
+  const { data: users } = useUsers();
+  const [user, setUser] = useState("");
+  const [start, setStart] = useState<Dayjs | null>(null);
+  const [end, setEnd] = useState<Dayjs | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [items, setItems] = useState<Array<Record<string, any>>>([]);
+  const load = () => {
+    setLoading(true);
+    api.get("/api/bigv-review", { params: {
+      user,
+      start: start?.format("YYYY-MM-DD") || "",
+      end: end?.format("YYYY-MM-DD") || "",
+      limit: 200,
+    } }).then((r) => setItems(r.data?.items || []))
+      .catch((e) => message.error(errMsg(e)))
+      .finally(() => setLoading(false));
+  };
+  return (
+    <Card size="small" title="大 V 观点与行情复盘" style={{ marginBottom: 12 }}>
+      <Space wrap style={{ marginBottom: 8 }}>
+        <Select allowClear placeholder="全部大 V" style={{ width: 160 }} value={user || undefined}
+          onChange={(v) => setUser(v || "")} options={users?.map((u) => ({ value: u.id, label: u.name }))} />
+        <DatePicker value={start} onChange={setStart} placeholder="开始日期" />
+        <DatePicker value={end} onChange={setEnd} placeholder="结束日期" />
+        <Button type="primary" onClick={load} loading={loading}>开始复盘</Button>
+      </Space>
+      <Table
+        size="small"
+        loading={loading}
+        rowKey="id"
+        pagination={{ pageSize: 10, hideOnSinglePage: true }}
+        scroll={{ x: 900 }}
+        dataSource={items}
+        columns={[
+          { title: "日期", dataIndex: "date", width: 100 },
+          { title: "大 V", dataIndex: "user_name", width: 120 },
+          { title: "文章", dataIndex: "title", ellipsis: true },
+          { title: "方向", dataIndex: "direction", width: 80, render: (v: string) => <Tag color={v === "看多" ? "red" : v === "看空" ? "green" : "default"}>{v}</Tag> },
+          { title: "标的", width: 180, render: (_: unknown, r: Record<string, any>) => r.targets?.map((t: Record<string, string>) => `${t.name}(${t.code})`).join("、") || "未识别" },
+          { title: "验证", dataIndex: "verdict", width: 90 },
+          { title: "复盘", width: 90, render: (_: unknown, r: Record<string, any>) => r.targets?.[0]?.performance?.["5"] != null ? `5日 ${r.targets[0].performance["5"]}%` : "暂无数据" },
+        ]}
+      />
     </Card>
   );
 }

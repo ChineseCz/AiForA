@@ -90,7 +90,8 @@ def create_app() -> FastAPI:
     # 管理员写/触发路由（JWT 守卫）
     from app.api.routers.admin import config as admin_config
     from app.api.routers.admin import jobs as admin_jobs
-    for mod in (admin_jobs, admin_config):
+    from app.api.routers.admin import review as admin_review
+    for mod in (admin_jobs, admin_config, admin_review):
         app.include_router(mod.router, tags=["admin"], dependencies=[Depends(require_admin)])
 
     @app.get("/health")
