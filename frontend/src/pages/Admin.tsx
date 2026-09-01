@@ -359,9 +359,16 @@ export default function Admin() {
 
 function WechatImportPanel() {
   const [urls, setUrls] = useState("");
+  const [importSummary, setImportSummary] = useState<Record<string, number>>({});
   const [polling, setPolling] = useState(true);
   const { data: status } = useJobStatus("wechat_import", "/api/wechat/import/status", polling);
   useEffect(() => { setPolling(!!status?.running); }, [status?.running]);
+  useEffect(() => {
+    const load = () => api.get("/api/wechat/import/items").then((r) => setImportSummary(r.data?.summary || {})).catch(() => undefined);
+    load();
+    const timer = window.setInterval(load, 5000);
+    return () => window.clearInterval(timer);
+  }, []);
   const trigger = () => {
     const values = urls.split(/\r?\n/).map((value) => value.trim()).filter(Boolean);
     if (!values.length) { message.warning("请输入微信公众号文章链接"); return; }
@@ -393,6 +400,12 @@ function WechatImportPanel() {
       <Upload accept=".csv,text/csv" showUploadList={false} beforeUpload={(file) => { uploadCsv(file); return false; }} disabled={status?.running}>
         <Button style={{ marginTop: 8 }} disabled={status?.running}>上传 CSV 批量导入</Button>
       </Upload>
+      <Space size={8} wrap style={{ marginTop: 6 }}>
+        <Tag>总数 {importSummary.total || 0}</Tag>
+        <Tag color="processing">进行中 {importSummary.running || 0}</Tag>
+        <Tag color="success">成功 {importSummary.success || 0}</Tag>
+        <Tag color="error">失败 {importSummary.error || 0}</Tag>
+      </Space>
       <Typography.Text type="secondary" style={{ display: "block", fontSize: 12, marginTop: 6 }}>
         每篇串行抓取，间隔约 4 秒；重复文章自动覆盖更新，不会重复新增。
       </Typography.Text>

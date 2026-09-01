@@ -10,6 +10,7 @@ from app.models.sector import SectorCatalog, StockSector
 from app.models.stock_daily import StockDaily
 from app.models.index_daily import IndexDaily
 from app.models.opinion_claim import OpinionClaim
+from app.models.wechat_import_item import WechatImportItem
 from app.models.bond_daily import BondDaily
 from app.models.backfill_failure import BackfillFailure
 from app.models.stock_finance import StockFinance
@@ -25,6 +26,7 @@ __all__ = [
     "StockDaily",
     "IndexDaily",
     "OpinionClaim",
+    "WechatImportItem",
     "StockFinance",
     "StockGroup",
     "StockGroupMember",
