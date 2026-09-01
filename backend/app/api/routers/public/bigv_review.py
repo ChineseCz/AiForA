@@ -12,7 +12,7 @@ router = APIRouter(prefix="/api/bigv-review")
 @router.get("")
 async def public_bigv_review(
     user: str = Query(""), start: str = Query(""), end: str = Query(""),
-    limit: int = Query(5000, ge=1, le=5000), group_by_day: bool = Query(True), session: AsyncSession = Depends(db_session), c: CacheService = Depends(cache),
+    limit: int = Query(0, ge=0), group_by_day: bool = Query(True), session: AsyncSession = Depends(db_session), c: CacheService = Depends(cache),
 ):
     key = await c.key("bigv_review", user=user, start=start, end=end, limit=limit, group_by_day=group_by_day)
     hit = await c.get_json(key)

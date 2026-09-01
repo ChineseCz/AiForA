@@ -56,7 +56,8 @@ async def review_posts(
     group_by_day: bool = False,
 ) -> dict:
     conditions = ["date != ''"]
-    params: dict = {"limit": max(1, min(limit, 5000))}
+    params: dict = {}
+    limit_value = max(0, int(limit or 0))
     if user_id:
         conditions.append("user_id = :user_id")
         params["user_id"] = user_id
@@ -66,10 +67,13 @@ async def review_posts(
     if end:
         conditions.append("date <= :end")
         params["end"] = end
+    limit_clause = " LIMIT :limit" if limit_value else ""
+    if limit_value:
+        params["limit"] = limit_value
     rows = (await session.execute(text(f"""
         SELECT id, user_id, user_name, date, title, text, url
         FROM posts WHERE {' AND '.join(conditions)}
-        ORDER BY created_at DESC LIMIT :limit
+        ORDER BY created_at DESC{limit_clause}
     """), params)).mappings().all()
 
     summary_titles = await _daily_summary_titles(session, rows)
@@ -164,7 +168,7 @@ async def review_posts(
             "available_windows": available_windows,
         })
     article_total = len(results)
-    has_more = article_total >= max(1, min(limit, 5000))
+    has_more = bool(limit_value and article_total >= limit_value)
     if group_by_day:
         results = _merge_daily_results(results)
     summary = _summary(results)
