@@ -263,7 +263,7 @@ async def stock_backfill(request: Request, session: AsyncSession = Depends(db_se
     from app.workers.tasks.browser import task_backfill
     body = await _json_body(request)
     try:
-        days = max(20, min(120, int(body.get("days", 60) or 60)))
+        days = max(20, min(500, int(body.get("days", 60) or 60)))
     except (TypeError, ValueError):
         days = 60
     asset_type = body.get("asset_type", "all")

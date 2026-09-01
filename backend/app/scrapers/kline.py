@@ -64,8 +64,8 @@ def backfill_history(
         print(f"🔁 失败重试模式：读取 {len(codes)} 个失败标的")
     else:
         # 过滤：只回补有缺失的标的（60天约42个交易日，低于38天视为缺失）
-        stock_codes = [c for c in all_codes if db.has_missing_bars(c, days)]
-        bond_codes = [c for c in all_bond_codes if db.has_missing_bond_bars(c, days)]
+        stock_codes = all_codes
+        bond_codes = all_bond_codes
         codes = [("stock", c) for c in stock_codes] + [("bond", c) for c in bond_codes]
         skipped = len(all_codes) + len(all_bond_codes) - len(codes)
         print(f"📊 共 {len(all_codes)} 只股票，{skipped} 只数据完整跳过，{len(codes)} 只待回补")
@@ -101,14 +101,16 @@ def backfill_history(
             ctx = browser.new_context(locale="zh-CN")
             page = ctx.new_page()
         try:
-            page.goto(_history_api_url(codes[0][1], days), wait_until="domcontentloaded")
+            first_days = db.get_history_request_days(codes[0][1], days, codes[0][0])
+            page.goto(_history_api_url(codes[0][1], first_days), wait_until="domcontentloaded")
             page.wait_for_timeout(1000)
 
             consec_fail = 0
             stock_buffer = []
             bond_buffer = []
             for i, (kind, code) in enumerate(codes, 1):
-                status, text = _browser_fetch_json(page, _history_api_url(code, days))
+                request_days = db.get_history_request_days(code, days, kind)
+                status, text = _browser_fetch_json(page, _history_api_url(code, request_days))
                 text = text.strip()
                 failure_reason = ""
                 if status == 200 and text.startswith("["):

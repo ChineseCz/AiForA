@@ -17,12 +17,13 @@ function JobPanel({ title, desc, kind, triggerPath, statusPath, body, backfill }
 }) {
   const [polling, setPolling] = useState(true);
   const [failedOnly, setFailedOnly] = useState(false);
+  const [backfillDays, setBackfillDays] = useState(60);
   const { data: status } = useJobStatus(kind, statusPath, polling);
 
   useEffect(() => { setPolling(!!status?.running); }, [status?.running]);
 
   const trigger = () => {
-    api.post(triggerPath, backfill ? { ...(body ?? {}), failed_only: failedOnly } : (body ?? {})).then((r) => {
+    api.post(triggerPath, backfill ? { ...(body ?? {}), days: backfillDays, failed_only: failedOnly } : (body ?? {})).then((r) => {
       if (r.data?.started === false && r.data?.running) {
         message.warning(r.data?.error || "任务已在运行中，请稍后再试");
       } else {
@@ -49,9 +50,15 @@ function JobPanel({ title, desc, kind, triggerPath, statusPath, body, backfill }
           ) : null}
           {status?.error ? <div style={{ color: "#cf1322", fontSize: 12 }}>{status.error}</div> : null}
           {backfill ? (
-            <Checkbox checked={failedOnly} onChange={(e) => setFailedOnly(e.target.checked)}>
-              只重试上次失败的标的
-            </Checkbox>
+            <Space wrap>
+              <Space size={4}>
+                <Typography.Text type="secondary">向前补</Typography.Text>
+                <InputNumber min={20} max={500} value={backfillDays} onChange={(v) => setBackfillDays(v || 60)} addonAfter="条" />
+              </Space>
+              <Checkbox checked={failedOnly} onChange={(e) => setFailedOnly(e.target.checked)}>
+                只重试上次失败的标的
+              </Checkbox>
+            </Space>
           ) : null}
         </Col>
         <Col>
@@ -327,7 +334,7 @@ export default function Admin() {
             triggerPath="/api/stock/sync-sectors" statusPath="/api/stock/sync-sectors/status" />
           <JobPanel title="板块成分股全量同步" desc="供个股「所属板块」反查完整覆盖" kind="sector_members_sync"
             triggerPath="/api/stock/sync-sector-members" statusPath="/api/stock/sync-sector-members/status" />
-          <JobPanel title="历史K线回补" desc="股票 + 可转债近60日K线数据" kind="stock_backfill"
+          <JobPanel title="历史K线回补" desc="保留已有数据，并向更早日期扩展指定条数" kind="stock_backfill"
             triggerPath="/api/stock/backfill" statusPath="/api/stock/backfill/status" body={{ days: 60 }} backfill />
           <JobPanel title="雪球板块同步" desc="申万134个行业（含半导体/软件开发等），耗时较长" kind="sync_xueqiu_sectors"
             triggerPath="/api/stock/sync-xueqiu-sectors" statusPath="/api/stock/sync-xueqiu-sectors/status" />

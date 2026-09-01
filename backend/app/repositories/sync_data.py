@@ -710,6 +710,14 @@ def has_missing_bond_bars(code: str, days: int = 60) -> bool:
         return count < 38
 
 
+def get_history_request_days(code: str, extra_days: int, asset_type: str = "stock") -> int:
+    """Keep existing bars in the request and extend the history by extra_days."""
+    table = "bond_daily" if asset_type == "bond" else "stock_daily"
+    with sync_session() as s:
+        count = s.execute(text(f"SELECT COUNT(*) FROM {table} WHERE code = :code"), {"code": code}).scalar() or 0
+    return max(20, min(500, int(count) + max(1, int(extra_days))))
+
+
 def get_backfill_failure_codes(asset_type: str = "all") -> list[tuple[str, str]]:
     """读取当前失败清单，返回 (asset_type, code)。"""
     with sync_session() as s:
