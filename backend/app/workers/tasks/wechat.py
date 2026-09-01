@@ -19,8 +19,10 @@ def _wait_between_wechat_requests(index: int) -> None:
 @celery_app.task(name="wechat.import_article", queue=QUEUE_BROWSER)
 def task_import_article(urls: list[str] | str, source: str = "手动", job_id: int | None = None) -> None:
     from app.repositories import sync_data as db
+    from app.repositories import wechat_imports
     from app.scrapers.wechat import parse_article
     from app.workers.tasks.browser import task_summarize_daily_one, task_summarize_post_brief
+    from app.workers.tasks.opinions import task_extract_opinions
 
     with job_run("wechat_import", source, invalidate_cache=True, job_id=job_id):
         if isinstance(urls, str):
@@ -30,13 +32,17 @@ def task_import_article(urls: list[str] | str, source: str = "手动", job_id: i
         summary_targets: set[tuple[str, str, str]] = set()
         for index, url in enumerate(unique_urls, 1):
             _wait_between_wechat_requests(index)
+            wechat_imports.mark_started(url)
             try:
                 article = parse_article(url)
                 db.upsert_post(article)
+                wechat_imports.mark_success(url, article["id"], article["title"])
                 print(f"[{index}/{len(unique_urls)}] 已导入：{article['user_name']} - {article['title']}")
                 task_summarize_post_brief.delay(article["id"])
+                task_extract_opinions.delay(article["id"])
                 summary_targets.add((article["user_id"], article["user_name"], article["date"]))
             except Exception as exc:  # noqa: BLE001
+                wechat_imports.mark_error(url, str(exc))
                 print(f"[{index}/{len(unique_urls)}] 导入失败：{url}；{exc}")
         for user_id, user_name, date_str in summary_targets:
             task_summarize_daily_one.delay(user_id, user_name, date_str, regen=True)

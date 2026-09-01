@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import db_session
 from app.core.markdown import render_md
 from app.repositories import jobs
+from app.repositories import wechat_imports
 from app.repositories import summaries as sum_repo
 
 router = APIRouter(prefix="/api")
@@ -37,6 +38,8 @@ async def _trigger(session: AsyncSession, kind: str, task, *args, **kwargs) -> d
     """预建 running 状态的 job_runs 行再入队，使'running'入队即可见（消除轮询竞态）。"""
     if await jobs.any_running(session, kind):
         return {"started": False, "running": True}
+    if kind == "wechat_import" and args and isinstance(args[0], list):
+        await run_in_threadpool(wechat_imports.register_urls, args[0])
     job_id = await run_in_threadpool(jobs.create_job, kind, kwargs.pop("source", "手动"))
     task.delay(*args, job_id=job_id, **kwargs)
     return {"started": True, "running": True}
@@ -83,6 +86,24 @@ async def wechat_import(request: Request, session: AsyncSession = Depends(db_ses
 @router.get("/wechat/import/status")
 async def wechat_import_status(session: AsyncSession = Depends(db_session)):
     return await jobs.get_job_status(session, "wechat_import")
+
+
+@router.get("/wechat/import/items")
+async def wechat_import_items():
+    return {
+        "summary": await run_in_threadpool(wechat_imports.get_summary),
+        "items": await run_in_threadpool(wechat_imports.get_items),
+    }
+
+
+@router.post("/wechat/import/retry")
+async def wechat_import_retry(session: AsyncSession = Depends(db_session)):
+    from app.workers.tasks.wechat import task_import_article
+    urls = await run_in_threadpool(wechat_imports.get_error_urls, 200)
+    if not urls:
+        return {"started": False, "count": 0, "message": "没有失败文章"}
+    result = await _trigger(session, "wechat_import", task_import_article, urls, source="重试失败文章")
+    return {**result, "count": len(urls)}
 
 
 @router.post("/wechat/import-csv")

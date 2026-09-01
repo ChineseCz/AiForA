@@ -2,6 +2,7 @@
 import re
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
+from app.repositories import opinions
 
 
 WINDOWS = (1, 3, 5, 10, 20)
@@ -72,16 +73,31 @@ async def review_posts(
 
     alias_map = await _instrument_aliases(session)
     by_code = {item["code"]: item for items in alias_map.values() for item in items}
+    claims_by_post = opinions.get_claims([str(row["id"]) for row in rows])
     results = []
     for post in rows:
         content = f"{post['title'] or ''}\n{post['text'] or ''}"
-        codes = [code for code in dict.fromkeys(CODE_RE.findall(content)) if code in by_code]
-        names = {code: by_code[code] for code in codes}
-        for alias, items in alias_map.items():
-            if alias in content:
-                names.update({item["code"]: item for item in items})
-
-        direction = _direction(content)
+        stored_claims = claims_by_post.get(str(post["id"]), [])
+        ready_claims = [claim for claim in stored_claims if claim.get("status") == "ready" and not claim.get("ignored")]
+        names = {}
+        if ready_claims:
+            for claim in ready_claims:
+                code = str(claim.get("code") or "")
+                if code in by_code:
+                    names[code] = {**by_code[code], "claim": claim}
+                    continue
+                claim_name = str(claim.get("name") or "").strip()
+                for item in alias_map.get(claim_name, []):
+                    names[item["code"]] = {**item, "claim": claim}
+            directions = [claim.get("direction") for claim in ready_claims]
+            direction = max(set(directions), key=directions.count) if directions else _direction(content)
+        else:
+            codes = [code for code in dict.fromkeys(CODE_RE.findall(content)) if code in by_code]
+            names = {code: by_code[code] for code in codes}
+            for alias, alias_items in alias_map.items():
+                if alias in content:
+                    names.update({item["code"]: item for item in alias_items})
+            direction = _direction(content)
         items = []
         for target in names.values():
             quotes = (await session.execute(text("""
@@ -109,11 +125,71 @@ async def review_posts(
                     if performance[str(window)] is not None and _pct(benchmark_first, bench_price) is not None
                     else None
                 )
-            items.append({"code": target["code"], "name": target["name"], "performance": performance, "excess": excess})
+            item = {"code": target["code"], "name": target["name"], "performance": performance, "excess": excess}
+            if target.get("claim"):
+                item["claim"] = target["claim"]
+            items.append(item)
         results.append({
             "id": post["id"], "user_id": post["user_id"], "user_name": post["user_name"],
             "date": post["date"], "title": post["title"], "url": post["url"],
             "direction": direction, "targets": items,
+            "claims": stored_claims,
+            "extraction_status": stored_claims[0]["status"] if stored_claims else "missing",
             "verdict": "可验证" if items else "无法验证",
         })
-    return {"total": len(results), "items": results, "windows": WINDOWS}
+    summary = _summary(results)
+    return {"total": len(results), "items": results, "windows": WINDOWS, "summary": summary}
+
+
+def _summary(results: list[dict]) -> dict:
+    """Aggregate only observations with actual prices; missing data is not a zero return."""
+    observations = {str(window): [] for window in WINDOWS}
+    excess_observations = {str(window): [] for window in WINDOWS}
+    direction_counts: dict[str, int] = {}
+    by_user: dict[str, dict] = {}
+    verified = 0
+    claim_count = 0
+    target_count = 0
+    for item in results:
+        direction = item.get("direction") or "未定"
+        direction_counts[direction] = direction_counts.get(direction, 0) + 1
+        claim_count += sum(1 for claim in item.get("claims", []) if claim.get("status") == "ready" and not claim.get("ignored"))
+        targets = item.get("targets") or []
+        target_count += len(targets)
+        if targets:
+            verified += 1
+        user_key = str(item.get("user_id") or "")
+        user_stat = by_user.setdefault(user_key, {"user_id": item.get("user_id"), "user_name": item.get("user_name"), "posts": 0, "verified": 0, "targets": 0})
+        user_stat["posts"] += 1
+        user_stat["verified"] += bool(targets)
+        user_stat["targets"] += len(targets)
+        for target in targets:
+            for window in WINDOWS:
+                key = str(window)
+                value = target.get("performance", {}).get(key)
+                excess = target.get("excess", {}).get(key)
+                if value is not None:
+                    observations[key].append(value)
+                if excess is not None:
+                    excess_observations[key].append(excess)
+    windows = {}
+    for window in WINDOWS:
+        key = str(window)
+        values = observations[key]
+        excess_values = excess_observations[key]
+        windows[key] = {
+            "samples": len(values),
+            "average_return": round(sum(values) / len(values), 2) if values else None,
+            "average_excess": round(sum(excess_values) / len(excess_values), 2) if excess_values else None,
+            "positive_rate": round(sum(value > 0 for value in values) / len(values) * 100, 2) if values else None,
+        }
+    return {
+        "posts": len(results),
+        "verified_posts": verified,
+        "verification_rate": round(verified / len(results) * 100, 2) if results else None,
+        "claims": claim_count,
+        "targets": target_count,
+        "direction_counts": direction_counts,
+        "windows": windows,
+        "by_user": list(by_user.values()),
+    }

@@ -1,5 +1,5 @@
 import {
-  Button, Card, Checkbox, Col, DatePicker, Form, Input, InputNumber,
+  AutoComplete, Button, Card, Checkbox, Col, DatePicker, Form, Input, InputNumber,
   Collapse, Row, Select, Space, Statistic, Switch, Table, Tag, Typography, Upload, message,
 } from "antd";
 import dayjs, { type Dayjs } from "dayjs";
@@ -359,9 +359,16 @@ export default function Admin() {
 
 function WechatImportPanel() {
   const [urls, setUrls] = useState("");
+  const [importSummary, setImportSummary] = useState<Record<string, number>>({});
   const [polling, setPolling] = useState(true);
   const { data: status } = useJobStatus("wechat_import", "/api/wechat/import/status", polling);
   useEffect(() => { setPolling(!!status?.running); }, [status?.running]);
+  useEffect(() => {
+    const load = () => api.get("/api/wechat/import/items").then((r) => setImportSummary(r.data?.summary || {})).catch(() => undefined);
+    load();
+    const timer = window.setInterval(load, 5000);
+    return () => window.clearInterval(timer);
+  }, []);
   const trigger = () => {
     const values = urls.split(/\r?\n/).map((value) => value.trim()).filter(Boolean);
     if (!values.length) { message.warning("请输入微信公众号文章链接"); return; }
@@ -393,6 +400,18 @@ function WechatImportPanel() {
       <Upload accept=".csv,text/csv" showUploadList={false} beforeUpload={(file) => { uploadCsv(file); return false; }} disabled={status?.running}>
         <Button style={{ marginTop: 8 }} disabled={status?.running}>上传 CSV 批量导入</Button>
       </Upload>
+      <Space size={8} wrap style={{ marginTop: 6 }}>
+        <Tag>总数 {importSummary.total || 0}</Tag>
+        <Tag color="processing">进行中 {importSummary.running || 0}</Tag>
+        <Tag color="success">成功 {importSummary.success || 0}</Tag>
+        <Tag color="error">失败 {importSummary.error || 0}</Tag>
+        <Button size="small" danger disabled={!importSummary.error || !!status?.running}
+          onClick={() => api.post("/api/wechat/import/retry")
+            .then((r) => r.data?.count ? message.success(`已重新提交 ${r.data.count} 篇失败文章`) : message.info("没有失败文章"))
+            .catch((e) => message.error(errMsg(e)))}>
+          重试失败文章
+        </Button>
+      </Space>
       <Typography.Text type="secondary" style={{ display: "block", fontSize: 12, marginTop: 6 }}>
         每篇串行抓取，间隔约 4 秒；重复文章自动覆盖更新，不会重复新增。
       </Typography.Text>
@@ -432,6 +451,7 @@ function BigvReviewPanel() {
   const [end, setEnd] = useState<Dayjs | null>(null);
   const [loading, setLoading] = useState(false);
   const [items, setItems] = useState<Array<Record<string, any>>>([]);
+  const [summary, setSummary] = useState<Record<string, any> | null>(null);
   const load = () => {
     setLoading(true);
     api.get("/api/bigv-review", { params: {
@@ -439,7 +459,10 @@ function BigvReviewPanel() {
       start: start?.format("YYYY-MM-DD") || "",
       end: end?.format("YYYY-MM-DD") || "",
       limit: 200,
-    } }).then((r) => setItems(r.data?.items || []))
+    } }).then((r) => {
+      setItems(r.data?.items || []);
+      setSummary(r.data?.summary || null);
+    })
       .catch((e) => message.error(errMsg(e)))
       .finally(() => setLoading(false));
   };
@@ -451,7 +474,20 @@ function BigvReviewPanel() {
         <DatePicker value={start} onChange={setStart} placeholder="开始日期" />
         <DatePicker value={end} onChange={setEnd} placeholder="结束日期" />
         <Button type="primary" onClick={load} loading={loading}>开始复盘</Button>
+        <Button onClick={() => api.post("/api/bigv-review/extract")
+          .then((r) => message.success(`已提交 ${r.data?.count || 0} 篇文章的观点提取任务`))
+          .catch((e) => message.error(errMsg(e)))}>
+          补提取观点
+        </Button>
       </Space>
+      {summary ? (
+        <Row gutter={[8, 8]} style={{ marginBottom: 10 }}>
+          <Col xs={12} sm={6}><Statistic title="文章数" value={summary.posts ?? 0} /></Col>
+          <Col xs={12} sm={6}><Statistic title="可验证率" value={summary.verification_rate ?? "-"} suffix="%" /></Col>
+          <Col xs={12} sm={6}><Statistic title="5日平均收益" value={summary.windows?.["5"]?.average_return ?? "-"} suffix="%" /></Col>
+          <Col xs={12} sm={6}><Statistic title="5日平均超额" value={summary.windows?.["5"]?.average_excess ?? "-"} suffix="%" /></Col>
+        </Row>
+      ) : null}
       <Table
         size="small"
         loading={loading}
@@ -459,6 +495,15 @@ function BigvReviewPanel() {
         pagination={{ pageSize: 10, hideOnSinglePage: true }}
         scroll={{ x: 900 }}
         dataSource={items}
+        expandable={{
+          expandedRowRender: (record: Record<string, any>) => (
+            <Space direction="vertical" size={4} style={{ width: "100%" }}>
+              {record.claims?.length ? record.claims.map((claim: Record<string, any>) => (
+                <OpinionClaimEditor key={claim.id} claim={claim} onSaved={load} />
+              )) : <Typography.Text type="secondary">尚未完成结构化观点提取，请点击“补提取观点”。</Typography.Text>}
+            </Space>
+          ),
+        }}
         columns={[
           { title: "日期", dataIndex: "date", width: 100 },
           { title: "大 V", dataIndex: "user_name", width: 120 },
@@ -470,6 +515,88 @@ function BigvReviewPanel() {
         ]}
       />
     </Card>
+  );
+}
+
+function OpinionClaimEditor({ claim, onSaved }: { claim: Record<string, any>; onSaved: () => void }) {
+  const [code, setCode] = useState(String(claim.code || ""));
+  const [name, setName] = useState(String(claim.name || ""));
+  const [ignored, setIgnored] = useState(Boolean(claim.ignored));
+  const [options, setOptions] = useState<Array<{ value: string; label: string; code: string }>>([]);
+  const [searching, setSearching] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const searchStocks = (value: string) => {
+    const query = value.trim();
+    setName(value);
+    if (query.length < 2) {
+      setOptions([]);
+      return;
+    }
+    setSearching(true);
+    api.get("/api/stock/search", { params: { q: query, limit: 20 } })
+      .then((r) => setOptions((r.data?.items || []).map((item: { code: string; name: string }) => ({
+        value: item.name,
+        label: `${item.name} (${item.code})`,
+        code: item.code,
+      }))))
+      .catch(() => setOptions([]))
+      .finally(() => setSearching(false));
+  };
+
+  useEffect(() => {
+    if (name.trim().length >= 2) searchStocks(name);
+    // Only load suggestions when the claim already has a usable name.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const save = () => {
+    const normalizedCode = code.trim();
+    if (normalizedCode && !/^\d{6}$/.test(normalizedCode)) {
+      message.error("股票代码必须是 6 位数字");
+      return;
+    }
+    setSaving(true);
+    api.patch(`/api/bigv-review/claim/${claim.id}`, { code: normalizedCode, name: name.trim() })
+      .then((r) => { if (r.data?.updated) { message.success("观点标的已更新"); onSaved(); } else message.error(r.data?.error || "更新失败"); })
+      .catch((e) => message.error(errMsg(e)))
+      .finally(() => setSaving(false));
+  };
+  const toggleIgnored = (value: boolean) => {
+    setIgnored(value);
+    api.patch(`/api/bigv-review/claim/${claim.id}`, { ignored: value })
+      .then((r) => { if (r.data?.updated) onSaved(); else { setIgnored(!value); message.error(r.data?.error || "更新失败"); } })
+      .catch((e) => { setIgnored(!value); message.error(errMsg(e)); });
+  };
+  return (
+    <Space direction="vertical" size={4} style={{ width: "100%" }}>
+      <Typography.Text type="secondary">
+        {claim.direction} · 置信度 {claim.confidence ?? "-"} · {claim.claim || "无观点摘要"}
+        {claim.evidence ? `；证据：${claim.evidence}` : ""}
+      </Typography.Text>
+      <Space size={8}>
+        <Switch size="small" checked={ignored} onChange={toggleIgnored} />
+        <Typography.Text type="secondary">{ignored ? "已忽略，不纳入复盘" : "纳入复盘"}</Typography.Text>
+      </Space>
+      <Space.Compact>
+        <AutoComplete
+          size="small"
+          value={name}
+          options={options}
+          onSearch={searchStocks}
+          onSelect={(value, option) => {
+            setName(value);
+            setCode(String(option.code || ""));
+          }}
+          notFoundContent={searching ? "搜索中..." : "暂无匹配股票"}
+          style={{ minWidth: 220 }}
+        >
+          <Input placeholder="输入股票名称/代码" />
+        </AutoComplete>
+        <Input size="small" value={code} onChange={(e) => setCode(e.target.value)} placeholder="6位代码" maxLength={6} />
+        <Button size="small" loading={saving} onClick={save}>确认映射</Button>
+      </Space.Compact>
+    </Space>
   );
 }
 void dayjs;
