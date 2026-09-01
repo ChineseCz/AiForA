@@ -71,6 +71,9 @@ def backfill_history(
         print(f"📊 共 {len(all_codes)} 只股票，{skipped} 只数据完整跳过，{len(codes)} 只待回补")
 
     today = date.today().isoformat()
+    if job_id is not None:
+        prepared = db.prepare_backfill_progress(job_id, codes, days)
+        codes = [(kind, code) for kind, code, _target_days in prepared]
     total = len(codes)
     ok, fail = 0, 0
     succeeded_codes: list[tuple[str, str]] = []
@@ -101,7 +104,7 @@ def backfill_history(
             ctx = browser.new_context(locale="zh-CN")
             page = ctx.new_page()
         try:
-            first_days = db.get_history_request_days(codes[0][1], days, codes[0][0])
+            first_days = (prepared[0][2] if job_id is not None else db.get_history_request_days(codes[0][1], days, codes[0][0]))
             page.goto(_history_api_url(codes[0][1], first_days), wait_until="domcontentloaded")
             page.wait_for_timeout(1000)
 
@@ -109,7 +112,8 @@ def backfill_history(
             stock_buffer = []
             bond_buffer = []
             for i, (kind, code) in enumerate(codes, 1):
-                request_days = db.get_history_request_days(code, days, kind)
+                request_days = next((target for k, c, target in prepared if k == kind and c == code), db.get_history_request_days(code, days, kind)) if job_id is not None else db.get_history_request_days(code, days, kind)
+                db.mark_backfill_progress(job_id, kind, code, "running") if job_id is not None else None
                 status, text = _browser_fetch_json(page, _history_api_url(code, request_days))
                 text = text.strip()
                 failure_reason = ""
@@ -149,12 +153,16 @@ def backfill_history(
                         failure_reason = failure_reason or "接口返回空历史数据"
                         fail += 1
                         db.record_backfill_failure(kind, code, job_id, failure_reason)
+                        if job_id is not None:
+                            db.mark_backfill_progress(job_id, kind, code, "error", failure_reason)
                         consec_fail += 1
                 else:
                     fail += 1
                     consec_fail += 1
                     failure_reason = f"HTTP {status}: {text[:300]}"
                     db.record_backfill_failure(kind, code, job_id, failure_reason)
+                    if job_id is not None:
+                        db.mark_backfill_progress(job_id, kind, code, "error", failure_reason)
                     if consec_fail >= 10:
                         print(f"⚠️ 连续 {consec_fail} 只失败，暂停60秒…")
                         time.sleep(60)
@@ -164,9 +172,17 @@ def backfill_history(
                 if len(stock_buffer) + len(bond_buffer) >= batch_size or i == total:
                     if stock_buffer:
                         db.save_history_bars_batch(stock_buffer)
+                        if job_id is not None:
+                            for success_kind, success_code in succeeded_codes:
+                                if success_kind == "stock":
+                                    db.mark_backfill_progress(job_id, success_kind, success_code, "success")
                         stock_buffer = []
                     if bond_buffer:
                         db.save_bond_history_bars_batch(bond_buffer)
+                        if job_id is not None:
+                            for success_kind, success_code in succeeded_codes:
+                                if success_kind == "bond":
+                                    db.mark_backfill_progress(job_id, success_kind, success_code, "success")
                         bond_buffer = []
                     for success_kind, success_code in succeeded_codes:
                         db.clear_backfill_failure(success_kind, success_code)

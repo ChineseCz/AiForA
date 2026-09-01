@@ -12,8 +12,8 @@ import {
 import { useIsMobile } from "@/hooks/useIsMobile";
 
 // ---- 单个后台任务面板：触发 + 轮询状态 ----
-function JobPanel({ title, desc, kind, triggerPath, statusPath, body, backfill }: {
-  title: string; desc: string; kind: string; triggerPath: string; statusPath: string; body?: object; backfill?: boolean;
+function JobPanel({ title, desc, kind, triggerPath, statusPath, body, backfill, resumePath }: {
+  title: string; desc: string; kind: string; triggerPath: string; statusPath: string; body?: object; backfill?: boolean; resumePath?: string;
 }) {
   const [polling, setPolling] = useState(true);
   const [failedOnly, setFailedOnly] = useState(false);
@@ -45,6 +45,11 @@ function JobPanel({ title, desc, kind, triggerPath, statusPath, body, backfill }
               : status?.finished_at ? <Tag color="success">完成 {status.finished_at}</Tag> : null}
           </Space>
           <div><Typography.Text type="secondary" style={{ fontSize: 12 }}>{desc}</Typography.Text></div>
+          {backfill && status?.progress ? (
+            <div style={{ fontSize: 12, color: "#666", marginTop: 4 }}>
+              断点进度：已完成 {status.progress.success || 0}，待处理 {status.progress.pending || 0}，失败 {status.progress.error || 0}
+            </div>
+          ) : null}
           {status?.log?.length ? (
             <div style={{ fontSize: 12, color: "#666", marginTop: 4 }}>{status.log[status.log.length - 1]}</div>
           ) : null}
@@ -62,7 +67,12 @@ function JobPanel({ title, desc, kind, triggerPath, statusPath, body, backfill }
           ) : null}
         </Col>
         <Col>
-          <Button onClick={trigger} loading={status?.running}>触发</Button>
+          <Space>
+            {resumePath && status?.job_id && !status?.running && status?.progress && status?.progress?.success !== status?.progress?.pending + status?.progress?.success
+              ? <Button onClick={() => api.post(resumePath).then(() => { message.success("已提交断点续跑任务"); setPolling(true); }).catch((e) => message.error(errMsg(e)))}>断点续跑</Button>
+              : null}
+            <Button onClick={trigger} loading={status?.running}>触发</Button>
+          </Space>
         </Col>
       </Row>
     </Card>
@@ -335,7 +345,7 @@ export default function Admin() {
           <JobPanel title="板块成分股全量同步" desc="供个股「所属板块」反查完整覆盖" kind="sector_members_sync"
             triggerPath="/api/stock/sync-sector-members" statusPath="/api/stock/sync-sector-members/status" />
           <JobPanel title="历史K线回补" desc="保留已有数据，并向更早日期扩展指定条数" kind="stock_backfill"
-            triggerPath="/api/stock/backfill" statusPath="/api/stock/backfill/status" body={{ days: 60 }} backfill />
+            triggerPath="/api/stock/backfill" statusPath="/api/stock/backfill/status" body={{ days: 60 }} backfill resumePath="/api/stock/backfill/resume" />
           <JobPanel title="雪球板块同步" desc="申万134个行业（含半导体/软件开发等），耗时较长" kind="sync_xueqiu_sectors"
             triggerPath="/api/stock/sync-xueqiu-sectors" statusPath="/api/stock/sync-xueqiu-sectors/status" />
         </Col>

@@ -306,7 +306,32 @@ async def stock_backfill(request: Request, session: AsyncSession = Depends(db_se
 
 @router.get("/stock/backfill/status")
 async def stock_backfill_status(session: AsyncSession = Depends(db_session)):
-    return await jobs.get_job_status(session, "stock_backfill")
+    result = await jobs.get_job_status(session, "stock_backfill")
+    row = (await session.execute(text("SELECT id FROM job_runs WHERE kind = 'stock_backfill' ORDER BY id DESC LIMIT 1"))).first()
+    if row:
+        from app.repositories import sync_data as sync_db
+        result["progress"] = sync_db.get_backfill_progress(row[0])
+        result["job_id"] = row[0]
+    return result
+
+
+@router.post("/stock/backfill/resume")
+async def resume_stock_backfill(session: AsyncSession = Depends(db_session)):
+    from app.workers.tasks.browser import task_backfill
+    row = (await session.execute(text(
+        "SELECT id, status, started_at FROM job_runs WHERE kind = 'stock_backfill' ORDER BY id DESC LIMIT 1"
+    ))).first()
+    if not row:
+        return {"started": False, "error": "没有可继续的回补任务"}
+    if row[1] == "success":
+        return {"started": False, "error": "最近一次回补任务已经完成"}
+    if row[1] == "running" and row[2] and int(__import__("time").time()) - row[2] < 300:
+        return {"started": False, "running": True, "error": "回补任务仍在运行，请稍后再试"}
+    # A stale running row means the worker disappeared; reclaim it and reuse its progress.
+    await session.execute(text("UPDATE job_runs SET status = 'running', error = '' WHERE id = :id"), {"id": row[0]})
+    await session.commit()
+    task_backfill.delay(job_id=row[0], source="断点续跑")
+    return {"started": True, "running": True, "job_id": row[0]}
 
 
 @router.post("/stock/finance_sync")

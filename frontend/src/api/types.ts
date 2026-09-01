@@ -307,6 +307,8 @@ export interface JobStatus {
   source?: string;
   started_at: string;
   finished_at: string;
+  job_id?: number;
+  progress?: Record<string, number>;
 }
 
 export interface WatchlistOverview {

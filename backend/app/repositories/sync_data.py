@@ -760,6 +760,49 @@ def clear_backfill_failure(asset_type: str, code: str) -> None:
         ), {"asset_type": asset_type, "code": code})
 
 
+def prepare_backfill_progress(job_id: int, codes: list[tuple[str, str]], extra_days: int) -> list[tuple[str, str, int]]:
+    """Create a stable target window once, then return only unfinished assets."""
+    now = int(time.time())
+    pending = []
+    with sync_session() as s:
+        for asset_type, code in codes:
+            row = s.execute(text(
+                "SELECT target_days, status FROM backfill_progress "
+                "WHERE job_id = :job_id AND asset_type = :asset_type AND code = :code"
+            ), {"job_id": job_id, "asset_type": asset_type, "code": code}).first()
+            if row:
+                target_days, status = int(row[0]), row[1]
+            else:
+                target_days = get_history_request_days(code, extra_days, asset_type)
+                s.execute(text(
+                    "INSERT INTO backfill_progress "
+                    "(job_id, asset_type, code, target_days, status, error, updated_at) "
+                    "VALUES (:job_id, :asset_type, :code, :target_days, 'pending', NULL, :updated_at)"
+                ), {"job_id": job_id, "asset_type": asset_type, "code": code,
+                    "target_days": target_days, "updated_at": now})
+                status = "pending"
+            if status != "success":
+                pending.append((asset_type, code, target_days))
+    return pending
+
+
+def mark_backfill_progress(job_id: int, asset_type: str, code: str, status: str, error: str = "") -> None:
+    with sync_session() as s:
+        s.execute(text(
+            "UPDATE backfill_progress SET status = :status, error = :error, updated_at = :updated_at "
+            "WHERE job_id = :job_id AND asset_type = :asset_type AND code = :code"
+        ), {"job_id": job_id, "asset_type": asset_type, "code": code,
+            "status": status, "error": error[:1000], "updated_at": int(time.time())})
+
+
+def get_backfill_progress(job_id: int) -> dict:
+    with sync_session() as s:
+        rows = s.execute(text(
+            "SELECT status, COUNT(*) FROM backfill_progress WHERE job_id = :job_id GROUP BY status"
+        ), {"job_id": job_id}).all()
+    return {row[0]: row[1] for row in rows}
+
+
 def save_history_bars(rows: list[dict]) -> int:
     """冲突时整行覆盖 OHLC/volume（不再是"只补空 open"）。
 
