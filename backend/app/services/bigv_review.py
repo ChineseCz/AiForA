@@ -56,7 +56,7 @@ async def review_posts(
     group_by_day: bool = False,
 ) -> dict:
     conditions = ["date != ''"]
-    params: dict = {"limit": max(1, min(limit, 200))}
+    params: dict = {"limit": max(1, min(limit, 5000))}
     if user_id:
         conditions.append("user_id = :user_id")
         params["user_id"] = user_id
@@ -164,11 +164,12 @@ async def review_posts(
             "available_windows": available_windows,
         })
     article_total = len(results)
+    has_more = article_total >= max(1, min(limit, 5000))
     if group_by_day:
         results = _merge_daily_results(results)
     summary = _summary(results)
     summary["article_total"] = article_total
-    return {"total": len(results), "article_total": article_total, "items": results, "windows": WINDOWS, "summary": summary}
+    return {"total": len(results), "article_total": article_total, "has_more": has_more, "items": results, "windows": WINDOWS, "summary": summary}
 
 
 async def _daily_summary_titles(session: AsyncSession, rows) -> dict[tuple[str, str], str]:

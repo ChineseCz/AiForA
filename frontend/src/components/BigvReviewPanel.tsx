@@ -43,21 +43,21 @@ export default function BigvReviewPanel() {
   const [loading, setLoading] = useState(false);
   const [items, setItems] = useState<Array<Record<string, any>>>([]);
   const [summary, setSummary] = useState<Record<string, any> | null>(null);
+  const [hasMore, setHasMore] = useState(false);
   const [groupByDay, setGroupByDay] = useState(saved.groupByDay);
 
   useEffect(() => {
     localStorage.setItem(REVIEW_PREFS_KEY, JSON.stringify({ user, preset: datePreset, groupByDay }));
   }, [user, datePreset, groupByDay]);
 
-  useEffect(() => { load(); }, []);
-
   function load() {
     setLoading(true);
     api.get("/api/bigv-review", { params: {
-      user, start: start?.format("YYYY-MM-DD") || "", end: end?.format("YYYY-MM-DD") || "", limit: 200, group_by_day: groupByDay,
+      user, start: start?.format("YYYY-MM-DD") || "", end: end?.format("YYYY-MM-DD") || "", limit: 5000, group_by_day: groupByDay,
     } }).then((r) => {
       setItems(r.data?.items || []);
       setSummary(r.data?.summary || null);
+      setHasMore(!!r.data?.has_more);
     }).catch((e) => message.error(errMsg(e))).finally(() => setLoading(false));
   }
 
@@ -95,6 +95,7 @@ export default function BigvReviewPanel() {
         <Col xs={12} sm={6}><Statistic title="20日平均收益" value={summary.windows?.["20"]?.average_return ?? "-"} suffix="%" /></Col>
         <Col xs={12} sm={6}><Statistic title="60日平均收益" value={summary.windows?.["60"]?.average_return ?? "-"} suffix="%" /></Col>
       </Row> : null}
+      {hasMore ? <Typography.Text type="warning" style={{ display: "block", marginBottom: 8 }}>结果已达到单次查询上限 5000 条，请缩小日期范围或按大V查询。</Typography.Text> : null}
       <Table size="small" loading={loading} rowKey="id" pagination={{ pageSize: 10, hideOnSinglePage: true }} scroll={{ x: 900 }}
         dataSource={items}
         expandable={{ expandedRowRender: (record) => <Space direction="vertical" size={4} style={{ width: "100%" }}>
