@@ -3,6 +3,7 @@ import re
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import db_session
+from app.core.cache import bump_dataver_sync
 
 from app.repositories import opinions
 
@@ -26,6 +27,7 @@ async def extract_opinions(request: Request, session: AsyncSession = Depends(db_
     for post_id in post_ids:
         opinions.mark_pending(post_id)
         task_extract_opinions.delay(post_id)
+    bump_dataver_sync()
     return {"started": True, "count": len(post_ids)}
 
 
@@ -39,4 +41,7 @@ async def update_opinion_claim(claim_id: int, request: Request):
         return {"updated": False, "error": "股票代码必须是 6 位数字"}
     if ignored is not None and not isinstance(ignored, bool):
         return {"updated": False, "error": "ignored 必须是布尔值"}
-    return {"updated": opinions.update_claim(claim_id, code=code, name=name, ignored=ignored)}
+    updated = opinions.update_claim(claim_id, code=code, name=name, ignored=ignored)
+    if updated:
+        bump_dataver_sync()
+    return {"updated": updated}

@@ -15,6 +15,8 @@ def task_extract_opinions(post_id: str) -> None:
     try:
         claims, raw = extract(post.get("title") or "", post.get("text") or "")
         opinions.replace_claims(post_id, claims, raw)
+        from app.core.cache import bump_dataver_sync
+        bump_dataver_sync()
         print(f"观点提取完成：{post_id}，{len(claims)} 条")
     except Exception as exc:  # noqa: BLE001
         opinions.mark_error(post_id, str(exc))

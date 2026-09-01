@@ -67,6 +67,7 @@ class Settings(BaseSettings):
     cache_ttl_fundamentals: int = 300
     cache_ttl_sectors: int = 3600
     cache_ttl_news: int = 900
+    cache_ttl_bigv_review: int = 300
     cache_ttl_quote: int = 1  # 秒级轮询：短TTL，多用户同时看同一只股票也只打一次上游
     # 个股AI分析：按 code+trade_date 缓存，同一交易日内多次访问/多用户共享同一份结果，
     # 不随 dataver 版本失效（全市场10分钟同步会频繁 bump dataver，若跟着它失效会导致刚生成

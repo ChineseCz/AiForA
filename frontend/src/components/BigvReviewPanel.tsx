@@ -1,24 +1,57 @@
 import {
-  AutoComplete, Button, Card, Checkbox, Col, DatePicker, Input, Row, Select, Space, Statistic, Switch, Table, Tag, Typography, message,
+  AutoComplete, Button, Card, Checkbox, Col, DatePicker, Input, Row, Segmented, Select, Space, Statistic, Switch, Table, Tag, Typography, message,
 } from "antd";
-import type { Dayjs } from "dayjs";
-import { useState } from "react";
+import dayjs, { type Dayjs } from "dayjs";
+import { useEffect, useState } from "react";
 
 import { api, errMsg, getToken } from "@/api/client";
 import { useUsers } from "@/api/hooks";
 
+type DatePreset = "7d" | "30d" | "90d" | "year" | "all" | "custom";
+const REVIEW_PREFS_KEY = "bigv_review_preferences";
+
+function getSavedReviewPrefs(): { user: string; preset: DatePreset; groupByDay: boolean } {
+  try {
+    const value = JSON.parse(localStorage.getItem(REVIEW_PREFS_KEY) || "{}");
+    return {
+      user: typeof value.user === "string" ? value.user : "",
+      preset: ["7d", "30d", "90d", "year", "all", "custom"].includes(value.preset) ? value.preset : "90d",
+      groupByDay: value.groupByDay !== false,
+    };
+  } catch {
+    return { user: "", preset: "90d", groupByDay: true };
+  }
+}
+
+function datesForPreset(preset: DatePreset): [Dayjs | null, Dayjs | null] {
+  const today = dayjs();
+  if (preset === "all") return [null, null];
+  if (preset === "year") return [today.startOf("year"), today];
+  if (preset === "custom") return [null, null];
+  return [today.subtract(Number(preset.replace("d", "")), "day"), today];
+}
+
 export default function BigvReviewPanel() {
   const isAdmin = !!getToken();
   const { data: users } = useUsers();
-  const [user, setUser] = useState("");
-  const [start, setStart] = useState<Dayjs | null>(null);
-  const [end, setEnd] = useState<Dayjs | null>(null);
+  const saved = getSavedReviewPrefs();
+  const [user, setUser] = useState(saved.user);
+  const [datePreset, setDatePreset] = useState<DatePreset>(saved.preset);
+  const initialDates = datesForPreset(saved.preset);
+  const [start, setStart] = useState<Dayjs | null>(initialDates[0]);
+  const [end, setEnd] = useState<Dayjs | null>(initialDates[1]);
   const [loading, setLoading] = useState(false);
   const [items, setItems] = useState<Array<Record<string, any>>>([]);
   const [summary, setSummary] = useState<Record<string, any> | null>(null);
-  const [groupByDay, setGroupByDay] = useState(true);
+  const [groupByDay, setGroupByDay] = useState(saved.groupByDay);
 
-  const load = () => {
+  useEffect(() => {
+    localStorage.setItem(REVIEW_PREFS_KEY, JSON.stringify({ user, preset: datePreset, groupByDay }));
+  }, [user, datePreset, groupByDay]);
+
+  useEffect(() => { load(); }, []);
+
+  function load() {
     setLoading(true);
     api.get("/api/bigv-review", { params: {
       user, start: start?.format("YYYY-MM-DD") || "", end: end?.format("YYYY-MM-DD") || "", limit: 200, group_by_day: groupByDay,
@@ -26,7 +59,7 @@ export default function BigvReviewPanel() {
       setItems(r.data?.items || []);
       setSummary(r.data?.summary || null);
     }).catch((e) => message.error(errMsg(e))).finally(() => setLoading(false));
-  };
+  }
 
   const extract = () => api.post("/api/bigv-review/extract", {})
     .then((r) => message.success(`已提交 ${r.data?.count || 0} 篇文章的观点提取任务`))
@@ -37,8 +70,19 @@ export default function BigvReviewPanel() {
       <Space wrap style={{ marginBottom: 8 }}>
         <Select allowClear placeholder="全部大V" style={{ width: 160 }} value={user || undefined}
           onChange={(v) => setUser(v || "")} options={users?.map((u) => ({ value: u.id, label: u.name }))} />
-        <DatePicker value={start} onChange={setStart} placeholder="开始日期" />
-        <DatePicker value={end} onChange={setEnd} placeholder="结束日期" />
+        <Segmented
+          value={datePreset}
+          onChange={(value) => {
+            const next = value as DatePreset;
+            setDatePreset(next);
+            const dates = datesForPreset(next);
+            setStart(dates[0]);
+            setEnd(dates[1]);
+          }}
+          options={[{ label: "近7天", value: "7d" }, { label: "近30天", value: "30d" }, { label: "近90天", value: "90d" }, { label: "今年", value: "year" }, { label: "全部", value: "all" }, { label: "自定义", value: "custom" }]}
+        />
+        {datePreset === "custom" ? <DatePicker value={start} onChange={setStart} placeholder="开始日期" /> : null}
+        {datePreset === "custom" ? <DatePicker value={end} onChange={setEnd} placeholder="结束日期" /> : null}
         <Button type="primary" onClick={load} loading={loading}>开始复盘</Button>
         <Checkbox checked={groupByDay} onChange={(e) => setGroupByDay(e.target.checked)}>按日合并文章</Checkbox>
         {isAdmin ? <Button onClick={extract}>补提取观点</Button> : null}
