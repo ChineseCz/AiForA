@@ -56,6 +56,17 @@ async def crawl_status(session: AsyncSession = Depends(db_session)):
     return await jobs.get_job_status(session, "crawl")
 
 
+@router.post("/index/sync")
+async def index_sync(session: AsyncSession = Depends(db_session)):
+    from app.workers.tasks.stock import task_index_sync
+    return await _trigger(session, "index_sync", task_index_sync, source="manual")
+
+
+@router.get("/index/sync/status")
+async def index_sync_status(session: AsyncSession = Depends(db_session)):
+    return await jobs.get_job_status(session, "index_sync")
+
+
 @router.post("/wechat/import")
 async def wechat_import(request: Request, session: AsyncSession = Depends(db_session)):
     from app.workers.tasks.wechat import task_import_article

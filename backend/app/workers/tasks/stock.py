@@ -21,6 +21,13 @@ def task_stock_sync(source: str = "手动", job_id: int | None = None) -> int:
     return n
 
 
+@celery_app.task(name="stock.index_sync", queue=QUEUE_DEFAULT)
+def task_index_sync(source: str = "manual", job_id: int | None = None) -> int:
+    from app.services import ingest
+    with job_run("index_sync", source, invalidate_cache=False, job_id=job_id):
+        return ingest.sync_index_benchmarks()
+
+
 # A股交易时段（含集合竞价），只在工作日的这两段时间内派发定时同步；不做节假日日历——
 # 节假日照样会派发但新浪快照数据没变化，多算一次预计算不影响正确性，只是浪费一点计算量。
 _TRADING_WINDOWS = [((9, 15), (11, 30)), ((13, 0), (15, 5))]

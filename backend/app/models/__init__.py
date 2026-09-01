@@ -8,6 +8,7 @@ from app.models.post import Post
 from app.models.schedule import Schedule
 from app.models.sector import SectorCatalog, StockSector
 from app.models.stock_daily import StockDaily
+from app.models.index_daily import IndexDaily
 from app.models.bond_daily import BondDaily
 from app.models.backfill_failure import BackfillFailure
 from app.models.stock_finance import StockFinance
@@ -21,6 +22,7 @@ __all__ = [
     "Post",
     "Summary",
     "StockDaily",
+    "IndexDaily",
     "StockFinance",
     "StockGroup",
     "StockGroupMember",

@@ -11,6 +11,25 @@ from sqlalchemy import text
 from app.core.sync_db import sync_session
 
 
+def save_index_daily(code: str, name: str, rows: list[dict]) -> int:
+    if not rows:
+        return 0
+    now = int(time.time() * 1000)
+    with sync_session() as s:
+        for row in rows:
+            s.execute(text("""
+                INSERT INTO index_daily
+                    (trade_date, code, name, open, high, low, close, volume, fetched_at)
+                VALUES (:trade_date, :code, :name, :open, :high, :low, :close, :volume, :fetched_at)
+                ON CONFLICT (trade_date, code) DO UPDATE SET
+                    name = EXCLUDED.name, open = EXCLUDED.open, high = EXCLUDED.high,
+                    low = EXCLUDED.low, close = EXCLUDED.close, volume = EXCLUDED.volume,
+                    fetched_at = EXCLUDED.fetched_at
+            """), {**row, "code": code, "name": name, "fetched_at": now})
+        s.commit()
+    return len(rows)
+
+
 def get_distinct_users() -> list[tuple[str, str]]:
     """每个大V取最新一条帖子的 user_name（同一 user_id 昵称可能改过）。
 

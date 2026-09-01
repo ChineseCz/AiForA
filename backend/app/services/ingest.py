@@ -11,6 +11,17 @@ from app.services import matching
 from app.services.external import eastmoney, sina
 
 
+def sync_index_benchmarks() -> int:
+    """Sync benchmark indexes used by article performance review."""
+    benchmarks = (("sh000300", "沪深300"),)
+    total = 0
+    for code, name in benchmarks:
+        rows = sina.fetch_index_kline(code, datalen=2000)
+        total += db.save_index_daily(code, name, rows)
+        print(f"指数 {name}：写入 {len(rows)} 条")
+    return total
+
+
 def sync_daily_snapshot() -> int:
     """同步 A股 + ETF + 可转债行情快照。"""
     print("… 拉取全市场行情快照（A股 + ETF + 可转债）…")

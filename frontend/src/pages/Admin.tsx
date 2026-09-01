@@ -336,6 +336,8 @@ export default function Admin() {
           <Typography.Title level={5}>采集与总结</Typography.Title>
           <JobPanel title="雪球采集" desc="抓取大V新帖（Playwright+Chromium）" kind="crawl"
             triggerPath="/api/crawl" statusPath="/api/crawl/status" body={{ summarize: true }} />
+          <JobPanel title="沪深 300 基准同步" desc="同步观点复盘所需的沪深 300 历史行情" kind="index_sync"
+            triggerPath="/api/index/sync" statusPath="/api/index/sync/status" />
           <WechatImportPanel />
           <WechatDiscoverPanel />
           <BigvReviewPanel />

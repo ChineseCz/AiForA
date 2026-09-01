@@ -69,8 +69,8 @@ async def review_posts(
             if not quotes:
                 continue
             baseline = (await session.execute(text("""
-                SELECT trade_date, close FROM stock_daily
-                WHERE code IN ('000300', 'sh000300') AND trade_date > :post_date
+                SELECT trade_date, close FROM index_daily
+                WHERE code = 'sh000300' AND trade_date > :post_date
                 ORDER BY trade_date LIMIT 21
             """), {"post_date": post["date"]})).mappings().all()
             first = quotes[0]["close"]
