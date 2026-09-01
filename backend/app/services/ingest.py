@@ -16,7 +16,8 @@ def sync_index_benchmarks() -> int:
     benchmarks = (("sh000300", "沪深300"),)
     total = 0
     for code, name in benchmarks:
-        rows = sina.fetch_index_kline(code, datalen=2000)
+        # 新浪该接口对指数的单次返回上限约为 500，超过后可能直接返回空。
+        rows = sina.fetch_index_kline(code, datalen=500)
         total += db.save_index_daily(code, name, rows)
         print(f"指数 {name}：写入 {len(rows)} 条")
     return total
