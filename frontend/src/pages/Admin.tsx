@@ -451,6 +451,11 @@ function BigvReviewPanel() {
         <DatePicker value={start} onChange={setStart} placeholder="开始日期" />
         <DatePicker value={end} onChange={setEnd} placeholder="结束日期" />
         <Button type="primary" onClick={load} loading={loading}>开始复盘</Button>
+        <Button onClick={() => api.post("/api/bigv-review/extract")
+          .then((r) => message.success(`已提交 ${r.data?.count || 0} 篇文章的观点提取任务`))
+          .catch((e) => message.error(errMsg(e)))}>
+          补提取观点
+        </Button>
       </Space>
       <Table
         size="small"

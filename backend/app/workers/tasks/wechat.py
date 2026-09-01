@@ -21,6 +21,7 @@ def task_import_article(urls: list[str] | str, source: str = "手动", job_id: i
     from app.repositories import sync_data as db
     from app.scrapers.wechat import parse_article
     from app.workers.tasks.browser import task_summarize_daily_one, task_summarize_post_brief
+    from app.workers.tasks.opinions import task_extract_opinions
 
     with job_run("wechat_import", source, invalidate_cache=True, job_id=job_id):
         if isinstance(urls, str):
@@ -35,6 +36,7 @@ def task_import_article(urls: list[str] | str, source: str = "手动", job_id: i
                 db.upsert_post(article)
                 print(f"[{index}/{len(unique_urls)}] 已导入：{article['user_name']} - {article['title']}")
                 task_summarize_post_brief.delay(article["id"])
+                task_extract_opinions.delay(article["id"])
                 summary_targets.add((article["user_id"], article["user_name"], article["date"]))
             except Exception as exc:  # noqa: BLE001
                 print(f"[{index}/{len(unique_urls)}] 导入失败：{url}；{exc}")
