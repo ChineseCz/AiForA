@@ -1,5 +1,5 @@
 import {
-  AutoComplete, Button, Card, Col, DatePicker, Input, Row, Select, Space, Statistic, Switch, Table, Tag, Typography, message,
+  AutoComplete, Button, Card, Checkbox, Col, DatePicker, Input, Row, Select, Space, Statistic, Switch, Table, Tag, Typography, message,
 } from "antd";
 import type { Dayjs } from "dayjs";
 import { useState } from "react";
@@ -16,11 +16,12 @@ export default function BigvReviewPanel() {
   const [loading, setLoading] = useState(false);
   const [items, setItems] = useState<Array<Record<string, any>>>([]);
   const [summary, setSummary] = useState<Record<string, any> | null>(null);
+  const [groupByDay, setGroupByDay] = useState(true);
 
   const load = () => {
     setLoading(true);
     api.get("/api/bigv-review", { params: {
-      user, start: start?.format("YYYY-MM-DD") || "", end: end?.format("YYYY-MM-DD") || "", limit: 200,
+      user, start: start?.format("YYYY-MM-DD") || "", end: end?.format("YYYY-MM-DD") || "", limit: 200, group_by_day: groupByDay,
     } }).then((r) => {
       setItems(r.data?.items || []);
       setSummary(r.data?.summary || null);
@@ -39,10 +40,11 @@ export default function BigvReviewPanel() {
         <DatePicker value={start} onChange={setStart} placeholder="开始日期" />
         <DatePicker value={end} onChange={setEnd} placeholder="结束日期" />
         <Button type="primary" onClick={load} loading={loading}>开始复盘</Button>
+        <Checkbox checked={groupByDay} onChange={(e) => setGroupByDay(e.target.checked)}>按日合并文章</Checkbox>
         {isAdmin ? <Button onClick={extract}>补提取观点</Button> : null}
       </Space>
       {summary ? <Row gutter={[8, 8]} style={{ marginBottom: 10 }}>
-        <Col xs={12} sm={6}><Statistic title="文章数" value={summary.posts ?? 0} /></Col>
+        <Col xs={12} sm={6}><Statistic title={groupByDay ? "日期数" : "文章数"} value={summary.posts ?? 0} /><Typography.Text type="secondary">文章 {summary.article_total ?? summary.posts ?? 0}</Typography.Text></Col>
         <Col xs={12} sm={6}><Statistic title="可验证率" value={summary.verification_rate ?? "-"} suffix="%" /></Col>
         <Col xs={12} sm={6}><Statistic title="5日平均收益" value={summary.windows?.["5"]?.average_return ?? "-"} suffix="%" /></Col>
         <Col xs={12} sm={6}><Statistic title="5日平均超额" value={summary.windows?.["5"]?.average_excess ?? "-"} suffix="%" /></Col>
@@ -59,12 +61,11 @@ export default function BigvReviewPanel() {
           { title: "大V", dataIndex: "user_name", width: 120 },
           { title: "文章", width: 260, ellipsis: true, render: (_: unknown, r: Record<string, any>) => r.title || r.text?.split(/\r?\n/)[0]?.slice(0, 80) || "无标题文章" },
           { title: "方向", dataIndex: "direction", width: 80, render: (v: string) => <Tag color={v === "看多" ? "red" : v === "看空" ? "green" : "default"}>{v}</Tag> },
-          { title: "标的", width: 240, render: (_: unknown, r: Record<string, any>) => r.targets?.map((t: Record<string, any>) => `${t.name}(${t.code})[${(t.available_windows || []).join("/") || "待验证"}]`).join("、") || "未识别" },
+          { title: "标的", width: 240, render: (_: unknown, r: Record<string, any>) => r.targets?.map((t: Record<string, any>) => `${t.name}(${t.code})[${t.quote_count === 0 ? "暂无行情" : (t.available_windows || []).join("/") || "待验证"}]`).join("、") || "未识别" },
           { title: "验证", dataIndex: "verdict", width: 90 },
-          { title: "复盘", width: 150, render: (_: unknown, r: Record<string, any>) => {
-            const values = (r.targets || []).map((t: Record<string, any>) => t.performance?.["5"]).filter((v: unknown): v is number => typeof v === "number");
-            return values.length ? `5日均值 ${(values.reduce((a: number, b: number) => a + b, 0) / values.length).toFixed(2)}%（${values.length}/${r.targets.length}）` : "5日尚无数据";
-          } },
+          { title: "复盘", width: 220, render: (_: unknown, r: Record<string, any>) => r.targets?.length
+            ? r.targets.map((t: Record<string, any>) => <div key={t.code}>{t.name}：5日 {t.performance?.["5"] == null ? "未到期" : `${t.performance["5"]}%`}</div>)
+            : "没有可复盘标的" },
         ]}
       />
     </Card>
@@ -78,7 +79,7 @@ function TargetPerformance({ target }: { target: Record<string, any> }) {
         const value = target.performance?.[String(window)];
         const excess = target.excess?.[String(window)];
         return <Typography.Text key={window} type={value == null ? "secondary" : undefined}>
-          {window}日：{value == null ? "未到期" : `${value}%（超额 ${excess ?? "-"}%）`}
+          {window}日：{target.quote_count === 0 ? "暂无后续行情" : value == null ? "未到期" : `${value}%（超额 ${excess ?? "-"}%）`}
         </Typography.Text>;
       })}
     </Space>

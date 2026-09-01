@@ -21,6 +21,7 @@ def test_summary_ignores_missing_windows_and_aggregates_excess():
             "user_id": "u1", "user_name": "大V", "direction": "看多",
             "claims": [{"status": "ready", "ignored": False}, {"status": "ready", "ignored": True}],
             "targets": [{
+                "quote_count": 2,
                 "performance": {"1": 2.0, "5": 10.0},
                 "excess": {"1": 1.0, "5": 7.0},
             }],

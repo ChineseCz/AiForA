@@ -52,7 +52,8 @@ async def _instrument_aliases(session: AsyncSession) -> dict[str, list[dict[str,
 
 
 async def review_posts(
-    session: AsyncSession, user_id: str = "", start: str = "", end: str = "", limit: int = 100
+    session: AsyncSession, user_id: str = "", start: str = "", end: str = "", limit: int = 100,
+    group_by_day: bool = False,
 ) -> dict:
     conditions = ["date != ''"]
     params: dict = {"limit": max(1, min(limit, 200))}
@@ -106,6 +107,8 @@ async def review_posts(
                 ORDER BY trade_date LIMIT 21
             """), {"code": target["code"], "post_date": post["date"]})).mappings().all()
             if not quotes:
+                items.append({"code": target["code"], "name": target["name"], "performance": {}, "excess": {},
+                              "available_windows": [], "quote_count": 0, "data_status": "no_future_quotes"})
                 continue
             baseline = (await session.execute(text("""
                 SELECT trade_date, close FROM index_daily
@@ -137,8 +140,10 @@ async def review_posts(
         available_windows = sorted({
             window for target in items for window in target.get("available_windows", [])
         }, key=int)
-        if not items:
+        if not names:
             verdict = "待验证"
+        elif not any(target.get("quote_count", 0) for target in items):
+            verdict = "暂无行情"
         elif len(available_windows) < len(WINDOWS):
             verdict = "部分可验证"
         else:
@@ -146,14 +151,51 @@ async def review_posts(
         results.append({
             "id": post["id"], "user_id": post["user_id"], "user_name": post["user_name"],
             "date": post["date"], "title": post["title"], "url": post["url"],
+            "text": post["text"],
             "direction": direction, "targets": items,
             "claims": stored_claims,
             "extraction_status": stored_claims[0]["status"] if stored_claims else "missing",
             "verdict": verdict,
             "available_windows": available_windows,
         })
+    article_total = len(results)
+    if group_by_day:
+        results = _merge_daily_results(results)
     summary = _summary(results)
-    return {"total": len(results), "items": results, "windows": WINDOWS, "summary": summary}
+    summary["article_total"] = article_total
+    return {"total": len(results), "article_total": article_total, "items": results, "windows": WINDOWS, "summary": summary}
+
+
+def _merge_daily_results(results: list[dict]) -> list[dict]:
+    """Merge same-user same-day posts while retaining every target and claim."""
+    grouped: dict[tuple[str, str], dict] = {}
+    for item in results:
+        key = (str(item.get("user_id") or ""), str(item.get("date") or ""))
+        current = grouped.get(key)
+        if current is None:
+            current = {**item, "id": f"daily:{key[0]}:{key[1]}", "article_count": 0,
+                       "titles": [], "claims": [], "targets": []}
+            grouped[key] = current
+        current["article_count"] += 1
+        title = item.get("title") or (str(item.get("text") or "").splitlines() or [""])[0]
+        if title and title not in current["titles"]:
+            current["titles"].append(title)
+        current["claims"].extend(item.get("claims") or [])
+        for target in item.get("targets") or []:
+            if not any(existing.get("code") == target.get("code") for existing in current["targets"]):
+                current["targets"].append(target)
+        directions = [part.get("direction") for part in current["claims"] if part.get("direction")]
+        current["direction"] = max(set(directions), key=directions.count) if directions else current.get("direction")
+    merged = []
+    for item in grouped.values():
+        item["title"] = "；".join(item.pop("titles")) or "当日观点"
+        item["text"] = ""
+        available = sorted({window for target in item["targets"] for window in target.get("available_windows", [])}, key=int)
+        item["available_windows"] = available
+        has_quotes = any(target.get("quote_count", 0) for target in item["targets"])
+        item["verdict"] = "待验证" if not item["targets"] else ("暂无行情" if not has_quotes else ("部分可验证" if len(available) < len(WINDOWS) else "可验证"))
+        merged.append(item)
+    return merged
 
 
 def _summary(results: list[dict]) -> dict:
@@ -171,7 +213,7 @@ def _summary(results: list[dict]) -> dict:
         claim_count += sum(1 for claim in item.get("claims", []) if claim.get("status") == "ready" and not claim.get("ignored"))
         targets = item.get("targets") or []
         target_count += len(targets)
-        if targets:
+        if any(target.get("quote_count", 0) for target in targets):
             verified += 1
         user_key = str(item.get("user_id") or "")
         user_stat = by_user.setdefault(user_key, {"user_id": item.get("user_id"), "user_name": item.get("user_name"), "posts": 0, "verified": 0, "targets": 0})
