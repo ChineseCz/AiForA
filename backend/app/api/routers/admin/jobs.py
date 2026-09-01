@@ -96,6 +96,16 @@ async def wechat_import_items():
     }
 
 
+@router.post("/wechat/import/retry")
+async def wechat_import_retry(session: AsyncSession = Depends(db_session)):
+    from app.workers.tasks.wechat import task_import_article
+    urls = await run_in_threadpool(wechat_imports.get_error_urls, 200)
+    if not urls:
+        return {"started": False, "count": 0, "message": "没有失败文章"}
+    result = await _trigger(session, "wechat_import", task_import_article, urls, source="重试失败文章")
+    return {**result, "count": len(urls)}
+
+
 @router.post("/wechat/import-csv")
 async def wechat_import_csv(file: UploadFile = File(...), session: AsyncSession = Depends(db_session)):
     """Import the url column from the CSV exported by the article crawler."""

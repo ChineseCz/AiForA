@@ -405,6 +405,12 @@ function WechatImportPanel() {
         <Tag color="processing">进行中 {importSummary.running || 0}</Tag>
         <Tag color="success">成功 {importSummary.success || 0}</Tag>
         <Tag color="error">失败 {importSummary.error || 0}</Tag>
+        <Button size="small" danger disabled={!importSummary.error || !!status?.running}
+          onClick={() => api.post("/api/wechat/import/retry")
+            .then((r) => r.data?.count ? message.success(`已重新提交 ${r.data.count} 篇失败文章`) : message.info("没有失败文章"))
+            .catch((e) => message.error(errMsg(e)))}>
+          重试失败文章
+        </Button>
       </Space>
       <Typography.Text type="secondary" style={{ display: "block", fontSize: 12, marginTop: 6 }}>
         每篇串行抓取，间隔约 4 秒；重复文章自动覆盖更新，不会重复新增。

@@ -50,6 +50,16 @@ def get_items(limit: int = 200) -> list[dict]:
     return [dict(row) for row in rows]
 
 
+def get_error_urls(limit: int = 200) -> list[str]:
+    with sync_session() as session:
+        rows = session.execute(text("""
+            SELECT url FROM wechat_import_items
+            WHERE status = 'error'
+            ORDER BY updated_at ASC, id ASC LIMIT :limit
+        """), {"limit": max(1, min(limit, 200))}).all()
+    return [row[0] for row in rows]
+
+
 def get_summary() -> dict:
     with sync_session() as session:
         rows = session.execute(text("SELECT status, COUNT(*) FROM wechat_import_items GROUP BY status")).all()
