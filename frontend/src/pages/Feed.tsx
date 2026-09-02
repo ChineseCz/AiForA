@@ -15,6 +15,7 @@ import BigvReviewPanel from "@/components/BigvReviewPanel";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { usePageContext } from "@/pageContext";
 import type { PostItem } from "@/api/types";
+import { displayPeriodKey } from "@/utils/period";
 
 // ──────────────────────────────────────────────
 // 帖子流 Tab
@@ -182,7 +183,7 @@ function SummaryTab({ active, initialUserId }: { active: boolean; initialUserId?
         onChange={(k) => setListOpen((k as string[]).includes("dates"))}
         items={[{
           key: "dates",
-          label: key ? `日期：${key}` : "选择日期",
+          label: key ? `日期：${displayPeriodKey(type, key)}` : "选择日期",
           children: (
             <List
               size="small" style={{ maxHeight: 360, overflow: "auto" }}
@@ -193,7 +194,7 @@ function SummaryTab({ active, initialUserId }: { active: boolean; initialUserId?
                   onClick={() => { setKey(k); setListOpen(false); }}
                   style={{ cursor: "pointer", background: k === key ? token.colorPrimaryBg : undefined }}
                 >
-                  {k}
+                  {displayPeriodKey(type, k)}
                 </List.Item>
               )}
             />

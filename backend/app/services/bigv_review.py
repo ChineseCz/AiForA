@@ -71,6 +71,7 @@ async def _instrument_aliases(session: AsyncSession) -> dict[str, list[dict[str,
 async def review_posts(
     session: AsyncSession, user_id: str = "", start: str = "", end: str = "", limit: int = 100,
     group_by_day: bool = False, progress_callback=None, cancel_callback=None, target_threshold: float = 3.0,
+    saved_only: bool = False,
 ) -> dict:
     conditions = ["date != ''"]
     params: dict = {}
@@ -117,6 +118,8 @@ async def review_posts(
         ):
             results.append(snapshot["payload"]["result"])
             reused_count += 1
+            continue
+        if saved_only:
             continue
         content = f"{post['title'] or ''}\n{post['text'] or ''}"
         ready_claims = [claim for claim in stored_claims if claim.get("status") == "ready" and not claim.get("ignored")]

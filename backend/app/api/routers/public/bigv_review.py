@@ -79,16 +79,16 @@ async def bigv_review_status(session: AsyncSession = Depends(db_session)):
 async def public_bigv_review(
     user: str = Query(""), start: str = Query(""), end: str = Query(""),
     limit: int = Query(0, ge=0), group_by_day: bool = Query(True), direction: str = Query(""),
-    verdict: str = Query(""), extraction_status: str = Query(""), target_threshold: float = Query(3.0, ge=0, le=100),
+    verdict: str = Query(""), extraction_status: str = Query(""), target_threshold: float = Query(3.0, ge=0, le=100), saved_only: bool = Query(False),
     session: AsyncSession = Depends(db_session), c: CacheService = Depends(cache),
 ):
     key = await c.key("bigv_review", user=user, start=start, end=end, limit=limit, group_by_day=group_by_day,
-                      direction=direction, verdict=verdict, extraction_status=extraction_status, target_threshold=target_threshold)
+                      direction=direction, verdict=verdict, extraction_status=extraction_status, target_threshold=target_threshold, saved_only=saved_only)
     hit = await c.get_json(key)
     if hit is not None:
         return hit
     result = await review_posts(session, user_id=user, start=start, end=end, limit=limit,
-                                group_by_day=group_by_day, target_threshold=target_threshold)
+                                group_by_day=group_by_day, target_threshold=target_threshold, saved_only=saved_only)
     if direction or verdict or extraction_status:
         result["items"] = [item for item in result["items"]
                            if (not direction or item.get("direction") == direction)

@@ -176,7 +176,7 @@ async def bulk_import_trades(session: AsyncSession, user_id: str, records: list[
                WHERE user_id=:uid AND code=:code AND trade_date=:trade_date
                  AND COALESCE(trade_time, '') = COALESCE(:trade_time, '')
                  AND direction=:direction AND price=:price AND quantity=:quantity AND is_paper=:ip"""
-        ), {**r, "uid": user_id, "ip": is_paper})).first()
+        ), {**r, "trade_time": r.get("trade_time"), "uid": user_id, "ip": is_paper})).first()
         if existing:
             continue
         await session.execute(text(

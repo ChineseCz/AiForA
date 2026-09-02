@@ -58,17 +58,23 @@ export default function BigvReviewPanel() {
     localStorage.setItem(REVIEW_PREFS_KEY, JSON.stringify({ user, preset: datePreset, groupByDay }));
   }, [user, datePreset, groupByDay]);
 
-  function load() {
+  function load(savedOnly = true) {
     setLoading(true);
     api.get("/api/bigv-review", { params: {
       user, start: start?.format("YYYY-MM-DD") || "", end: end?.format("YYYY-MM-DD") || "", limit: 0, group_by_day: groupByDay,
       direction: directionFilter, verdict: verdictFilter, extraction_status: statusFilter,
+      saved_only: savedOnly,
     } }).then((r) => {
       setItems(r.data?.items || []);
       setSummary(r.data?.summary || null);
       setHasMore(!!r.data?.has_more);
     }).catch((e) => message.error(errMsg(e))).finally(() => setLoading(false));
   }
+
+  // Filter changes only read persisted snapshots; missing articles are filled by the review job.
+  useEffect(() => {
+    if (!reviewing) load(true);
+  }, [user, start, end, groupByDay, directionFilter, verdictFilter, statusFilter]);
 
   function exportReview() {
     api.get("/api/bigv-review/export", { params: {
@@ -91,7 +97,7 @@ export default function BigvReviewPanel() {
       message.error(reviewStatus.error);
       return;
     }
-    load();
+    load(true);
   }, [reviewing, reviewStatus]);
 
   function startReview() {
@@ -155,6 +161,9 @@ export default function BigvReviewPanel() {
         <Checkbox checked={groupByDay} onChange={(e) => setGroupByDay(e.target.checked)}>按日合并文章</Checkbox>
         {isAdmin ? <Button onClick={extract}>补提取观点</Button> : null}
       </Space>
+      {!loading && !reviewing && !items.length ? <Typography.Text type="secondary" style={{ display: "block", marginBottom: 8 }}>
+        当前条件下没有已保存的复盘结果；如需补算缺失文章，请点击“开始复盘”。
+      </Typography.Text> : null}
       {reviewing ? <div style={{ marginBottom: 8 }}>
         <Progress
           percent={reviewStatus?.progress?.total ? Math.round((reviewStatus.progress.processed || 0) / reviewStatus.progress.total * 100) : 0}

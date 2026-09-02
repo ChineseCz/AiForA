@@ -12,11 +12,16 @@ from app.workers.queues import QUEUE_DEFAULT, QUEUE_LLM
 def task_bigv_export(parameters: dict, source: str = "手动导出", job_id: int | None = None) -> None:
     from app.core.config import settings
     from app.core.db import async_session_maker
+    from app.core.db import engine
     from app.repositories import jobs
     from app.services.bigv_review import WINDOWS, review_posts
     from app.workers.runner import job_run
 
     async def run():
+        # Celery prefork workers may inherit asyncpg connections created by a
+        # previous event loop. Replace the inherited pool before opening a
+        # session on this task's loop.
+        await engine.dispose(close=False)
         async with async_session_maker() as session:
             return await review_posts(session, user_id=str(parameters.get("user") or ""),
                                       start=str(parameters.get("start") or ""), end=str(parameters.get("end") or ""),
@@ -51,10 +56,12 @@ def task_bigv_review(
 ) -> None:
     """Run the potentially large Big V review outside the API request."""
     from app.core.db import async_session_maker
+    from app.core.db import engine
     from app.services.bigv_review import review_posts
     from app.workers.runner import job_run
 
     async def run() -> dict:
+        await engine.dispose(close=False)
         async with async_session_maker() as session:
             return await review_posts(
                 session, user_id=user_id, start=start, end=end,
