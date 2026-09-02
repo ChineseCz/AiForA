@@ -8,7 +8,7 @@ import { useState, useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
 
 import { errMsg, api } from "../api/client";
-import { useQueryClient, useQueries } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useGroupMembers, useGroupMutations, useGroups, useDeleteNote, useFavoriteNote, useGenerateNote, useNote, useNoteList, useNoteMutation, useNotificationSettings, useNotifications, useMarkAllNotificationsRead, usePaperAccount, useResetPaperAccount, useSaveNotificationSettings, useTradeBacktest, useTradeMutations, useTrades, useTradeStats, useWatchlistOverview } from "../api/hooks";
 import { getToken, getVisitorToken } from "../api/client";
 import type { GroupItem, GroupMember, NotificationSettings, TradeNote, TradeRecord } from "../api/types";
@@ -531,21 +531,18 @@ function ReviewTab({ isPaper = false }: { isPaper?: boolean }) {
   const summary = !filterCode ? pnlSummary(trades) : [];
   const activeCodes = summary.map((p) => p.code);
 
-  const quoteResults = useQueries({
-    queries: activeCodes.map((code) => ({
-      queryKey: ["quote", code],
-      queryFn: () =>
-        (async () => {
-          const { api: axiosApi } = await import("../api/client");
-          return axiosApi.get<import("../api/types").Quote>("/api/stock/quote", { params: { code } }).then((r) => r.data);
-        })(),
-      refetchInterval: 10_000,
-      staleTime: 0,
-    })),
+  const { data: quoteData } = useQuery({
+    queryKey: ["quotes", activeCodes.join(",")],
+    queryFn: () => api.get<{ items: Record<string, import("../api/types").Quote> }>("/api/stock/quotes", { params: { codes: activeCodes.join(",") } }).then((r) => r.data),
+    enabled: activeCodes.length > 0,
+    refetchInterval: 1_000,
+    staleTime: 0,
   });
   const quotes: Record<string, number | null> = Object.fromEntries(
-    activeCodes.map((code, i) => [code, quoteResults[i]?.data?.close ?? null]),
+    activeCodes.map((code) => [code, quoteData?.items?.[code]?.close ?? null]),
   );
+  const quoteTimes = activeCodes.map((code) => quoteData?.items?.[code]?.time).filter(Boolean);
+  const latestQuoteTime = quoteTimes.length ? quoteTimes.sort().at(-1) : null;
 
   const totalMktValue = summary.reduce((acc, p) => {
     const price = quotes[p.code];
@@ -749,7 +746,12 @@ function ReviewTab({ isPaper = false }: { isPaper?: boolean }) {
       {summary.length > 0 && (
         <>
           <div style={{ marginTop: 20, marginBottom: 8 }}>
-            <Text strong>持仓概览</Text>
+            <Space size={8}>
+              <Text strong>持仓概览</Text>
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                {latestQuoteTime ? `实时行情 ${latestQuoteTime}` : "实时行情暂无"}
+              </Text>
+            </Space>
           </div>
           <Table<ReturnType<typeof pnlSummary>[number]>
             dataSource={summary}

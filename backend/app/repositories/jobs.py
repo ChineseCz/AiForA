@@ -1,4 +1,5 @@
 """任务执行记录的增删改查。"""
+import json
 import time
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -45,14 +46,14 @@ def is_job_finished(job_id: int) -> bool:
         return row is not None and row[0] in ("done", "success")
 
 
-def create_job(kind: str, source: str = "手动") -> int:
+def create_job(kind: str, source: str = "手动", parameters: dict | None = None) -> int:
     """创建一条新的任务记录，返回 job_id。"""
     now = int(time.time())
     with sync_session() as s:
         row = s.execute(text(
-            "INSERT INTO job_runs (kind, status, source, log, error, started_at, finished_at) "
-            "VALUES (:kind, 'running', :source, '', '', :now, NULL) RETURNING id"
-        ), {"kind": kind, "source": source, "now": now}).first()
+            "INSERT INTO job_runs (kind, status, source, log, error, started_at, finished_at, parameters) "
+            "VALUES (:kind, 'running', :source, '', '', :now, NULL, CAST(:parameters AS json)) RETURNING id"
+        ), {"kind": kind, "source": source, "now": now, "parameters": json.dumps(parameters or {}, ensure_ascii=False)}).first()
         return row[0]
 
 
@@ -64,10 +65,41 @@ def append_log(job_id: int, message: str):
         ), {"id": job_id, "msg": message + "\n"})
 
 
+def update_progress(job_id: int, progress: dict) -> None:
+    with sync_session() as s:
+        s.execute(text(
+            "UPDATE job_runs SET progress = CAST(:progress AS json) WHERE id = :id"
+        ), {"id": job_id, "progress": json.dumps(progress, ensure_ascii=False)})
+
+
+def set_artifact_path(job_id: int, path: str) -> None:
+    with sync_session() as s:
+        s.execute(text("UPDATE job_runs SET artifact_path = :path WHERE id = :id"), {"id": job_id, "path": path})
+
+
+def request_cancel(job_id: int) -> bool:
+    with sync_session() as s:
+        result = s.execute(text(
+            "UPDATE job_runs SET status = 'cancel_requested' WHERE id = :id AND status = 'running'"
+        ), {"id": job_id})
+        return result.rowcount > 0
+
+
+def is_cancel_requested(job_id: int | None) -> bool:
+    if job_id is None:
+        return False
+    with sync_session() as s:
+        return s.execute(text(
+            "SELECT 1 FROM job_runs WHERE id = :id AND status = 'cancel_requested'"
+        ), {"id": job_id}).first() is not None
+
+
 def finish_job(job_id: int, error: str = ""):
     """标记任务完成或失败。"""
     now = int(time.time())
     status = "error" if error else "success"
+    if not error and get_status_sync(job_id) == "cancel_requested":
+        status = "canceled"
     with sync_session() as s:
         s.execute(text(
             "UPDATE job_runs SET status = :status, finished_at = :now, error = :err WHERE id = :id"
@@ -83,16 +115,21 @@ def get_status_sync(job_id: int) -> str | None:
 async def get_job_status(session: AsyncSession, kind: str) -> dict:
     """获取某类任务的最新状态（用于轮询）。"""
     row = (await session.execute(text(
-        "SELECT status, started_at, finished_at, log, error FROM job_runs "
+        "SELECT id, status, started_at, finished_at, log, error, progress, parameters, artifact_path FROM job_runs "
         "WHERE kind = :k ORDER BY id DESC LIMIT 1"
     ), {"k": kind})).mappings().first()
     if not row:
         return {"running": False}
 
     result = {
-        "running": row["status"] == "running",
+        "running": row["status"] in ("running", "cancel_requested"),
+        "status": row["status"],
         "error": row["error"] or "",
         "log": [line for line in (row["log"] or "").split("\n") if line.strip()],
+        "progress": row["progress"] or {},
+        "job_id": row["id"],
+        "parameters": row["parameters"] or {},
+        "artifact_path": row["artifact_path"],
     }
     if row["finished_at"]:
         from datetime import datetime, timezone, timedelta

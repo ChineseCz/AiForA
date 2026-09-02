@@ -302,6 +302,7 @@ export interface BacktestResult {
 
 export interface JobStatus {
   running: boolean;
+  status?: string;
   log: string[];
   error: string;
   source?: string;

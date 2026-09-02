@@ -36,6 +36,23 @@ async def api_stock_quote(code: str = Query(default=""), c: CacheService = Depen
     return result
 
 
+@router.get("/stock/quotes")
+async def api_stock_quotes(codes: str = Query(default=""), c: CacheService = Depends(cache)):
+    """Batch real-time quotes for portfolio/watchlist views."""
+    code_list = list(dict.fromkeys(code.strip() for code in codes.split(",") if code.strip()))
+    if not code_list:
+        return {"items": {}}
+    code_list = code_list[:100]
+    key = f"natapp:quotes:{','.join(sorted(code_list))}"
+    hit = await c.get_json(key)
+    if hit is not None:
+        return hit
+    quotes = await run_in_threadpool(sina.fetch_realtime_quotes, code_list)
+    result = {"items": quotes}
+    await c.set_json(key, result, settings.cache_ttl_quote)
+    return result
+
+
 @router.get("/stock/kline")
 async def api_stock_kline(
     code: str = Query(default=""),

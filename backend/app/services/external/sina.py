@@ -280,6 +280,44 @@ def fetch_realtime_quote(code: str) -> dict | None:
         return None
 
 
+def fetch_realtime_quotes(codes: list[str]) -> dict[str, dict]:
+    """Fetch several real-time quotes with one Sina request."""
+    normalized = list(dict.fromkeys(code.strip() for code in codes if code and code.strip()))
+    if not normalized:
+        return {}
+    symbols = ",".join(sina_symbol(code) for code in normalized)
+    try:
+        response = requests.get(
+            f"{_SINA_QUOTE_URL}{symbols}", timeout=5,
+            headers={"Referer": "https://finance.sina.com.cn"},
+        )
+        response.encoding = "gbk"
+        body = response.text
+    except Exception as exc:  # noqa: BLE001
+        print(f"实时行情批量拉取失败: {exc}")
+        return {}
+
+    symbol_to_code = {sina_symbol(code): code for code in normalized}
+    result: dict[str, dict] = {}
+    for match in re.finditer(r'hq_str_([a-z0-9]+)="([^"]*)"', body, re.IGNORECASE):
+        code = symbol_to_code.get(match.group(1).lower())
+        parts = match.group(2).split(",")
+        if not code or len(parts) < 6 or not parts[0]:
+            continue
+        try:
+            result[code] = {
+                "code": code, "name": parts[0],
+                "open": float(parts[1]), "pre_close": float(parts[2]),
+                "close": float(parts[3]), "high": float(parts[4]), "low": float(parts[5]),
+                "volume": float(parts[8]) if len(parts) > 8 else None,
+                "trade_date": parts[30] if len(parts) > 30 else "",
+                "time": parts[31] if len(parts) > 31 else "",
+            }
+        except (ValueError, IndexError):
+            continue
+    return result
+
+
 _SINA_NEWS_URL = "https://vip.stock.finance.sina.com.cn/corp/view/vCB_AllNewsStock.php"
 _NEWS_ITEM_RE = re.compile(
     r"(\d{4}-\d{2}-\d{2})&nbsp;(\d{2}:\d{2})&nbsp;&nbsp;<a target='_blank' href='([^']+)'>([^<]+)</a>"

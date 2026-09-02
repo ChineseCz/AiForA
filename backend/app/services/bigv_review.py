@@ -70,7 +70,7 @@ async def _instrument_aliases(session: AsyncSession) -> dict[str, list[dict[str,
 
 async def review_posts(
     session: AsyncSession, user_id: str = "", start: str = "", end: str = "", limit: int = 100,
-    group_by_day: bool = False,
+    group_by_day: bool = False, progress_callback=None, cancel_callback=None, target_threshold: float = 3.0,
 ) -> dict:
     conditions = ["date != ''"]
     params: dict = {}
@@ -102,7 +102,10 @@ async def review_posts(
     results = []
     pending = []
     required_codes = set()
+    reused_count = 0
     for post in rows:
+        if cancel_callback and cancel_callback():
+            raise RuntimeError("复盘任务已取消")
         post_id = str(post["id"])
         stored_claims = claims_by_post.get(post_id, [])
         snapshot = snapshots_by_post.get(post_id)
@@ -113,6 +116,7 @@ async def review_posts(
             and isinstance(snapshot["payload"].get("result"), dict)
         ):
             results.append(snapshot["payload"]["result"])
+            reused_count += 1
             continue
         content = f"{post['title'] or ''}\n{post['text'] or ''}"
         ready_claims = [claim for claim in stored_claims if claim.get("status") == "ready" and not claim.get("ignored")]
@@ -137,6 +141,10 @@ async def review_posts(
             direction = _direction(content)
         required_codes.update(names)
         pending.append((post, stored_claims, ready_claims, names, direction))
+
+    total_posts = len(rows)
+    if progress_callback:
+        progress_callback({"total": total_posts, "processed": reused_count, "reused": reused_count, "computed": 0, "finalized": 0})
 
     # A review only needs bars after the earliest article date. Avoid loading
     # the complete history for every matched code into API memory.
@@ -169,7 +177,11 @@ async def review_posts(
         benchmark_by_date[post["date"]] = future
 
     pending_snapshots = []
+    computed_count = 0
+    finalized_count = 0
     for post, stored_claims, ready_claims, names, direction in pending:
+        if cancel_callback and cancel_callback():
+            raise RuntimeError("复盘任务已取消")
         items = []
         for target in names.values():
             quotes = [row for row in quotes_by_code.get(target["code"], []) if row["trade_date"] > post["date"]][:121]
@@ -233,12 +245,19 @@ async def review_posts(
             {"version": 1, "claims_signature": _claims_signature(stored_claims), "result": result},
             finalized,
         ))
+        computed_count += 1
+        finalized_count += int(finalized)
+        if progress_callback and (computed_count % 25 == 0 or computed_count == len(pending)):
+            progress_callback({
+                "total": total_posts, "processed": reused_count + computed_count,
+                "reused": reused_count, "computed": computed_count, "finalized": finalized_count,
+            })
     opinions.save_review_snapshots(pending_snapshots)
     article_total = len(results)
     has_more = bool(limit_value and article_total >= limit_value)
     if group_by_day:
         results = _merge_daily_results(results)
-    summary = _summary(results)
+    summary = _summary(results, target_threshold=target_threshold)
     summary["article_total"] = article_total
     return {"total": len(results), "article_total": article_total, "has_more": has_more, "items": results, "windows": WINDOWS, "summary": summary}
 
@@ -299,12 +318,19 @@ def _merge_daily_results(results: list[dict]) -> list[dict]:
     return merged
 
 
-def _summary(results: list[dict]) -> dict:
+def _summary(results: list[dict], target_threshold: float = 3.0) -> dict:
     """Aggregate only observations with actual prices; missing data is not a zero return."""
     observations = {str(window): [] for window in WINDOWS}
     excess_observations = {str(window): [] for window in WINDOWS}
     direction_counts: dict[str, int] = {}
+    accuracy = {
+        str(window): {"samples": 0, "correct": 0, "benchmark_wins": 0, "target_hits": 0,
+                      "correct_rate": None, "benchmark_win_rate": None, "target_hit_rate": None,
+                      "average_return": None, "average_excess": None, "returns": [], "excesses": []}
+        for window in WINDOWS
+    }
     by_user: dict[str, dict] = {}
+    user_windows: dict[str, dict[str, dict]] = {}
     verified = 0
     claim_count = 0
     target_count = 0
@@ -321,7 +347,9 @@ def _summary(results: list[dict]) -> dict:
         user_stat["posts"] += 1
         user_stat["verified"] += bool(targets)
         user_stat["targets"] += len(targets)
+        user_windows.setdefault(user_key, {str(window): {"samples": 0, "correct": 0, "returns": [], "excesses": []} for window in WINDOWS})
         for target in targets:
+            target_direction = target.get("direction") or direction
             for window in WINDOWS:
                 key = str(window)
                 value = target.get("performance", {}).get(key)
@@ -330,6 +358,21 @@ def _summary(results: list[dict]) -> dict:
                     observations[key].append(value)
                 if excess is not None:
                     excess_observations[key].append(excess)
+                if value is not None and target_direction in ("看多", "看空"):
+                    stat = accuracy[key]
+                    stat["samples"] += 1
+                    stat["correct"] += int(value > 0 if target_direction == "看多" else value < 0)
+                    stat["benchmark_wins"] += int(excess is not None and excess > 0)
+                    stat["target_hits"] += int(value > target_threshold if target_direction == "看多" else value < -target_threshold)
+                    stat["returns"].append(value)
+                    if excess is not None:
+                        stat["excesses"].append(excess)
+                    user_stat_window = user_windows[user_key][key]
+                    user_stat_window["samples"] += 1
+                    user_stat_window["correct"] += int(value > 0 if target_direction == "看多" else value < 0)
+                    user_stat_window["returns"].append(value)
+                    if excess is not None:
+                        user_stat_window["excesses"].append(excess)
     windows = {}
     for window in WINDOWS:
         key = str(window)
@@ -341,6 +384,63 @@ def _summary(results: list[dict]) -> dict:
             "average_excess": round(sum(excess_values) / len(excess_values), 2) if excess_values else None,
             "positive_rate": round(sum(value > 0 for value in values) / len(values) * 100, 2) if values else None,
         }
+        stat = accuracy[key]
+        accuracy[key] = {
+            "samples": stat["samples"],
+            "correct_rate": round(stat["correct"] / stat["samples"] * 100, 2) if stat["samples"] else None,
+            "benchmark_win_rate": round(stat["benchmark_wins"] / stat["samples"] * 100, 2) if stat["samples"] else None,
+            "target_hit_rate": round(stat["target_hits"] / stat["samples"] * 100, 2) if stat["samples"] else None,
+            "average_return": round(sum(stat["returns"]) / len(stat["returns"]), 2) if stat["returns"] else None,
+            "average_excess": round(sum(stat["excesses"]) / len(stat["excesses"]), 2) if stat["excesses"] else None,
+        }
+    rankings = []
+    for user_key, user_stat in by_user.items():
+        ranking = {**user_stat, "accuracy": {}}
+        for window in WINDOWS:
+            key = str(window)
+            stat = user_windows[user_key][key]
+            ranking["accuracy"][key] = {
+                "samples": stat["samples"],
+                "correct_rate": round(stat["correct"] / stat["samples"] * 100, 2) if stat["samples"] else None,
+                "average_return": round(sum(stat["returns"]) / len(stat["returns"]), 2) if stat["returns"] else None,
+                "average_excess": round(sum(stat["excesses"]) / len(stat["excesses"]), 2) if stat["excesses"] else None,
+            }
+        rankings.append(ranking)
+    rankings.sort(key=lambda item: (item["accuracy"]["20"]["correct_rate"] is not None, item["accuracy"]["20"]["correct_rate"] or -1), reverse=True)
+    monthly_data: dict[str, dict] = {}
+    for item in results:
+        month = str(item.get("date") or "")[:7]
+        if len(month) != 7:
+            continue
+        month_stat = monthly_data.setdefault(
+            month, {"month": month, "posts": 0, "targets": 0,
+                    "windows": {str(w): {"returns": [], "correct": 0, "samples": 0} for w in WINDOWS}}
+        )
+        month_stat["posts"] += 1
+        month_stat["targets"] += len(item.get("targets") or [])
+        for target in item.get("targets") or []:
+            target_direction = target.get("direction") or item.get("direction")
+            for window in WINDOWS:
+                value = target.get("performance", {}).get(str(window))
+                if value is None:
+                    continue
+                stat = month_stat["windows"][str(window)]
+                stat["returns"].append(value)
+                if target_direction in ("看多", "看空"):
+                    stat["samples"] += 1
+                    stat["correct"] += int(value > 0 if target_direction == "看多" else value < 0)
+    monthly = []
+    for month in sorted(monthly_data):
+        month_item = monthly_data[month]
+        month_item["windows"] = {
+            key: {
+                "samples": stat["samples"],
+                "average_return": round(sum(stat["returns"]) / len(stat["returns"]), 2) if stat["returns"] else None,
+                "correct_rate": round(stat["correct"] / stat["samples"] * 100, 2) if stat["samples"] else None,
+            }
+            for key, stat in month_item["windows"].items()
+        }
+        monthly.append(month_item)
     return {
         "posts": len(results),
         "verified_posts": verified,
@@ -349,5 +449,8 @@ def _summary(results: list[dict]) -> dict:
         "targets": target_count,
         "direction_counts": direction_counts,
         "windows": windows,
+        "accuracy": accuracy,
         "by_user": list(by_user.values()),
+        "rankings": rankings,
+        "monthly": monthly,
     }

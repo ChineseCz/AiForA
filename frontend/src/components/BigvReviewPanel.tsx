@@ -1,11 +1,14 @@
+import { DownloadOutlined } from "@ant-design/icons";
 import {
-  AutoComplete, Button, Card, Checkbox, Col, DatePicker, Input, Row, Segmented, Select, Space, Statistic, Switch, Table, Tag, Typography, message,
+  AutoComplete, Button, Card, Checkbox, Col, DatePicker, Input, Progress, Row, Segmented, Select, Space, Statistic, Switch, Table, Tag, Typography, message,
 } from "antd";
 import dayjs, { type Dayjs } from "dayjs";
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
+import ReactECharts from "echarts-for-react";
 
 import { api, errMsg, getToken } from "@/api/client";
-import { useUsers } from "@/api/hooks";
+import { useJobStatus, useUsers } from "@/api/hooks";
 
 type DatePreset = "7d" | "30d" | "90d" | "year" | "all" | "custom";
 const REVIEW_PREFS_KEY = "bigv_review_preferences";
@@ -41,10 +44,15 @@ export default function BigvReviewPanel() {
   const [start, setStart] = useState<Dayjs | null>(initialDates[0]);
   const [end, setEnd] = useState<Dayjs | null>(initialDates[1]);
   const [loading, setLoading] = useState(false);
+  const [reviewing, setReviewing] = useState(false);
   const [items, setItems] = useState<Array<Record<string, any>>>([]);
   const [summary, setSummary] = useState<Record<string, any> | null>(null);
   const [hasMore, setHasMore] = useState(false);
   const [groupByDay, setGroupByDay] = useState(saved.groupByDay);
+  const [directionFilter, setDirectionFilter] = useState("");
+  const [verdictFilter, setVerdictFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const { data: reviewStatus } = useJobStatus("bigv_review", "/api/bigv-review/run/status", reviewing);
 
   useEffect(() => {
     localStorage.setItem(REVIEW_PREFS_KEY, JSON.stringify({ user, preset: datePreset, groupByDay }));
@@ -54,6 +62,7 @@ export default function BigvReviewPanel() {
     setLoading(true);
     api.get("/api/bigv-review", { params: {
       user, start: start?.format("YYYY-MM-DD") || "", end: end?.format("YYYY-MM-DD") || "", limit: 0, group_by_day: groupByDay,
+      direction: directionFilter, verdict: verdictFilter, extraction_status: statusFilter,
     } }).then((r) => {
       setItems(r.data?.items || []);
       setSummary(r.data?.summary || null);
@@ -61,9 +70,62 @@ export default function BigvReviewPanel() {
     }).catch((e) => message.error(errMsg(e))).finally(() => setLoading(false));
   }
 
+  function exportReview() {
+    api.get("/api/bigv-review/export", { params: {
+      user, start: start?.format("YYYY-MM-DD") || "", end: end?.format("YYYY-MM-DD") || "",
+      direction: directionFilter, verdict: verdictFilter, extraction_status: statusFilter,
+    }, responseType: "blob" }).then((response) => {
+      const url = URL.createObjectURL(response.data);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = "bigv-review.csv";
+      anchor.click();
+      URL.revokeObjectURL(url);
+    }).catch((e) => message.error(errMsg(e, "导出失败")));
+  }
+
+  useEffect(() => {
+    if (!reviewing || !reviewStatus || reviewStatus.running) return;
+    setReviewing(false);
+    if (reviewStatus.error) {
+      message.error(reviewStatus.error);
+      return;
+    }
+    load();
+  }, [reviewing, reviewStatus]);
+
+  function startReview() {
+    setReviewing(true);
+    api.post("/api/bigv-review/run", {
+      user, start: start?.format("YYYY-MM-DD") || "", end: end?.format("YYYY-MM-DD") || "",
+      limit: 0, group_by_day: groupByDay, direction: directionFilter,
+      verdict: verdictFilter, extraction_status: statusFilter,
+    }).then((r) => {
+      if (!r.data?.started && r.data?.running) message.info("已有复盘任务正在运行");
+    }).catch((e) => {
+      setReviewing(false);
+      message.error(errMsg(e));
+    });
+  }
+
+  function cancelReview() {
+    const jobId = reviewStatus?.job_id;
+    if (!jobId) return;
+    api.post(`/api/bigv-review/run/${jobId}/cancel`).then(() => message.info("已请求取消复盘任务"))
+      .catch((e) => message.error(errMsg(e, "取消失败")));
+  }
+
+  function retryReview() {
+    setReviewing(true);
+    api.post("/api/bigv-review/run/retry").then((r) => {
+      if (!r.data?.started && r.data?.running) message.info("已有复盘任务正在运行");
+    }).catch((e) => { setReviewing(false); message.error(errMsg(e, "重试失败")); });
+  }
+
   const extract = () => api.post("/api/bigv-review/extract", {})
     .then((r) => message.success(`已提交 ${r.data?.count || 0} 篇文章的观点提取任务`))
     .catch((e) => message.error(errMsg(e)));
+  const monthly = summary?.monthly ?? [];
 
   return (
     <Card size="small" title="大V观点与行情复盘">
@@ -83,10 +145,29 @@ export default function BigvReviewPanel() {
         />
         {datePreset === "custom" ? <DatePicker value={start} onChange={setStart} placeholder="开始日期" /> : null}
         {datePreset === "custom" ? <DatePicker value={end} onChange={setEnd} placeholder="结束日期" /> : null}
-        <Button type="primary" onClick={load} loading={loading}>开始复盘</Button>
+        <Button type="primary" onClick={startReview} loading={reviewing || loading} disabled={reviewing}>开始复盘</Button>
+        {reviewing ? <Button danger onClick={cancelReview}>取消任务</Button> : null}
+        {!reviewing && ["error", "canceled"].includes(reviewStatus?.status || "") ? <Button onClick={retryReview}>重试上次复盘</Button> : null}
+        <Button icon={<DownloadOutlined />} onClick={exportReview} disabled={reviewing}>导出 CSV</Button>
+        <Select allowClear placeholder="方向" style={{ width: 100 }} value={directionFilter || undefined} onChange={(v) => setDirectionFilter(v || "")} options={[{ value: "看多", label: "看多" }, { value: "看空", label: "看空" }]} />
+        <Select allowClear placeholder="验证状态" style={{ width: 120 }} value={verdictFilter || undefined} onChange={(v) => setVerdictFilter(v || "")} options={["可验证", "部分可验证", "暂无行情", "待验证"].map((v) => ({ value: v, label: v }))} />
+        <Select allowClear placeholder="观点状态" style={{ width: 110 }} value={statusFilter || undefined} onChange={(v) => setStatusFilter(v || "")} options={["ready", "pending", "error", "missing"].map((v) => ({ value: v, label: v }))} />
         <Checkbox checked={groupByDay} onChange={(e) => setGroupByDay(e.target.checked)}>按日合并文章</Checkbox>
         {isAdmin ? <Button onClick={extract}>补提取观点</Button> : null}
       </Space>
+      {reviewing ? <div style={{ marginBottom: 8 }}>
+        <Progress
+          percent={reviewStatus?.progress?.total ? Math.round((reviewStatus.progress.processed || 0) / reviewStatus.progress.total * 100) : 0}
+          status="active"
+          size="small"
+        />
+        <Typography.Text type="secondary">
+          {reviewStatus?.progress?.processed || 0}/{reviewStatus?.progress?.total || "?"} 篇
+          {reviewStatus?.progress?.reused ? `，复用 ${reviewStatus.progress.reused} 篇` : ""}
+          {reviewStatus?.progress?.computed ? `，重新计算 ${reviewStatus.progress.computed} 篇` : ""}
+          {reviewStatus?.log?.slice(-1)[0] ? ` · ${reviewStatus.log.slice(-1)[0]}` : " · 正在后台复盘，请稍候..."}
+        </Typography.Text>
+      </div> : null}
       {summary ? <Row gutter={[8, 8]} style={{ marginBottom: 10 }}>
         <Col xs={12} sm={6}><Statistic title={groupByDay ? "日期数" : "文章数"} value={summary.posts ?? 0} /><Typography.Text type="secondary">文章 {summary.article_total ?? summary.posts ?? 0}</Typography.Text></Col>
         <Col xs={12} sm={6}><Statistic title="可验证率" value={summary.verification_rate ?? "-"} suffix="%" /></Col>
@@ -95,6 +176,54 @@ export default function BigvReviewPanel() {
         <Col xs={12} sm={6}><Statistic title="20日平均收益" value={summary.windows?.["20"]?.average_return ?? "-"} suffix="%" /></Col>
         <Col xs={12} sm={6}><Statistic title="60日平均收益" value={summary.windows?.["60"]?.average_return ?? "-"} suffix="%" /></Col>
       </Row> : null}
+      {summary?.accuracy ? <Table
+        size="small"
+        pagination={false}
+        style={{ marginBottom: 10 }}
+        dataSource={["1", "3", "5", "7", "10", "20", "60", "120"].map((window) => ({ window, ...summary.accuracy[window] }))}
+        rowKey="window"
+        columns={[
+          { title: "周期", dataIndex: "window", width: 70, render: (v: string) => `${v}日` },
+          { title: "样本", dataIndex: "samples", width: 70 },
+          { title: "方向正确率", dataIndex: "correct_rate", width: 110, render: (v: number | null) => v == null ? "-" : `${v}%` },
+          { title: "平均收益", dataIndex: "average_return", width: 100, render: (v: number | null) => v == null ? "-" : `${v}%` },
+          { title: "平均超额", dataIndex: "average_excess", width: 100, render: (v: number | null) => v == null ? "-" : `${v}%` },
+          { title: "跑赢基准率", dataIndex: "benchmark_win_rate", width: 110, render: (v: number | null) => v == null ? "-" : `${v}%` },
+          { title: "达标率", dataIndex: "target_hit_rate", width: 90, render: (v: number | null) => v == null ? "-" : `${v}%` },
+        ]}
+      /> : null}
+      {summary?.rankings?.length ? <Table
+        size="small"
+        pagination={false}
+        style={{ marginBottom: 10 }}
+        title={() => "大 V 表现排名（按 20 日方向正确率）"}
+        dataSource={summary.rankings}
+        rowKey={(row: Record<string, any>) => String(row.user_id || row.user_name)}
+        columns={[
+          { title: "排名", width: 60, render: (_: unknown, _row: Record<string, any>, index: number) => index + 1 },
+          { title: "大 V", dataIndex: "user_name", width: 140 },
+          { title: "文章", dataIndex: "posts", width: 70 },
+          { title: "标的", dataIndex: "targets", width: 70 },
+          ...["1", "5", "20", "60"].map((window) => ({
+            title: `${window}日正确率`, width: 100,
+            render: (_: unknown, row: Record<string, any>) => row.accuracy?.[window]?.correct_rate == null ? "-" : `${row.accuracy[window].correct_rate}%`,
+          })),
+        ]}
+      /> : null}
+      {monthly.length > 1 ? <ReactECharts
+        style={{ height: 280, marginBottom: 10 }}
+        option={{
+          tooltip: { trigger: "axis" },
+          legend: { data: ["1日平均收益", "5日平均收益", "20日方向正确率"] },
+          xAxis: { type: "category", data: monthly.map((item: Record<string, any>) => item.month) },
+          yAxis: [{ type: "value", name: "收益率 %" }, { type: "value", name: "正确率 %", min: 0, max: 100 }],
+          series: [
+            { name: "1日平均收益", type: "line", data: monthly.map((item: Record<string, any>) => item.windows?.["1"]?.average_return) },
+            { name: "5日平均收益", type: "line", data: monthly.map((item: Record<string, any>) => item.windows?.["5"]?.average_return) },
+            { name: "20日方向正确率", type: "line", yAxisIndex: 1, data: monthly.map((item: Record<string, any>) => item.windows?.["20"]?.correct_rate) },
+          ],
+        }}
+      /> : null}
       {hasMore ? <Typography.Text type="warning" style={{ display: "block", marginBottom: 8 }}>结果已达到当前查询限制，请缩小日期范围或按大V查询。</Typography.Text> : null}
       <Table size="small" loading={loading} rowKey="id" pagination={{ pageSize: 10, hideOnSinglePage: true }} scroll={{ x: 900 }}
         dataSource={items}
@@ -108,7 +237,7 @@ export default function BigvReviewPanel() {
           { title: "大V", dataIndex: "user_name", width: 120 },
           { title: "文章", width: 300, ellipsis: true, render: (_: unknown, r: Record<string, any>) => r.title || r.source_title || r.text?.split(/\r?\n/)[0]?.slice(0, 80) || "无标题文章" },
           { title: "方向", dataIndex: "direction", width: 80, render: (v: string) => <Tag color={v === "看多" ? "red" : v === "看空" ? "green" : "default"}>{v}</Tag> },
-          { title: "标的", width: 280, render: (_: unknown, r: Record<string, any>) => r.targets?.map((t: Record<string, any>) => <Typography.Text key={t.code} style={{ color: targetColor(t.direction), marginRight: 8 }}>{t.name}({t.code})</Typography.Text>) || "未识别" },
+          { title: "标的", width: 280, render: (_: unknown, r: Record<string, any>) => r.targets?.length ? r.targets.map((t: Record<string, any>) => <TargetLink key={t.code} target={t} />) : "未识别" },
           { title: "验证", dataIndex: "verdict", width: 90 },
           { title: "短线 1/3/5日", width: 220, render: (_: unknown, r: Record<string, any>) => <TargetHorizonList targets={r.targets} windows={["1", "3", "5"]} /> },
           { title: "中线 7/10/20日", width: 230, render: (_: unknown, r: Record<string, any>) => <TargetHorizonList targets={r.targets} windows={["7", "10", "20"]} /> },
@@ -123,11 +252,18 @@ function targetColor(direction?: string) {
   return direction === "看多" ? "#f5222d" : direction === "看空" ? "#52c41a" : undefined;
 }
 
+function TargetLink({ target }: { target: Record<string, any> }) {
+  const color = targetColor(target.direction);
+  return <Link to={`/stock/${target.code}`} style={{ color, marginRight: 8, whiteSpace: "nowrap" }}>
+    {target.name}({target.code})
+  </Link>;
+}
+
 function TargetHorizonList({ targets, windows }: { targets?: Array<Record<string, any>>; windows: string[] }) {
   if (!targets?.length) return <Typography.Text type="secondary">-</Typography.Text>;
   return <Space direction="vertical" size={2}>
     {targets.map((target) => <div key={target.code} style={{ color: targetColor(target.direction) }}>
-      <Typography.Text strong style={{ color: targetColor(target.direction) }}>{target.name}</Typography.Text>
+      <Typography.Text strong><TargetLink target={target} /></Typography.Text>
       <Typography.Text type="secondary">：{windows.map((window) => {
         const value = target.performance?.[window];
         return `${window}日 ${target.quote_count === 0 ? "暂无" : value == null ? "未到期" : `${value}%`}`;
@@ -146,7 +282,7 @@ function TargetPerformanceTable({ targets }: { targets: Array<Record<string, any
     columns={[{
       title: "标的 / 方向",
       width: 150,
-      render: (_: unknown, target: Record<string, any>) => <Typography.Text style={{ color: targetColor(target.direction) }}>{target.name} ({target.code}) · {target.direction || "未定向"}</Typography.Text>,
+      render: (_: unknown, target: Record<string, any>) => <Typography.Text><TargetLink target={target} /> · <span style={{ color: targetColor(target.direction) }}>{target.direction || "未定向"}</span></Typography.Text>,
     }, ...["1", "3", "5", "7", "10", "20", "60", "120"].map((window) => ({
       title: `${window}日`,
       width: 130,

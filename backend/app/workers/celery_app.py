@@ -32,6 +32,10 @@ celery_app.conf.update(
         "scheduler-tick": {"task": "beat.tick", "schedule": 60.0},
         # 全市场行情：每分钟检查一次，任务内部按 schedules.stock_sync_interval 到时间槽才派发。
         "stock-auto-sync": {"task": "stock.auto_sync_tick", "schedule": 60.0},
+        "bigv-review-daily": {
+            "task": "bigv_review.daily_tick",
+            "schedule": crontab(hour=16, minute=10, day_of_week="1-5"),
+        },
         "signal-notifications": {"task": "stock.signal_notifications", "schedule": 300.0},
         # 周总结：每周三、周日 20:00（day_of_week: 0=周日）门槛检查，通过后派发 summarize.run
         # 生成全部大V本周周总结。指向门槛任务 summarize.weekly_tick 而不是直接指向 summarize.run，

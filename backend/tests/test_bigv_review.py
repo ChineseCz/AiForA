@@ -44,3 +44,17 @@ def test_summary_ignores_missing_windows_and_aggregates_excess():
     assert summary["windows"]["5"]["average_return"] == 10.0
     assert summary["windows"]["5"]["average_excess"] == 7.0
     assert summary["windows"]["5"]["positive_rate"] == 100.0
+
+
+def test_summary_calculates_direction_accuracy_per_window():
+    summary = _summary([{
+        "user_id": "u1", "direction": "看多", "claims": [],
+        "targets": [
+            {"direction": "看多", "quote_count": 2, "performance": {"1": 2.0}, "excess": {"1": 1.0}},
+            {"direction": "看空", "quote_count": 2, "performance": {"1": 3.0}, "excess": {"1": 2.0}},
+        ],
+    }])
+    assert summary["accuracy"]["1"]["samples"] == 2
+    assert summary["accuracy"]["1"]["correct_rate"] == 50.0
+    assert summary["accuracy"]["1"]["benchmark_win_rate"] == 100.0
+    assert summary["accuracy"]["1"]["target_hit_rate"] == 0.0

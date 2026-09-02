@@ -4,7 +4,7 @@ Phase 1 仅建表；Phase 2 由后台任务写入、状态接口读取。
 kind: crawl / summarize / stock_sync / stock_backfill / finance_sync / sector_sync / sector_members_sync
 status: running / done / error
 """
-from sqlalchemy import BigInteger, String, Text
+from sqlalchemy import JSON, BigInteger, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -21,3 +21,6 @@ class JobRun(Base):
     error: Mapped[str | None] = mapped_column(Text)
     started_at: Mapped[int | None] = mapped_column(BigInteger)
     finished_at: Mapped[int | None] = mapped_column(BigInteger)
+    progress: Mapped[dict | None] = mapped_column(JSON)
+    parameters: Mapped[dict | None] = mapped_column(JSON)
+    artifact_path: Mapped[str | None] = mapped_column(Text)

@@ -66,7 +66,7 @@ def job_run(kind: str, source: str = "手动", invalidate_cache: bool = False, j
         if invalidate_cache:
             bump_dataver_sync()
     except Exception as e:  # noqa: BLE001
-        error = str(e)
+        error = "" if job_id is not None and jobs.get_status_sync(job_id) == "cancel_requested" else str(e)
         print(f"❌ 出错：{e}")
     finally:
         writer.flush_db()
