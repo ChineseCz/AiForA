@@ -101,13 +101,17 @@ export default function BigvReviewPanel() {
   }, [reviewing, reviewStatus]);
 
   function startReview() {
+    if (loading || reviewing) return;
     setReviewing(true);
     api.post("/api/bigv-review/run", {
       user, start: start?.format("YYYY-MM-DD") || "", end: end?.format("YYYY-MM-DD") || "",
       limit: 0, group_by_day: groupByDay, direction: directionFilter,
       verdict: verdictFilter, extraction_status: statusFilter,
     }).then((r) => {
-      if (!r.data?.started && r.data?.running) message.info("已有复盘任务正在运行");
+      if (!r.data?.started) {
+        setReviewing(false);
+        if (r.data?.running) message.info("已有复盘任务正在运行");
+      }
     }).catch((e) => {
       setReviewing(false);
       message.error(errMsg(e));
@@ -151,7 +155,7 @@ export default function BigvReviewPanel() {
         />
         {datePreset === "custom" ? <DatePicker value={start} onChange={setStart} placeholder="开始日期" /> : null}
         {datePreset === "custom" ? <DatePicker value={end} onChange={setEnd} placeholder="结束日期" /> : null}
-        <Button type="primary" onClick={startReview} loading={reviewing || loading} disabled={reviewing}>开始复盘</Button>
+        <Button type="primary" onClick={startReview} loading={reviewing} disabled={reviewing || loading}>开始复盘</Button>
         {reviewing ? <Button danger onClick={cancelReview}>取消任务</Button> : null}
         {!reviewing && ["error", "canceled"].includes(reviewStatus?.status || "") ? <Button onClick={retryReview}>重试上次复盘</Button> : null}
         <Button icon={<DownloadOutlined />} onClick={exportReview} disabled={reviewing}>导出 CSV</Button>
@@ -161,6 +165,9 @@ export default function BigvReviewPanel() {
         <Checkbox checked={groupByDay} onChange={(e) => setGroupByDay(e.target.checked)}>按日合并文章</Checkbox>
         {isAdmin ? <Button onClick={extract}>补提取观点</Button> : null}
       </Space>
+      {loading && !reviewing ? <Typography.Text type="secondary" style={{ display: "block", marginBottom: 8 }}>
+        正在读取已保存的复盘结果，不会重新计算行情。
+      </Typography.Text> : null}
       {!loading && !reviewing && !items.length ? <Typography.Text type="secondary" style={{ display: "block", marginBottom: 8 }}>
         当前条件下没有已保存的复盘结果；如需补算缺失文章，请点击“开始复盘”。
       </Typography.Text> : null}
