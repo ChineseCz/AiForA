@@ -8,6 +8,7 @@ from app.repositories import opinions
 
 
 WINDOWS = (1, 3, 5, 7, 10, 20, 60, 120)
+SNAPSHOT_VERSION = 2
 CODE_RE = re.compile(r"(?<!\d)(\d{6})(?!\d)")
 POSITIVE = ("看多", "上涨", "启动", "突破", "机会", "买入", "加仓", "利好", "龙头")
 NEGATIVE = ("看空", "下跌", "回落", "风险", "卖出", "减仓", "利空", "见顶")
@@ -25,10 +26,17 @@ def _direction(text_value: str) -> str:
     return "未定向"
 
 
+def _valid_close(value: object) -> bool:
+    try:
+        return float(value) > 0
+    except (TypeError, ValueError):
+        return False
+
+
 def _pct(start: float | None, end: float | None) -> float | None:
-    if start is None or end is None or start == 0:
+    if not _valid_close(start) or not _valid_close(end):
         return None
-    return round((end / start - 1) * 100, 2)
+    return round((float(end) / float(start) - 1) * 100, 2)
 
 
 def _claims_signature(claims: list[dict]) -> str:
@@ -112,7 +120,7 @@ async def review_posts(
         snapshot = snapshots_by_post.get(post_id)
         snapshot_matches = bool(
             snapshot
-            and snapshot["payload"].get("version") == 1
+            and snapshot["payload"].get("version") == SNAPSHOT_VERSION
             and snapshot["payload"].get("claims_signature") == _claims_signature(stored_claims)
             and isinstance(snapshot["payload"].get("result"), dict)
         )
@@ -191,12 +199,15 @@ async def review_posts(
             raise RuntimeError("复盘任务已取消")
         items = []
         for target in names.values():
-            quotes = [row for row in quotes_by_code.get(target["code"], []) if row["trade_date"] > post["date"]][:121]
+            quotes = [
+                row for row in quotes_by_code.get(target["code"], [])
+                if row["trade_date"] > post["date"] and _valid_close(row.get("close"))
+            ][:121]
             if not quotes:
                 items.append({"code": target["code"], "name": target["name"], "performance": {}, "excess": {},
                               "available_windows": [], "quote_count": 0, "data_status": "no_future_quotes"})
                 continue
-            baseline = benchmark_by_date.get(post["date"], [])
+            baseline = [row for row in benchmark_by_date.get(post["date"], []) if _valid_close(row.get("close"))]
             first = quotes[0]["close"]
             benchmark_first = baseline[0]["close"] if baseline else None
             performance = {}
@@ -249,7 +260,7 @@ async def review_posts(
         )
         pending_snapshots.append((
             str(post["id"]),
-            {"version": 1, "claims_signature": _claims_signature(stored_claims), "result": result},
+            {"version": SNAPSHOT_VERSION, "claims_signature": _claims_signature(stored_claims), "result": result},
             finalized,
         ))
         computed_count += 1

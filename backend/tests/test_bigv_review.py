@@ -12,6 +12,8 @@ def test_pct_handles_normal_and_invalid_values():
     assert _pct(100, 108) == 8.0
     assert _pct(100, 95) == -5.0
     assert _pct(0, 100) is None
+    assert _pct(100, 0) is None
+    assert _pct(100, -1) is None
     assert _pct(None, 100) is None
 
 
