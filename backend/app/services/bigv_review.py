@@ -110,12 +110,16 @@ async def review_posts(
         post_id = str(post["id"])
         stored_claims = claims_by_post.get(post_id, [])
         snapshot = snapshots_by_post.get(post_id)
-        if (
-            snapshot and snapshot.get("finalized")
+        snapshot_matches = bool(
+            snapshot
             and snapshot["payload"].get("version") == 1
             and snapshot["payload"].get("claims_signature") == _claims_signature(stored_claims)
             and isinstance(snapshot["payload"].get("result"), dict)
-        ):
+        )
+        # The read-only view must show partial snapshots too. A snapshot is
+        # only finalized after the longest horizon is available, so requiring
+        # finalized here made recent 30/60/90-day ranges appear empty.
+        if snapshot_matches and (saved_only or snapshot.get("finalized")):
             results.append(snapshot["payload"]["result"])
             reused_count += 1
             continue

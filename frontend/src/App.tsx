@@ -52,6 +52,17 @@ function RequireVisitorOrAnon({ children }: { children: JSX.Element }) {
   return children;
 }
 
+function RedirectIfLoggedIn({ children }: { children: JSX.Element }) {
+  const { loggedIn: adminLoggedIn } = useAuth();
+  const { loggedIn: visitorLoggedIn } = useVisitorAuth();
+  const loc = useLocation();
+  if (adminLoggedIn || visitorLoggedIn) {
+    const from = (loc.state as { from?: string } | null)?.from;
+    return <Navigate to={from && from !== "/login" ? from : "/"} replace />;
+  }
+  return children;
+}
+
 // 访客登录后在 header 显示账号信息 + 改昵称 + 退出登录；游客（isGuest）只显示简单退出入口。
 function VisitorMenu() {
   const { loggedIn, isGuest, logout, login: visitorLogin } = useVisitorAuth();
@@ -374,7 +385,7 @@ export default function App() {
         }}>
           <Suspense fallback={<div style={{ padding: 24, textAlign: "center" }}>加载中…</div>}>
             <Routes>
-              <Route path="/login" element={<VisitorLogin />} />
+              <Route path="/login" element={<RedirectIfLoggedIn><VisitorLogin /></RedirectIfLoggedIn>} />
               {/* 管理员后台：管理员登录入口已移至 /login 页（IP 限制显示），此处无需独立登录路由 */}
               <Route path="/admin" element={<RequireAdmin><Admin /></RequireAdmin>} />
               <Route element={<RequireVisitorOrAnon><Outlet /></RequireVisitorOrAnon>}>

@@ -82,7 +82,9 @@ async def public_bigv_review(
     verdict: str = Query(""), extraction_status: str = Query(""), target_threshold: float = Query(3.0, ge=0, le=100), saved_only: bool = Query(False),
     session: AsyncSession = Depends(db_session), c: CacheService = Depends(cache),
 ):
-    key = await c.key("bigv_review", user=user, start=start, end=end, limit=limit, group_by_day=group_by_day,
+    # v2 invalidates cached read-only results created before partial snapshots
+    # were included in saved_only mode.
+    key = await c.key("bigv_review_v2", user=user, start=start, end=end, limit=limit, group_by_day=group_by_day,
                       direction=direction, verdict=verdict, extraction_status=extraction_status, target_threshold=target_threshold, saved_only=saved_only)
     hit = await c.get_json(key)
     if hit is not None:
