@@ -79,7 +79,7 @@ async def _instrument_aliases(session: AsyncSession) -> dict[str, list[dict[str,
 async def review_posts(
     session: AsyncSession, user_id: str = "", start: str = "", end: str = "", limit: int = 100,
     group_by_day: bool = False, progress_callback=None, cancel_callback=None, target_threshold: float = 3.0,
-    saved_only: bool = False,
+    saved_only: bool = False, refresh_partial: bool = True,
 ) -> dict:
     conditions = ["date != ''"]
     params: dict = {}
@@ -127,7 +127,7 @@ async def review_posts(
         # The read-only view must show partial snapshots too. A snapshot is
         # only finalized after the longest horizon is available, so requiring
         # finalized here made recent 30/60/90-day ranges appear empty.
-        if snapshot_matches and (saved_only or snapshot.get("finalized")):
+        if snapshot_matches and (saved_only or not refresh_partial or snapshot.get("finalized")):
             results.append(snapshot["payload"]["result"])
             reused_count += 1
             continue

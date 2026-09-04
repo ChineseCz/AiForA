@@ -34,11 +34,15 @@ async def start_bigv_review(request: Request, session: AsyncSession = Depends(db
         "user": str(body.get("user") or ""), "start": str(body.get("start") or ""),
         "end": str(body.get("end") or ""), "limit": max(0, int(body.get("limit") or 0)),
         "group_by_day": bool(body.get("group_by_day", True)),
+        # Incremental review also refreshes snapshots whose shorter horizons
+        # have become available since the previous run.
+        "refresh_partial": bool(body.get("refresh_partial", True)),
     }
     job_id = await run_in_threadpool(jobs.create_job, "bigv_review", "手动", parameters)
     task_bigv_review.delay(
         user_id=parameters["user"], start=parameters["start"], end=parameters["end"],
         limit=parameters["limit"], group_by_day=parameters["group_by_day"],
+        refresh_partial=parameters["refresh_partial"],
         source="手动",
         job_id=job_id,
     )
@@ -66,6 +70,7 @@ async def retry_bigv_review(session: AsyncSession = Depends(db_session)):
         user_id=str(params.get("user") or ""), start=str(params.get("start") or ""),
         end=str(params.get("end") or ""), limit=max(0, int(params.get("limit") or 0)),
         group_by_day=bool(params.get("group_by_day", True)), source="重试", job_id=job_id,
+        refresh_partial=bool(params.get("refresh_partial", True)),
     )
     return {"started": True, "running": True, "job_id": job_id}
 
@@ -84,7 +89,7 @@ async def public_bigv_review(
 ):
     # v2 invalidates cached read-only results created before partial snapshots
     # were included in saved_only mode.
-    key = await c.key("bigv_review_v2", user=user, start=start, end=end, limit=limit, group_by_day=group_by_day,
+    key = await c.key("bigv_review_v3", user=user, start=start, end=end, limit=limit, group_by_day=group_by_day,
                       direction=direction, verdict=verdict, extraction_status=extraction_status, target_threshold=target_threshold, saved_only=saved_only)
     hit = await c.get_json(key)
     if hit is not None:

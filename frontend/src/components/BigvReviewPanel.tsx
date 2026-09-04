@@ -71,11 +71,6 @@ export default function BigvReviewPanel() {
     }).catch((e) => message.error(errMsg(e))).finally(() => setLoading(false));
   }
 
-  // Filter changes only read persisted snapshots; missing articles are filled by the review job.
-  useEffect(() => {
-    if (!reviewing) load(true);
-  }, [user, start, end, groupByDay, directionFilter, verdictFilter, statusFilter]);
-
   function exportReview() {
     api.get("/api/bigv-review/export", { params: {
       user, start: start?.format("YYYY-MM-DD") || "", end: end?.format("YYYY-MM-DD") || "",
@@ -106,7 +101,7 @@ export default function BigvReviewPanel() {
     api.post("/api/bigv-review/run", {
       user, start: start?.format("YYYY-MM-DD") || "", end: end?.format("YYYY-MM-DD") || "",
       limit: 0, group_by_day: groupByDay, direction: directionFilter,
-      verdict: verdictFilter, extraction_status: statusFilter,
+      verdict: verdictFilter, extraction_status: statusFilter, refresh_partial: true,
     }).then((r) => {
       if (!r.data?.started) {
         setReviewing(false);
@@ -155,7 +150,8 @@ export default function BigvReviewPanel() {
         />
         {datePreset === "custom" ? <DatePicker value={start} onChange={setStart} placeholder="开始日期" /> : null}
         {datePreset === "custom" ? <DatePicker value={end} onChange={setEnd} placeholder="结束日期" /> : null}
-        <Button type="primary" onClick={startReview} loading={reviewing} disabled={reviewing || loading}>开始复盘</Button>
+        <Button onClick={() => load(true)} loading={loading} disabled={reviewing || loading}>加载已有复盘</Button>
+        <Button type="primary" onClick={startReview} loading={reviewing} disabled={reviewing || loading}>开始增量复盘</Button>
         {reviewing ? <Button danger onClick={cancelReview}>取消任务</Button> : null}
         {!reviewing && ["error", "canceled"].includes(reviewStatus?.status || "") ? <Button onClick={retryReview}>重试上次复盘</Button> : null}
         <Button icon={<DownloadOutlined />} onClick={exportReview} disabled={reviewing}>导出 CSV</Button>

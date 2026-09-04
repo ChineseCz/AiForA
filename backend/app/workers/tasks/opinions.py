@@ -53,6 +53,7 @@ def task_bigv_export(parameters: dict, source: str = "手动导出", job_id: int
 def task_bigv_review(
     user_id: str = "", start: str = "", end: str = "", limit: int = 0,
     group_by_day: bool = True, source: str = "手动", job_id: int | None = None,
+    refresh_partial: bool = False,
 ) -> None:
     """Run the potentially large Big V review outside the API request."""
     from app.core.db import async_session_maker
@@ -66,7 +67,7 @@ def task_bigv_review(
             return await review_posts(
                 session, user_id=user_id, start=start, end=end,
                 limit=limit, group_by_day=group_by_day, progress_callback=update_progress,
-                cancel_callback=lambda: jobs.is_cancel_requested(job_id),
+                cancel_callback=lambda: jobs.is_cancel_requested(job_id), refresh_partial=refresh_partial,
             )
 
     with job_run("bigv_review", source, invalidate_cache=False, job_id=job_id):
@@ -93,7 +94,8 @@ def task_bigv_review_daily_tick() -> None:
     params = {"user": "", "start": start, "end": today.isoformat(), "limit": 0, "group_by_day": False}
     job_id = jobs.create_job("bigv_review", "定时增量复盘", params)
     task_bigv_review.delay(user_id="", start=start, end=today.isoformat(), limit=0,
-                           group_by_day=False, source="定时增量复盘", job_id=job_id)
+                           group_by_day=False, source="定时增量复盘", job_id=job_id,
+                           refresh_partial=True)
 
 
 @celery_app.task(name="opinion.extract", queue=QUEUE_LLM)
