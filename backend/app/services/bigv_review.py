@@ -5,6 +5,7 @@ import re
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.repositories import opinions
+from app.services.matching import fuzzy_match_instruments
 
 
 WINDOWS = (1, 3, 5, 7, 10, 20, 60, 120)
@@ -106,6 +107,7 @@ async def review_posts(
 
     alias_map = await _instrument_aliases(session)
     by_code = {item["code"]: item for items in alias_map.values() for item in items}
+    instruments = list(by_code.values())
     claims_by_post = opinions.get_claims([str(row["id"]) for row in rows])
     snapshots_by_post = opinions.get_review_snapshots([str(row["id"]) for row in rows])
     results = []
@@ -150,6 +152,8 @@ async def review_posts(
                 claim_name = str(claim.get("name") or "").strip()
                 for item in alias_map.get(claim_name, []):
                     names[item["code"]] = {**item, "claim": claim}
+                for item in fuzzy_match_instruments(instruments, claim_name):
+                    names[item["code"]] = {**item, "claim": claim}
             directions = [claim.get("direction") for claim in all_ready_claims]
             direction = max(set(directions), key=directions.count) if directions else _direction(content)
         else:
@@ -158,6 +162,8 @@ async def review_posts(
             for alias, alias_items in alias_map.items():
                 if alias in content:
                     names.update({item["code"]: item for item in alias_items})
+            for mixed in re.findall(r"[\u4e00-\u9fff]{2,8}[A-Za-z]{1,5}", content):
+                names.update({item["code"]: item for item in fuzzy_match_instruments(instruments, mixed)})
             direction = _direction(content)
             if direction != "看多":
                 names = {}

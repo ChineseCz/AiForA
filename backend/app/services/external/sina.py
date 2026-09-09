@@ -6,7 +6,7 @@
 import json
 import re
 import time
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time as wall_time, timedelta
 
 import requests
 from bs4 import BeautifulSoup
@@ -14,6 +14,12 @@ from bs4 import BeautifulSoup
 _SINA_COUNT_URL = "http://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/Market_Center.getHQNodeStockCount"
 _SINA_DATA_URL = "http://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/Market_Center.getHQNodeData"
 _SINA_PAGE_SIZE = 80
+
+
+def is_realtime_session_started(now: datetime | None = None) -> bool:
+    """A-share live quote requests may start at 09:15 on trading weekdays."""
+    current = now or datetime.now()
+    return current.weekday() < 5 and current.time() >= wall_time(9, 15)
 
 # 板块分类接口（GBK 编码，旧概念分类，覆盖面窄且多年未更新——已弃用，仅行业分类 class_dp 还在用）
 _SINA_CLASS_URL = "http://vip.stock.finance.sina.com.cn/q/view/newFLJK.php"

@@ -31,6 +31,72 @@ def match_name_query(candidates: list[dict], query: str) -> list[dict]:
     return out
 
 
+def fuzzy_match_instruments(candidates: list[dict], query: str) -> list[dict]:
+    """Resolve stock nicknames used in posts, including mixed Chinese/pinyin aliases.
+
+    Examples: ``亚信KJ`` -> 亚信科技, ``浙江JT`` -> 浙江建投,
+    and a one-character typo in a two-character prefix such as ``金键MY``.
+    Only the unique best candidate is returned; ambiguous short names are rejected.
+    """
+    q = re.sub(r"[^0-9A-Za-z\u4e00-\u9fff]", "", str(query or "")).upper()
+    if len(q) < 2:
+        return []
+    try:
+        from pypinyin import Style, lazy_pinyin
+    except ImportError:
+        return match_name_query(candidates, query)
+
+    def initials(value: str) -> str:
+        return "".join(lazy_pinyin(value or "", style=Style.FIRST_LETTER)).upper()
+
+    def edit_distance(left: str, right: str) -> int:
+        prev = list(range(len(right) + 1))
+        for i, a in enumerate(left, 1):
+            cur = [i]
+            for j, b in enumerate(right, 1):
+                cur.append(min(cur[-1] + 1, prev[j] + 1, prev[j - 1] + (a != b)))
+            prev = cur
+        return prev[-1]
+
+    q_cn = "".join(re.findall(r"[\u4e00-\u9fff]", q))
+    q_lat = "".join(re.findall(r"[A-Z]", q))
+    scored: list[tuple[int, dict]] = []
+    for item in candidates:
+        name = str(item.get("name") or "").replace("XD", "").replace("XR", "").replace("*ST", "")
+        name = re.sub(r"[^\u4e00-\u9fffA-Za-z0-9]", "", name).upper()
+        if not name:
+            continue
+        py = initials(name)
+        score = 0
+        if q == name:
+            score = 120
+        elif q == py:
+            score = 115
+        elif q_cn and q_lat:
+            prefix = name[:len(q_cn)]
+            suffix_py = initials(name[len(q_cn):]) if len(name) > len(q_cn) else ""
+            if prefix == q_cn and (q_lat == suffix_py or suffix_py.endswith(q_lat)):
+                score = 105
+            elif len(q_cn) >= 2 and edit_distance(prefix, q_cn) <= 1 and (q_lat == suffix_py or suffix_py.endswith(q_lat)):
+                score = 100
+        elif q_cn:
+            if q_cn in name and len(q_cn) >= 3:
+                score = 92
+            elif len(q_cn) >= 2 and edit_distance(name[:len(q_cn)], q_cn) <= 1:
+                score = 88
+        elif q_lat and q_lat in py:
+            score = 80
+        if score:
+            scored.append((score, item))
+    if not scored:
+        return []
+    scored.sort(key=lambda x: x[0], reverse=True)
+    best_score = scored[0][0]
+    best = [item for score, item in scored if score == best_score]
+    unique = {str(item.get("code")) for item in best}
+    return best if len(unique) == 1 else []
+
+
 def _recent_combined_text(days: int, user_ids: list[str]) -> str:
     ids = user_ids or [uid for uid, _ in db.get_distinct_users()]
     texts = db.get_recent_texts(ids, days)

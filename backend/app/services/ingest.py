@@ -25,6 +25,9 @@ def sync_index_benchmarks() -> int:
 
 def sync_daily_snapshot() -> int:
     """同步 A股 + ETF + 可转债行情快照。"""
+    if not sina.is_realtime_session_started():
+        print("⏸️ 未到 09:15，跳过实时行情快照同步，避免将 0 写入数据库")
+        return 0
     print("… 拉取全市场行情快照（A股 + ETF + 可转债）…")
     trade_date = date.today().isoformat()
 

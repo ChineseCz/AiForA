@@ -1,6 +1,6 @@
 """个股详情：K线 / 基本面 / 相关新闻。计算/外部抓取均跑 threadpool。"""
 import json as _json
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.concurrency import run_in_threadpool
@@ -20,12 +20,19 @@ from app.services.external import sina
 router = APIRouter(prefix="/api")
 
 
+def _before_realtime_start(now: datetime | None = None) -> bool:
+    """Do not ask Sina for a live quote before the A-share session starts."""
+    return not sina.is_realtime_session_started(now)
+
+
 @router.get("/stock/quote")
 async def api_stock_quote(code: str = Query(default=""), c: CacheService = Depends(cache)):
     """个股实时行情（秒级轮询专用）：不走 dataver 版本失效，用 1s 短TTL 兜底防打爆上游。"""
     code = code.strip()
     if not code:
         return JSONResponse({"error": "缺少股票代码"}, status_code=400)
+    if _before_realtime_start():
+        return {"code": code, "error": "未到实时行情时段", "market_open": False, "realtime": False}
     key = f"natapp:quote:{code}"
     hit = await c.get_json(key)
     if hit is not None:
@@ -43,6 +50,8 @@ async def api_stock_quotes(codes: str = Query(default=""), c: CacheService = Dep
     if not code_list:
         return {"items": {}}
     code_list = code_list[:100]
+    if _before_realtime_start():
+        return {"items": {}, "market_open": False, "realtime": False}
     key = f"natapp:quotes:{','.join(sorted(code_list))}"
     hit = await c.get_json(key)
     if hit is not None:

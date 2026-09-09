@@ -11,9 +11,13 @@ from app.workers.runner import job_run
 @celery_app.task(name="stock.sync_snapshot", queue=QUEUE_DEFAULT)
 def task_stock_sync(source: str = "手动", job_id: int | None = None) -> int:
     from app.services import ingest
+    from app.services.external import sina
     n = 0
     with job_run("stock_sync", source, invalidate_cache=True, job_id=job_id) as current_job_id:
-        n = ingest.sync_daily_snapshot()
+        if sina.is_realtime_session_started():
+            n = ingest.sync_daily_snapshot()
+        else:
+            print("⏸️ 未到 09:15，跳过股票实时行情同步")
     # job_run 会记录并吞掉异常；只有快照任务确实成功时才触发全表指标重算。
     from app.repositories import jobs
     if jobs.get_status_sync(current_job_id) == "success":
