@@ -344,6 +344,8 @@ export default function Admin() {
             triggerPath="/api/stock/sync-sectors" statusPath="/api/stock/sync-sectors/status" />
           <JobPanel title="板块成分股全量同步" desc="供个股「所属板块」反查完整覆盖" kind="sector_members_sync"
             triggerPath="/api/stock/sync-sector-members" statusPath="/api/stock/sync-sector-members/status" />
+          <JobPanel title="国家队持仓同步" desc="同步东方财富公开披露的国家队历史持仓及增减变化" kind="national_team_sync"
+            triggerPath="/api/stock/sync-national-team" statusPath="/api/stock/sync-national-team/status" />
           <JobPanel title="历史K线回补" desc="保留已有数据，并向更早日期扩展指定条数" kind="stock_backfill"
             triggerPath="/api/stock/backfill" statusPath="/api/stock/backfill/status" body={{ days: 60 }} backfill resumePath="/api/stock/backfill/resume" />
           <JobPanel title="雪球板块同步" desc="申万134个行业（含半导体/软件开发等），耗时较长" kind="sync_xueqiu_sectors"

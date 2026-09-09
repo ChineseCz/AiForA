@@ -3,6 +3,7 @@
 从旧 stock.py 移植（纯 requests，带 Referer 头，实测稳定）。
 """
 from datetime import date, timedelta
+from urllib.parse import quote
 
 import requests
 
@@ -155,4 +156,65 @@ def fetch_finance_snapshot() -> list[dict]:
         if page % 5 == 0 or page == pages:
             print(f"… 第 {page}/{pages} 页 …")
         page += 1
+    return rows
+
+
+_EM_HOLDERS_REPORT = "RPT_F10_EH_HOLDERS"
+NATIONAL_TEAM_INSTITUTIONS = (
+    "中央汇金投资有限责任公司",
+    "中央汇金资产管理有限责任公司",
+    "中国证券金融股份有限公司",
+    "全国社会保障基金理事会",
+)
+
+
+def fetch_national_team_holdings() -> list[dict]:
+    """拉取国家队机构的历史十大股东披露。
+
+    东方财富接口支持精确 HOLDER_NAME 查询，不依赖逐股网页抓取。返回原始的
+    报告期末持仓记录；调用方负责计算“退出”等跨报告期状态。
+    """
+    columns = (
+        "SECUCODE,SECURITY_CODE,SECURITY_NAME_ABBR,END_DATE,HOLDER_NAME,"
+        "HOLD_NUM,HOLD_NUM_RATIO,HOLD_NUM_CHANGE,HOLD_RATIO_QOQ,HOLDER_MARKET_CAP"
+    )
+    rows: list[dict] = []
+    for institution in NATIONAL_TEAM_INSTITUTIONS:
+        page = 1
+        while True:
+            params = {
+                "reportName": _EM_HOLDERS_REPORT,
+                "columns": columns,
+                "filter": f'(HOLDER_NAME="{institution}")',
+                "pageNumber": str(page), "pageSize": "500",
+                "sortColumns": "END_DATE,SECURITY_CODE", "sortTypes": "-1,1",
+            }
+            response = requests.get(_EM_FINANCE_URL, params=params, headers=_EM_HEADERS, timeout=20)
+            response.raise_for_status()
+            result = response.json().get("result") or {}
+            data = result.get("data") or []
+            for item in data:
+                end_date = str(item.get("END_DATE") or "")[:10]
+                code = str(item.get("SECURITY_CODE") or "").zfill(6)
+                if not end_date or not code:
+                    continue
+                raw_change = item.get("HOLD_NUM_CHANGE")
+                change_shares = None
+                change_type = raw_change if isinstance(raw_change, str) and not _to_float(raw_change) else None
+                if _to_float(raw_change) is not None:
+                    change_shares = _to_float(raw_change)
+                    change_type = "增持" if change_shares > 0 else "减持" if change_shares < 0 else "不变"
+                rows.append({
+                    "report_date": end_date, "institution": institution, "code": code,
+                    "name": item.get("SECURITY_NAME_ABBR"),
+                    "shares": _to_float(item.get("HOLD_NUM")),
+                    "holding_ratio": _to_float(item.get("HOLD_NUM_RATIO")),
+                    "change_shares": change_shares, "change_type": change_type,
+                    "market_value": _to_float(item.get("HOLDER_MARKET_CAP")),
+                    "source": "eastmoney",
+                })
+            pages = int(result.get("pages") or page)
+            if page >= pages or not data:
+                break
+            page += 1
     return rows

@@ -5,6 +5,38 @@ export interface UserItem {
   name: string;
 }
 
+export interface NationalTeamHolding {
+  report_date: string;
+  institution: string;
+  code: string;
+  name?: string | null;
+  shares?: number | null;
+  holding_ratio?: number | null;
+  change_shares?: number | null;
+  change_type?: string | null;
+  market_value?: number | null;
+  source?: string | null;
+}
+
+export interface NationalTeamResp {
+  report_dates: string[];
+  institutions: string[];
+  items: NationalTeamHolding[];
+  selected_report_date?: string | null;
+  last_updated_at?: number | null;
+  coverage_note?: string;
+  summary?: NationalTeamSummary;
+}
+
+export interface NationalTeamSummary {
+  total_rows: number;
+  stock_count: number;
+  institution_count: number;
+  type_counts: Record<string, number>;
+  team_counts: { name: string; count: number }[];
+  top_changes: { code: string; name?: string | null; institution: string; change_type: string; change_shares: number }[];
+}
+
 export interface BullishHeatItem {
   name: string;
   code: string;

@@ -17,6 +17,7 @@ from app.models.stock_finance import StockFinance
 from app.models.summary import Summary
 from app.models.user import User
 from app.models.xueqiu_user import XueqiuUser
+from app.models.national_team import NationalTeamHolding
 
 __all__ = [
     "Base",
@@ -38,4 +39,5 @@ __all__ = [
     "JobRun",
     "User",
     "BackfillFailure",
+    "NationalTeamHolding",
 ]

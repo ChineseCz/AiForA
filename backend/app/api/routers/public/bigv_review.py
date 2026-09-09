@@ -89,7 +89,7 @@ async def public_bigv_review(
 ):
     # v2 invalidates cached read-only results created before partial snapshots
     # were included in saved_only mode.
-    key = await c.key("bigv_review_v3", user=user, start=start, end=end, limit=limit, group_by_day=group_by_day,
+    key = await c.key("bigv_review_v4", user=user, start=start, end=end, limit=limit, group_by_day=group_by_day,
                       direction=direction, verdict=verdict, extraction_status=extraction_status, target_threshold=target_threshold, saved_only=saved_only)
     hit = await c.get_json(key)
     if hit is not None:
@@ -147,7 +147,9 @@ async def start_bigv_export(request: Request, session: AsyncSession = Depends(db
     if await jobs.any_running(session, "bigv_export"):
         return {"started": False, "running": True}
     parameters = {"user": str(body.get("user") or ""), "start": str(body.get("start") or ""),
-                  "end": str(body.get("end") or "")}
+                  "end": str(body.get("end") or ""), "direction": str(body.get("direction") or ""),
+                  "verdict": str(body.get("verdict") or ""),
+                  "extraction_status": str(body.get("extraction_status") or "")}
     from app.workers.tasks.opinions import task_bigv_export
     job_id = await run_in_threadpool(jobs.create_job, "bigv_export", "手动导出", parameters)
     task_bigv_export.delay(parameters, source="手动导出", job_id=job_id)

@@ -2,7 +2,7 @@ import {
   BulbFilled, BulbOutlined, DashboardOutlined, MessageOutlined,
   MoreOutlined, RadarChartOutlined, SettingOutlined, StarOutlined, UserOutlined,
 } from "@ant-design/icons";
-import { Button, Dropdown, Input, Layout, Menu, Modal, theme, Typography, message } from "antd";
+import { Button, Dropdown, Input, Layout, Menu, Modal, Tabs, theme, Typography, message } from "antd";
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { Capacitor } from "@capacitor/core";
 import { App as CapacitorApp } from "@capacitor/app";
@@ -25,6 +25,7 @@ const My = lazy(() => import("./pages/My"));
 const Dashboard = lazy(() => import("./pages/Dashboard"));
 const Screener = lazy(() => import("./pages/Screener"));
 const StockDetail = lazy(() => import("./pages/StockDetail"));
+const NationalTeam = lazy(() => import("./pages/NationalTeam"));
 
 const { Sider, Content, Header } = Layout;
 
@@ -251,6 +252,26 @@ function Brand() {
   );
 }
 
+function HomeSubTabs() {
+  const loc = useLocation();
+  const nav = useNavigate();
+  if (loc.pathname !== "/" && loc.pathname !== "/national-team") return null;
+  return (
+    <div style={{ marginBottom: 18 }}>
+      <Typography.Title level={3} style={{ margin: "0 0 8px" }}>首页</Typography.Title>
+      <Tabs
+        activeKey={loc.pathname === "/national-team" ? "national-team" : "home"}
+        onChange={(key) => nav(key === "national-team" ? "/national-team" : "/")}
+        items={[
+          { key: "home", label: "首页" },
+          { key: "national-team", label: "国家队" },
+        ]}
+        style={{ marginBottom: 0 }}
+      />
+    </div>
+  );
+}
+
 // 底部Tab栏（仿微信/支付宝）：只放常用的5个只读页面，管理后台/主题切换/账号挪进 header 的「更多」菜单，
 // 栏位有限放不下这几个次要入口。
 function BottomTabBar({ selected, onSelect }: { selected: string; onSelect: (key: string) => void }) {
@@ -383,6 +404,7 @@ export default function App() {
           paddingBottom: isMobile ? "calc(var(--tab-bar-height) + 12px)" : 20,
           overflow: "auto",
         }}>
+          <HomeSubTabs />
           <Suspense fallback={<div style={{ padding: 24, textAlign: "center" }}>加载中…</div>}>
             <Routes>
               <Route path="/login" element={<RedirectIfLoggedIn><VisitorLogin /></RedirectIfLoggedIn>} />
@@ -390,6 +412,7 @@ export default function App() {
               <Route path="/admin" element={<RequireAdmin><Admin /></RequireAdmin>} />
               <Route element={<RequireVisitorOrAnon><Outlet /></RequireVisitorOrAnon>}>
                 <Route path="/" element={<Dashboard />} />
+                <Route path="/national-team" element={<NationalTeam />} />
                 <Route path="/feed" element={<Feed />} />
                 <Route path="/posts" element={<Navigate to="/feed" replace />} />
                 <Route path="/summary" element={<Navigate to="/feed" replace />} />

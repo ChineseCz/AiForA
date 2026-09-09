@@ -10,6 +10,7 @@ import io
 from fastapi import APIRouter, Depends, Request, UploadFile, File
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import db_session
@@ -387,6 +388,17 @@ async def sync_sector_members(session: AsyncSession = Depends(db_session)):
 @router.get("/stock/sync-sector-members/status")
 async def sync_sector_members_status(session: AsyncSession = Depends(db_session)):
     return await jobs.get_job_status(session, "sector_members_sync")
+
+
+@router.post("/stock/sync-national-team")
+async def sync_national_team(session: AsyncSession = Depends(db_session)):
+    from app.workers.tasks.stock import task_national_team_sync
+    return await _trigger(session, "national_team_sync", task_national_team_sync, source="手动")
+
+
+@router.get("/stock/sync-national-team/status")
+async def sync_national_team_status(session: AsyncSession = Depends(db_session)):
+    return await jobs.get_job_status(session, "national_team_sync")
 
 
 @router.post("/stock/sync-xueqiu-sectors")

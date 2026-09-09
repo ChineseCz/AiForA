@@ -841,14 +841,9 @@ export default function Dashboard() {
 
   return (
     <Spin spinning={isLoading}>
-      {/* 顶部标题 + 大V 筛选 */}
-      <Row justify="space-between" align="middle" style={{ marginBottom: 16, gap: 8 }}>
-        <Typography.Title level={isMobile ? 4 : 3} style={{ margin: 0 }}>看板</Typography.Title>
-        <Select
-          allowClear placeholder="全部大V" style={{ width: isMobile ? 140 : 200 }} value={user}
-          onChange={setUser}
-          options={users?.map((u) => ({ value: u.id, label: u.name }))}
-        />
+      {/* 大V筛选 */}
+      <Row justify="end" align="middle" style={{ marginBottom: 16, gap: 8 }}>
+        <Select allowClear placeholder="全部大V" style={{ width: isMobile ? 140 : 200 }} value={user} onChange={setUser} options={users?.map((u) => ({ value: u.id, label: u.name }))} />
       </Row>
 
       {/* 统计条 */}

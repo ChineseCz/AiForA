@@ -6,7 +6,7 @@ import type {
   AuthConfigResp, AuthSettingsCfg, BondDetail, Condition, Fundamentals, FieldMeta, GroupItem, GroupMember, JobStatus, KlineView, NewsItem, WatchlistOverview,
   Overview, PostsPage, Quote, ScheduleCfg, ScreenResp, SectorItem, SectorRankResp, StockAiAnalysisResp, SummaryResp, IntradayView, BackfillFailure,
   TradeNote, TradeRecord, TradeStats, BacktestResult, UserItem, RecentJob, DataHealth, NotificationSettings, NotificationItem,
-  ResetCaptchaResp, VisitorLoginResp, VisitorMeResp, WechatQrcodeResp, WechatPollResp,
+  ResetCaptchaResp, VisitorLoginResp, VisitorMeResp, WechatQrcodeResp, WechatPollResp, NationalTeamResp,
 } from "./types";
 
 const get = async <T>(url: string, params?: object): Promise<T> =>
@@ -20,6 +20,12 @@ export const useUsers = () =>
 
 export const useOverview = (user?: string, days?: number) =>
   useQuery({ queryKey: ["overview", user, days ?? 7], queryFn: () => get<Overview>("/api/overview", { user, days: days ?? 7 }) });
+
+export const useNationalTeam = (reportDate?: string, institution?: string, changeType?: string) =>
+  useQuery({
+    queryKey: ["national_team", reportDate, institution, changeType],
+    queryFn: () => get<NationalTeamResp>("/api/national-team", { report_date: reportDate, institution, change_type: changeType }),
+  });
 
 export const usePosts = (p: { user?: string; start?: string; end?: string; q?: string; page: number; size: number }) =>
   useQuery({ queryKey: ["posts", p], queryFn: () => get<PostsPage>("/api/posts", p) });

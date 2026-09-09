@@ -122,3 +122,31 @@ def task_sector_members(source: str = "手动", job_id: int | None = None) -> in
     from app.services import ingest
     with job_run("sector_members_sync", source, invalidate_cache=True, job_id=job_id):
         return ingest.sync_all_sector_members()
+
+
+@celery_app.task(name="stock.national_team_sync", queue=QUEUE_DEFAULT)
+def task_national_team_sync(source: str = "手动", job_id: int | None = None) -> int:
+    from app.services import national_team
+    with job_run("national_team_sync", source, invalidate_cache=True, job_id=job_id):
+        return national_team.sync_national_team_holdings()
+
+
+@celery_app.task(name="stock.national_team_auto_sync_tick", queue=QUEUE_DEFAULT)
+def task_national_team_auto_sync_tick() -> None:
+    """Refresh disclosure data weekly; the public endpoint remains read-only."""
+    from datetime import datetime
+
+    from app.repositories import jobs
+    from app.core.config import settings
+    import redis as sync_redis
+
+    now = datetime.now()
+    if now.weekday() != 0 or jobs.is_running("national_team_sync"):
+        return
+    redis_client = sync_redis.from_url(settings.redis_url, decode_responses=True)
+    try:
+        key = f"natapp:national-team-sync:{now.date().isoformat()}"
+        if redis_client.set(key, "1", nx=True, ex=8 * 86400):
+            task_national_team_sync.delay(source="每周自动同步")
+    finally:
+        redis_client.close()

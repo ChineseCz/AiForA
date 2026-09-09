@@ -32,6 +32,10 @@ celery_app.conf.update(
         "scheduler-tick": {"task": "beat.tick", "schedule": 60.0},
         # 全市场行情：每分钟检查一次，任务内部按 schedules.stock_sync_interval 到时间槽才派发。
         "stock-auto-sync": {"task": "stock.auto_sync_tick", "schedule": 60.0},
+        "national-team-weekly-sync": {
+            "task": "stock.national_team_auto_sync_tick",
+            "schedule": crontab(hour=18, minute=30, day_of_week="1"),
+        },
         "bigv-review-daily": {
             "task": "bigv_review.daily_tick",
             "schedule": crontab(hour=16, minute=10, day_of_week="1-5"),

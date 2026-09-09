@@ -8,7 +8,7 @@ from app.repositories import opinions
 
 
 WINDOWS = (1, 3, 5, 7, 10, 20, 60, 120)
-SNAPSHOT_VERSION = 2
+SNAPSHOT_VERSION = 3
 CODE_RE = re.compile(r"(?<!\d)(\d{6})(?!\d)")
 POSITIVE = ("看多", "上涨", "启动", "突破", "机会", "买入", "加仓", "利好", "龙头")
 NEGATIVE = ("看空", "下跌", "回落", "风险", "卖出", "减仓", "利空", "见顶")
@@ -134,9 +134,14 @@ async def review_posts(
         if saved_only:
             continue
         content = f"{post['title'] or ''}\n{post['text'] or ''}"
-        ready_claims = [claim for claim in stored_claims if claim.get("status") == "ready" and not claim.get("ignored")]
+        all_ready_claims = [
+            claim for claim in stored_claims
+            if claim.get("status") == "ready"
+            and not claim.get("ignored")
+        ]
+        ready_claims = [claim for claim in all_ready_claims if claim.get("direction") == "看多"]
         names = {}
-        if ready_claims:
+        if stored_claims:
             for claim in ready_claims:
                 code = str(claim.get("code") or "")
                 if code in by_code:
@@ -145,7 +150,7 @@ async def review_posts(
                 claim_name = str(claim.get("name") or "").strip()
                 for item in alias_map.get(claim_name, []):
                     names[item["code"]] = {**item, "claim": claim}
-            directions = [claim.get("direction") for claim in ready_claims]
+            directions = [claim.get("direction") for claim in all_ready_claims]
             direction = max(set(directions), key=directions.count) if directions else _direction(content)
         else:
             codes = [code for code in dict.fromkeys(CODE_RE.findall(content)) if code in by_code]
@@ -154,6 +159,8 @@ async def review_posts(
                 if alias in content:
                     names.update({item["code"]: item for item in alias_items})
             direction = _direction(content)
+            if direction != "看多":
+                names = {}
         required_codes.update(names)
         pending.append((post, stored_claims, ready_claims, names, direction))
 
@@ -367,7 +374,11 @@ def _summary(results: list[dict], target_threshold: float = 3.0) -> dict:
         user_stat["targets"] += len(targets)
         user_windows.setdefault(user_key, {str(window): {"samples": 0, "correct": 0, "returns": [], "excesses": []} for window in WINDOWS})
         for target in targets:
+            # 复盘统计只评价明确的看多观点。保留其它方向的文章/观点信息，
+            # 但不让看空、中性、观察标的混入收益率统计。
             target_direction = target.get("direction") or direction
+            if target_direction != "看多":
+                continue
             for window in WINDOWS:
                 key = str(window)
                 value = target.get("performance", {}).get(key)
@@ -438,6 +449,8 @@ def _summary(results: list[dict], target_threshold: float = 3.0) -> dict:
         month_stat["targets"] += len(item.get("targets") or [])
         for target in item.get("targets") or []:
             target_direction = target.get("direction") or item.get("direction")
+            if target_direction != "看多":
+                continue
             for window in WINDOWS:
                 value = target.get("performance", {}).get(str(window))
                 if value is None:

@@ -25,6 +25,7 @@ def task_bigv_export(parameters: dict, source: str = "手动导出", job_id: int
         async with async_session_maker() as session:
             return await review_posts(session, user_id=str(parameters.get("user") or ""),
                                       start=str(parameters.get("start") or ""), end=str(parameters.get("end") or ""),
+                                      # 导出任务在后台执行完整读取/补算，避免前端同步请求超时。
                                       limit=0, group_by_day=False)
 
     with job_run("bigv_export", source, job_id=job_id):
@@ -33,7 +34,11 @@ def task_bigv_export(parameters: dict, source: str = "手动导出", job_id: int
         writer = csv.writer(output)
         writer.writerow(["日期", "大V", "AI标题", "原文标题", "方向", "标的", "代码", "验证状态",
                          *[f"{w}日收益" for w in WINDOWS], *[f"{w}日超额" for w in WINDOWS]])
-        for item in result["items"]:
+        items = [item for item in result["items"]
+                 if (not parameters.get("direction") or item.get("direction") == parameters["direction"])
+                 and (not parameters.get("verdict") or item.get("verdict") == parameters["verdict"])
+                 and (not parameters.get("extraction_status") or item.get("extraction_status") == parameters["extraction_status"])]
+        for item in items:
             targets = item.get("targets") or [{"name": "", "code": "", "performance": {}, "excess": {}}]
             for target in targets:
                 writer.writerow([item.get("date"), item.get("user_name"), item.get("title"), item.get("source_title"),
@@ -46,7 +51,7 @@ def task_bigv_export(parameters: dict, source: str = "手动导出", job_id: int
         path.write_bytes(output.getvalue().encode("utf-8-sig"))
         if job_id is not None:
             jobs.set_artifact_path(job_id, str(path))
-            jobs.update_progress(job_id, {"rows": sum(len(item.get("targets") or []) or 1 for item in result["items"]), "ready": 1})
+            jobs.update_progress(job_id, {"rows": sum(len(item.get("targets") or []) or 1 for item in items), "ready": 1})
 
 
 @celery_app.task(name="bigv_review.run", queue=QUEUE_DEFAULT)

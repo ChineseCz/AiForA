@@ -53,6 +53,9 @@ export default function BigvReviewPanel() {
   const [verdictFilter, setVerdictFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const { data: reviewStatus } = useJobStatus("bigv_review", "/api/bigv-review/run/status", reviewing);
+  const [exporting, setExporting] = useState(false);
+  const [exportJobId, setExportJobId] = useState<number | null>(null);
+  const { data: exportStatus } = useJobStatus("bigv_export", "/api/bigv-review/export/status", exporting);
 
   useEffect(() => {
     localStorage.setItem(REVIEW_PREFS_KEY, JSON.stringify({ user, preset: datePreset, groupByDay }));
@@ -72,17 +75,20 @@ export default function BigvReviewPanel() {
   }
 
   function exportReview() {
-    api.get("/api/bigv-review/export", { params: {
+    if (exporting) return;
+    setExporting(true);
+    setExportJobId(null);
+    api.post("/api/bigv-review/export/run", {
       user, start: start?.format("YYYY-MM-DD") || "", end: end?.format("YYYY-MM-DD") || "",
       direction: directionFilter, verdict: verdictFilter, extraction_status: statusFilter,
-    }, responseType: "blob" }).then((response) => {
-      const url = URL.createObjectURL(response.data);
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.download = "bigv-review.csv";
-      anchor.click();
-      URL.revokeObjectURL(url);
-    }).catch((e) => message.error(errMsg(e, "导出失败")));
+    }).then((r) => {
+      if (!r.data?.started) {
+        setExporting(false);
+        if (r.data?.running) message.info("已有导出任务正在运行");
+      } else {
+        setExportJobId(Number(r.data.job_id));
+      }
+    }).catch((e) => { setExporting(false); message.error(errMsg(e, "导出失败")); });
   }
 
   useEffect(() => {
@@ -94,6 +100,25 @@ export default function BigvReviewPanel() {
     }
     load(true);
   }, [reviewing, reviewStatus]);
+
+  useEffect(() => {
+    if (!exporting || !exportJobId || !exportStatus || exportStatus.job_id !== exportJobId || exportStatus.running) return;
+    setExporting(false);
+    if (exportStatus.status !== "success" || !exportStatus.job_id) {
+      message.error(exportStatus.error || "导出失败");
+      return;
+    }
+    api.get(`/api/bigv-review/export/download/${exportStatus.job_id}`, { responseType: "blob" })
+      .then((response) => {
+        const url = URL.createObjectURL(response.data);
+        const anchor = document.createElement("a");
+        anchor.href = url;
+        anchor.download = `bigv-review-${exportStatus.job_id}.csv`;
+        anchor.click();
+        URL.revokeObjectURL(url);
+      })
+      .catch((e) => message.error(errMsg(e, "下载导出文件失败")));
+  }, [exporting, exportJobId, exportStatus]);
 
   function startReview() {
     if (loading || reviewing) return;
@@ -154,7 +179,7 @@ export default function BigvReviewPanel() {
         <Button type="primary" onClick={startReview} loading={reviewing} disabled={reviewing || loading}>开始增量复盘</Button>
         {reviewing ? <Button danger onClick={cancelReview}>取消任务</Button> : null}
         {!reviewing && ["error", "canceled"].includes(reviewStatus?.status || "") ? <Button onClick={retryReview}>重试上次复盘</Button> : null}
-        <Button icon={<DownloadOutlined />} onClick={exportReview} disabled={reviewing}>导出 CSV</Button>
+        <Button icon={<DownloadOutlined />} onClick={exportReview} loading={exporting} disabled={reviewing || exporting}>导出 CSV</Button>
         <Select allowClear placeholder="方向" style={{ width: 100 }} value={directionFilter || undefined} onChange={(v) => setDirectionFilter(v || "")} options={[{ value: "看多", label: "看多" }, { value: "看空", label: "看空" }]} />
         <Select allowClear placeholder="验证状态" style={{ width: 120 }} value={verdictFilter || undefined} onChange={(v) => setVerdictFilter(v || "")} options={["可验证", "部分可验证", "暂无行情", "待验证"].map((v) => ({ value: v, label: v }))} />
         <Select allowClear placeholder="观点状态" style={{ width: 110 }} value={statusFilter || undefined} onChange={(v) => setStatusFilter(v || "")} options={["ready", "pending", "error", "missing"].map((v) => ({ value: v, label: v }))} />

@@ -1,4 +1,5 @@
 from app.services.bigv_review import _claims_signature, _direction, _pct, _summary
+from app.services.national_team import infer_exit_rows
 
 
 def test_direction_uses_more_specific_signal_count():
@@ -56,7 +57,23 @@ def test_summary_calculates_direction_accuracy_per_window():
             {"direction": "看空", "quote_count": 2, "performance": {"1": 3.0}, "excess": {"1": 2.0}},
         ],
     }])
-    assert summary["accuracy"]["1"]["samples"] == 2
-    assert summary["accuracy"]["1"]["correct_rate"] == 50.0
+    assert summary["windows"]["1"]["samples"] == 1
+    assert summary["windows"]["1"]["average_return"] == 2.0
+    assert summary["accuracy"]["1"]["samples"] == 1
+    assert summary["accuracy"]["1"]["correct_rate"] == 100.0
     assert summary["accuracy"]["1"]["benchmark_win_rate"] == 100.0
     assert summary["accuracy"]["1"]["target_hit_rate"] == 0.0
+
+
+def test_national_team_exit_is_inferred_only_for_next_report_period():
+    rows = [
+        {"report_date": "2024-06-30", "institution": "中央汇金", "code": "600000", "name": "浦发银行", "shares": 1000},
+        {"report_date": "2024-06-30", "institution": "中央汇金", "code": "000001", "name": "平安银行", "shares": 500},
+        {"report_date": "2024-09-30", "institution": "中央汇金", "code": "600000", "name": "浦发银行", "shares": 1200},
+    ]
+    result = infer_exit_rows(rows)
+    exits = [row for row in result if row.get("change_type") == "退出披露范围"]
+    assert len(exits) == 1
+    assert exits[0]["code"] == "000001"
+    assert exits[0]["report_date"] == "2024-09-30"
+    assert exits[0]["change_shares"] == -500
