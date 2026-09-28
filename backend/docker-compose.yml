@@ -80,7 +80,8 @@ services:
   worker:
     build: .
     restart: unless-stopped
-    command: celery -A app.workers.celery_app worker -Q default,llm --concurrency=4 --loglevel=info
+    # 4GB 服务器上回测属于内存密集型任务，单进程串行执行，避免多个回测并发导致 OOM。
+    command: celery -A app.workers.celery_app worker -Q default,llm --concurrency=1 --loglevel=info
     depends_on:
       postgres:
         condition: service_healthy

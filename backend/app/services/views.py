@@ -45,7 +45,20 @@ def get_kline_view(code: str, sp: dict | None = None, period: str = "day") -> di
     else:
         name = (db.get_latest_row_by_code(code) or {}).get("name") or code
         bars = db.get_history_for_code(code)
-    bars = _aggregate_bars(bars, period)
+    cleaned = []
+    for bar in bars:
+        close = bar.get("close")
+        if close is None or close <= 0:
+            continue
+        item = dict(bar)
+        for field in ("open", "high", "low"):
+            value = item.get(field)
+            if value is None or value <= 0:
+                item[field] = close
+        item["high"] = max(item["high"], item["open"], item["close"])
+        item["low"] = min(item["low"], item["open"], item["close"])
+        cleaned.append(item)
+    bars = _aggregate_bars(cleaned, period)
     if len(bars) < 23:
         return {"code": code, "name": name, "period": period, "bars": []}
 

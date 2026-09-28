@@ -72,6 +72,13 @@ def update_progress(job_id: int, progress: dict) -> None:
         ), {"id": job_id, "progress": json.dumps(progress, ensure_ascii=False)})
 
 
+def update_parameters(job_id: int, parameters: dict) -> None:
+    with sync_session() as s:
+        s.execute(text(
+            "UPDATE job_runs SET parameters = CAST(:parameters AS json) WHERE id = :id"
+        ), {"id": job_id, "parameters": json.dumps(parameters, ensure_ascii=False)})
+
+
 def set_artifact_path(job_id: int, path: str) -> None:
     with sync_session() as s:
         s.execute(text("UPDATE job_runs SET artifact_path = :path WHERE id = :id"), {"id": job_id, "path": path})

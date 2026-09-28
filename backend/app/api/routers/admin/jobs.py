@@ -24,6 +24,18 @@ router = APIRouter(prefix="/api")
 PERIOD_TYPES = ("daily", "weekly", "monthly", "yearly", "highlights")
 
 
+@router.post("/strategy-review/capture")
+async def strategy_review_capture(session: AsyncSession = Depends(db_session)):
+    """Queue a daily strategy snapshot for local/admin verification."""
+    from app.workers.tasks.strategy_review import task_capture_daily
+    return await _trigger(session, "strategy_review", task_capture_daily, source="管理员手动复盘")
+
+
+@router.get("/strategy-review/status")
+async def strategy_review_status(session: AsyncSession = Depends(db_session)):
+    return await jobs.get_job_status(session, "strategy_review")
+
+
 async def _json_body(request: Request) -> dict:
     raw = await request.body()
     if not raw:
