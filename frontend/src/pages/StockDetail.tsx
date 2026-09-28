@@ -441,8 +441,7 @@ export default function StockDetail() {
   // location.key === "default" 表示这是直接进入的（没有站内上一页可回，如刷新/外部链接直达）
   const canGoBack = location.key !== "default";
   const goBack = () => {
-    if (location.state?.from === "screener") navigate("/screener");
-    else if (canGoBack) navigate(-1);
+    if (canGoBack) navigate(-1);
     else navigate("/screener");
   };
   const [signalParams, setSignalParams] = useState<Record<string, number>>({});

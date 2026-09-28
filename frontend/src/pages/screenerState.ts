@@ -5,6 +5,7 @@ import type { Condition, StockRow } from "@/api/types";
 export type CapFilter = "all" | "small" | "mid" | "large";
 
 export interface ScreenerState {
+  activeTab: string;
   strategies: string[];
   strategyParams: Record<string, Record<string, number | boolean>>;
   conds: Condition[];
@@ -22,6 +23,7 @@ export interface ScreenerState {
 }
 
 export const screenerState: ScreenerState = {
+  activeTab: "screener",
   strategies: [],
   strategyParams: {},
   conds: [],

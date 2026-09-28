@@ -101,6 +101,76 @@ body {
 .up { color: #cf1322; }
 .down { color: #389e0d; }
 
+/* 策略复盘：桌面保留高密度表格，手机将交易结果改成可扫描的卡片。 */
+.strategy-review-page { min-width: 0; }
+.strategy-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.strategy-control {
+  display: flex;
+  flex: 1 1 calc(50% - 8px);
+  min-width: 320px;
+  align-items: center;
+  gap: 8px;
+}
+.strategy-control-label {
+  flex: 0 0 72px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  text-align: right;
+  white-space: nowrap;
+}
+.strategy-control-input { flex: 1; min-width: 0; }
+.strategy-control-input > .ant-select,
+.strategy-control-input > .ant-input-number,
+.strategy-control-input > .ant-input-number-group-wrapper,
+.strategy-control-input > .ant-input-group-wrapper,
+.strategy-control-input > .ant-picker { width: 100%; }
+.strategy-control-info { flex: 1 1 100%; min-width: 0; color: var(--text-secondary); font-size: 12px; }
+.strategy-trade-list { display: flex; flex-direction: column; gap: 8px; }
+.strategy-trade-card {
+  padding: 11px 12px;
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  background: var(--bg-elevated);
+}
+.strategy-trade-head, .strategy-trade-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.strategy-trade-stock { min-width: 0; overflow: hidden; color: var(--link-h3); font-size: 14px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.strategy-card-date, .strategy-card-subtitle { color: var(--text-secondary); font-size: 12px; }
+.strategy-card-subtitle { margin-top: 5px; }
+.strategy-trade-meta { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 12px; margin: 10px 0; color: var(--text-primary); font-size: 12px; }
+.strategy-trade-meta span { min-width: 0; white-space: nowrap; }
+.strategy-trade-meta label { display: block; margin-bottom: 1px; color: var(--text-secondary); font-size: 11px; }
+.strategy-trade-foot { padding-top: 8px; border-top: 1px solid var(--border-soft); color: var(--text-secondary); font-size: 12px; }
+.strategy-trade-foot strong { font-size: 15px; }
+.strategy-return-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; margin-top: 10px; }
+.strategy-return-grid span { min-width: 0; }
+.strategy-return-grid label { display: block; margin-bottom: 1px; color: var(--text-secondary); font-size: 11px; }
+.strategy-return-grid strong { font-size: 12px; }
+
+@media (max-width: 767px) {
+  .strategy-review-page { gap: 8px !important; }
+  .strategy-review-page > .ant-space-item { max-width: 100%; }
+  .strategy-review-page .ant-collapse-header { padding: 10px 12px !important; }
+  .strategy-review-page .ant-collapse-content-box { padding: 8px !important; }
+  .strategy-combination-card .ant-card-head { min-height: 44px; }
+  .strategy-combination-card .ant-card-body { padding: 10px !important; }
+  .strategy-combination-card .ant-typography { font-size: 12px; line-height: 1.55; }
+  .strategy-controls { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .strategy-control { display: flex; width: 100%; min-width: 0; }
+  .strategy-control-label { flex-basis: 68px; font-size: 12px; }
+  .strategy-controls > .strategy-control-info { width: 100%; min-width: 0; }
+  .strategy-controls .ant-select, .strategy-controls .ant-input-number, .strategy-controls .ant-picker,
+  .strategy-controls .ant-input-number-group-wrapper, .strategy-controls .ant-input-group-wrapper { width: 100% !important; }
+  .strategy-controls .ant-space { width: 100%; }
+  .strategy-controls .ant-btn { min-height: 40px; }
+  .strategy-controls .ant-tag { width: fit-content; }
+  .strategy-combination-card .ant-statistic-content { font-size: 17px; }
+}
+
 /* 看板顶部四项统计合并成一条：色块图标区分类别，桌面4列一行、手机2x2，靠竖分割线代替四个独立卡片 */
 .stat-strip {
   display: grid;

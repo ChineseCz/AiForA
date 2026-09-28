@@ -439,6 +439,59 @@ export interface WechatPollResp {
   access_token?: string;
 }
 
+export interface StrategyReviewItem {
+  trade_date: string;
+  strategy_key: string;
+  strategy_params: Record<string, unknown>;
+  code: string;
+  name: string;
+  entry_close: number;
+  returns: Record<string, number | null>;
+  max_gain: number | null;
+  max_drawdown: number | null;
+}
+export interface StrategyReviewSummary {
+  strategy_key: string;
+  pick_count: number;
+  d1_avg: number | null; d3_avg: number | null; d5_avg: number | null; d10_avg: number | null; d20_avg: number | null;
+  d1_win_rate: number | null; d3_win_rate: number | null; d5_win_rate: number | null; d10_win_rate: number | null; d20_win_rate: number | null;
+}
+export interface StrategyReviewResp {
+  items: StrategyReviewItem[];
+  summary: StrategyReviewSummary[];
+  strategies: string[];
+  horizons: number[];
+  daily_summary?: { trade_date: string; strategy_key: string; pick_count: number; d5_avg: number | null; d5_win_rate: number | null }[];
+  buy_strategies?: string[];
+  sell_strategies?: string[];
+}
+
+export interface StrategyCombinationResp {
+  buy_strategies?: string[];
+  sell_strategies?: string[];
+  start: string;
+  end?: string;
+  trades: { code: string; name: string; signal_date?: string; buy_date: string; sell_date: string | null; entry_close: number; exit_close: number; holding_days: number; return_pct: number; status: string }[];
+  portfolio_trades?: { code: string; name: string; signal_date?: string; buy_date: string; sell_date: string | null; entry_close: number; exit_close: number; holding_days: number; return_pct: number; status: string }[];
+  summary: { total_trades: number; closed_trades: number; win_rate: number | null; avg_return_pct: number | null; portfolio_trades?: number; portfolio_closed_trades?: number; portfolio_return_pct?: number; portfolio_max_drawdown_pct?: number; portfolio_win_rate?: number | null };
+  execution?: { initial_capital: number; max_positions: number; ranking: string; allow_second_entry?: boolean; second_entry_drawdown_pct?: number; buy_fee_rate: number; sell_fee_rate: number; stamp_duty_rate: number; execution_rule?: string; exclude_chinext?: boolean; exclude_star?: boolean; exclude_st?: boolean; min_change_pct?: number | null; max_change_pct?: number | null; min_total_mv?: number | null; max_total_mv?: number | null };
+  equity_curve?: { trade_date: string; equity: number; cash: number; positions: number }[];
+}
+export interface StrategyCombinationJobStatus {
+  running: boolean;
+  status?: string;
+  job_id?: number;
+  error?: string;
+  progress?: { phase?: string; message?: string; summary?: Record<string, number | null>; processed_codes?: number; total_codes?: number; percent?: number };
+  parameters?: { result?: StrategyCombinationResp };
+}
+export interface SavedStrategyCombination {
+  id: number; name: string;
+  buy_expression: { operator: string; strategies: string[]; execution?: Record<string, number | string | boolean> };
+  sell_expression: { operator: string; strategies: string[] };
+  created_at: number; updated_at: number;
+}
+
 export interface VisitorMeResp {
   login_type: "phone" | "wechat" | "email";
   phone: string | null;

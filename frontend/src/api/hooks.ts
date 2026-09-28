@@ -6,7 +6,7 @@ import type {
   AuthConfigResp, AuthSettingsCfg, BondDetail, Condition, Fundamentals, FieldMeta, GroupItem, GroupMember, JobStatus, KlineView, NewsItem, WatchlistOverview,
   Overview, PostsPage, Quote, ScheduleCfg, ScreenResp, SectorItem, SectorRankResp, StockAiAnalysisResp, SummaryResp, IntradayView, BackfillFailure,
   TradeNote, TradeRecord, TradeStats, BacktestResult, UserItem, RecentJob, DataHealth, NotificationSettings, NotificationItem,
-  ResetCaptchaResp, VisitorLoginResp, VisitorMeResp, WechatQrcodeResp, WechatPollResp, NationalTeamResp,
+  ResetCaptchaResp, VisitorLoginResp, VisitorMeResp, WechatQrcodeResp, WechatPollResp, NationalTeamResp, StrategyReviewResp, StrategyCombinationResp, StrategyCombinationJobStatus, SavedStrategyCombination,
 } from "./types";
 
 const get = async <T>(url: string, params?: object): Promise<T> =>
@@ -26,6 +26,42 @@ export const useNationalTeam = (reportDate?: string, institution?: string, chang
     queryKey: ["national_team", reportDate, institution, changeType],
     queryFn: () => get<NationalTeamResp>("/api/national-team", { report_date: reportDate, institution, change_type: changeType }),
   });
+
+export const useStrategyReview = (params?: { start?: string; end?: string; strategy?: string }, enabled = true) =>
+  useQuery({
+    queryKey: ["strategy_review", params],
+    queryFn: () => get<StrategyReviewResp>("/api/strategy-review", params),
+    enabled,
+  });
+
+export const useStrategyCombination = (params?: { buy_strategies?: string; sell_strategies?: string; buy_operator?: string; sell_operator?: string; initial_capital?: number; max_positions?: number; ranking?: string; exclude_chinext?: boolean; exclude_star?: boolean; exclude_st?: boolean; min_change_pct?: number; max_change_pct?: number; min_total_mv?: number; max_total_mv?: number; buy_fee_rate?: number; sell_fee_rate?: number; stamp_duty_rate?: number; start?: string; end?: string; run?: number }) =>
+  useQuery({
+    queryKey: ["strategy_combination", params],
+    queryFn: () => get<StrategyCombinationResp>("/api/strategy-review/combination", params),
+    enabled: !!params?.buy_strategies && !!params?.sell_strategies && !!params?.run,
+  });
+
+export const useStartStrategyCombination = () => useMutation({ mutationFn: (body: Record<string, unknown>) => post<{ started: boolean; running: boolean; job_id?: number }>("/api/strategy-review/combination/run", body) });
+export const useStrategyCombinationStatus = (polling: boolean, refreshKey = 0) => useQuery({
+  queryKey: ["strategy_combination_status", refreshKey],
+  queryFn: () => get<StrategyCombinationJobStatus>("/api/strategy-review/combination/status"),
+  refetchInterval: polling ? 1500 : false,
+});
+
+export const useSavedStrategyCombinations = (enabled = true) =>
+  useQuery({ queryKey: ["saved_strategy_combinations"], queryFn: () => get<{ items: SavedStrategyCombination[] }>("/api/strategy-review/saved"), enabled });
+export const useSaveStrategyCombination = () => {
+  const qc = useQueryClient();
+  return useMutation({ mutationFn: (body: { name: string; buy_expression: object; sell_expression: object; execution?: object }) => post<SavedStrategyCombination>("/api/strategy-review/saved", body), onSuccess: () => qc.invalidateQueries({ queryKey: ["saved_strategy_combinations"] }) });
+};
+export const useUpdateStrategyCombination = () => {
+  const qc = useQueryClient();
+  return useMutation({ mutationFn: (body: { id: number; name: string; buy_expression: object; sell_expression: object; execution?: object }) => api.put(`/api/strategy-review/saved/${body.id}`, body), onSuccess: () => qc.invalidateQueries({ queryKey: ["saved_strategy_combinations"] }) });
+};
+export const useDeleteStrategyCombination = () => {
+  const qc = useQueryClient();
+  return useMutation({ mutationFn: (id: number) => api.delete(`/api/strategy-review/saved/${id}`), onSuccess: () => qc.invalidateQueries({ queryKey: ["saved_strategy_combinations"] }) });
+};
 
 export const usePosts = (p: { user?: string; start?: string; end?: string; q?: string; page: number; size: number }) =>
   useQuery({ queryKey: ["posts", p], queryFn: () => get<PostsPage>("/api/posts", p) });
