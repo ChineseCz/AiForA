@@ -127,7 +127,9 @@ services:
   browser-worker:
     build: .
     restart: unless-stopped
-    command: celery -A app.workers.celery_app worker -Q browser --pool=solo --loglevel=info
+    # 雪球会拦截 Chromium headless 指纹；用 Xvfb 提供虚拟显示并保持
+    # Playwright 的 headed 模式，避免把所有抓取请求送进 WAF 挑战页。
+    command: xvfb-run -a -s "-screen 0 1280x800x24" celery -A app.workers.celery_app worker -Q browser --pool=solo --loglevel=info
     depends_on:
       postgres:
         condition: service_healthy
@@ -137,7 +139,7 @@ services:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-natapp}:${POSTGRES_PASSWORD:-natapp}@postgres:5432/${POSTGRES_DB:-natapp}
       REDIS_URL: redis://redis:6379/0
       BROWSER_CHANNEL: ""     # 留空使用 Chromium（服务器模式）
-      HEADLESS: "true"
+      HEADLESS: "false"
       TZ: Asia/Shanghai
     env_file:
       - .env
