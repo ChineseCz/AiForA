@@ -5,6 +5,7 @@ from app.services.bigv_review import _claims_signature, _direction, _pct, _summa
 from app.services.external.sina import is_realtime_session_started
 from app.services.matching import fuzzy_match_instruments
 from app.services.national_team import infer_exit_rows
+from app.scrapers.xueqiu import _extract_statuses
 
 
 def test_realtime_quote_gate_starts_at_0915_on_weekdays():
@@ -86,3 +87,10 @@ def test_fuzzy_stock_aliases_support_mixed_pinyin_and_small_typo():
     assert fuzzy_match_instruments(candidates, "亚信KJ")[0]["name"] == "亚信科技"
     assert fuzzy_match_instruments(candidates, "浙江JT")[0]["name"] == "浙江建投"
     assert fuzzy_match_instruments(candidates, "金键MY")[0]["name"] == "金健米业"
+
+
+def test_xueqiu_timeline_parser_accepts_wrapped_payloads():
+    status = {"id": "p1", "created_at": 1}
+    assert _extract_statuses({"statuses": [status]}) == [status]
+    assert _extract_statuses({"data": {"statuses": [status]}}) == [status]
+    assert _extract_statuses({"data": {"list": [status]}}) == [status]

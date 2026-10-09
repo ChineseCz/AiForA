@@ -216,6 +216,32 @@ def fetch_timeline_in_page(page, user_id: str, pg: int) -> tuple[str | None, str
     return raw, "ok"
 
 
+def _extract_statuses(payload: object) -> list[dict]:
+    """Return timeline entries across the response envelopes used by Xueqiu.
+
+    The web client has returned both a top-level ``statuses`` array and a
+    ``data`` envelope over time.  Keeping this normalization here prevents a
+    harmless API envelope change from turning a crawl into a silent zero.
+    """
+    if not isinstance(payload, dict):
+        return []
+    candidates: list[object] = [payload]
+    data = payload.get("data")
+    if isinstance(data, dict):
+        candidates.append(data)
+        nested = data.get("data")
+        if isinstance(nested, dict):
+            candidates.append(nested)
+    for candidate in candidates:
+        if not isinstance(candidate, dict):
+            continue
+        for key in ("statuses", "list", "items"):
+            entries = candidate.get(key)
+            if isinstance(entries, list):
+                return [entry for entry in entries if isinstance(entry, dict)]
+    return []
+
+
 def _day_start_ms(d) -> int:
     return int(datetime(d.year, d.month, d.day).timestamp() * 1000)
 
@@ -229,7 +255,9 @@ def crawl_user(ctx, user: str, since=None, until=None) -> tuple[str, str, int, i
     page.set_default_timeout(30000)
 
     def on_response(resp):
-        if "user_timeline.json" in resp.url and "json" in (resp.headers.get("content-type") or ""):
+        # Do not gate on Content-Type: WAF/proxy layers have been observed to
+        # label a valid JSON timeline response as text/plain.
+        if "user_timeline.json" in resp.url:
             try:
                 bodies.append(resp.text())
             except Exception:
@@ -257,7 +285,7 @@ def crawl_user(ctx, user: str, since=None, until=None) -> tuple[str, str, int, i
             return 0, None
         added = 0
         page_min = None
-        for st in data.get("statuses", []):
+        for st in _extract_statuses(data):
             sid = st.get("id")
             created = int(st.get("created_at") or 0)
             if created and (page_min is None or created < page_min):
@@ -269,6 +297,9 @@ def crawl_user(ctx, user: str, since=None, until=None) -> tuple[str, str, int, i
 
     for raw in bodies:
         absorb(raw)
+
+    if not statuses:
+        print(f"⚠️  {user} 主页未捕获到时间线响应（可能是登录态过期、WAF 或雪球接口变更）")
 
     uid = ""
     for st in statuses.values():
