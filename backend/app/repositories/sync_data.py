@@ -5,6 +5,7 @@
 里的同步计算路径使用；轻量读接口请走 app/repositories/*.py 的异步仓储。
 """
 import time
+import json
 
 from sqlalchemy import text
 
@@ -50,6 +51,30 @@ def get_distinct_users() -> list[tuple[str, str]]:
 def get_latest_trade_date() -> str | None:
     with sync_session() as s:
         return s.execute(text("SELECT MAX(trade_date) FROM stock_daily")).scalar()
+
+
+def save_strategy_daily_runs(trade_date: str, results: dict[str, tuple[dict, list[dict]]]) -> int:
+    """Persist one immutable-ish daily signal snapshot per strategy; reruns replace that date."""
+    now = int(time.time())
+    with sync_session() as s:
+        for strategy_key, (params, rows) in results.items():
+            run_id = s.execute(text("""
+                INSERT INTO strategy_daily_runs (trade_date, strategy_key, strategy_params, pick_count, created_at)
+                VALUES (:d, :k, CAST(:p AS json), :n, :now)
+                ON CONFLICT (trade_date, strategy_key) DO UPDATE SET
+                    strategy_params = EXCLUDED.strategy_params, pick_count = EXCLUDED.pick_count, created_at = EXCLUDED.created_at
+                RETURNING id
+            """), {"d": trade_date, "k": strategy_key, "p": json.dumps(params or {}, ensure_ascii=False), "n": len(rows), "now": now}).scalar_one()
+            s.execute(text("DELETE FROM strategy_daily_picks WHERE run_id = :id"), {"id": run_id})
+            for row in rows:
+                close = row.get("close")
+                if close is None or close <= 0:
+                    continue
+                s.execute(text("""
+                    INSERT INTO strategy_daily_picks (run_id, code, name, entry_close)
+                    VALUES (:id, :code, :name, :close)
+                """), {"id": run_id, "code": row.get("code"), "name": row.get("name"), "close": close})
+    return sum(len(rows) for _, rows in results.values())
 
 
 def get_latest_rows() -> list[dict]:

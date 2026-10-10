@@ -34,11 +34,14 @@ def fetch_intraday(code: str, day: str) -> dict:
     """按需获取指定交易日 1 分钟线，不落库。"""
     target = date.fromisoformat(day)
     end = target + timedelta(days=1)
+    # 东方财富 1 分钟接口对历史日期可能忽略 beg/end 并返回当天数据。
+    # 历史日期切换为 5 分钟，保证日期选择器请求的日期与返回数据一致。
+    klt = "1" if target == date.today() else "5"
     response = requests.get(
         _EM_MINUTE_URL,
         params={
             "secid": f"{_em_market(code)}.{code}",
-            "klt": "1", "fqt": "0",
+            "klt": klt, "fqt": "0",
             "beg": target.strftime("%Y%m%d"), "end": end.strftime("%Y%m%d"),
             "lmt": "10000",
             "fields1": "f1,f2,f3,f4,f5,f6",
@@ -53,6 +56,8 @@ def fetch_intraday(code: str, day: str) -> dict:
     for raw in data.get("klines") or []:
         parts = raw.split(",")
         if len(parts) < 7:
+            continue
+        if not parts[0].startswith(day):
             continue
         bars.append({
             "time": parts[0],

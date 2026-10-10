@@ -40,6 +40,10 @@ celery_app.conf.update(
             "task": "bigv_review.daily_tick",
             "schedule": crontab(hour=16, minute=10, day_of_week="1-5"),
         },
+        "strategy-review-daily": {
+            "task": "strategy_review.daily_tick",
+            "schedule": crontab(hour=16, minute=10, day_of_week="1-5"),
+        },
         "signal-notifications": {"task": "stock.signal_notifications", "schedule": 300.0},
         # 周总结：每周三、周日 20:00（day_of_week: 0=周日）门槛检查，通过后派发 summarize.run
         # 生成全部大V本周周总结。指向门槛任务 summarize.weekly_tick 而不是直接指向 summarize.run，
@@ -58,4 +62,4 @@ celery_app.conf.update(
 
 # 注册任务：import 使 @celery_app.task 装饰器执行。task 内部对 playwright/openai 均为延迟导入，
 # 因此容器 worker（无 playwright）import 这些模块不会报错，只有执行浏览器任务才需要。
-from app.workers.tasks import beat, browser, opinions, stock, summarize, wechat  # noqa: E402,F401
+from app.workers.tasks import beat, browser, opinions, stock, strategy_review, summarize, wechat  # noqa: E402,F401

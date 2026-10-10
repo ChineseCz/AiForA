@@ -18,6 +18,8 @@ from app.models.summary import Summary
 from app.models.user import User
 from app.models.xueqiu_user import XueqiuUser
 from app.models.national_team import NationalTeamHolding
+from app.models.strategy_review import StrategyDailyRun, StrategyDailyPick
+from app.models.strategy_combination import SavedStrategyCombination
 
 __all__ = [
     "Base",
@@ -40,4 +42,7 @@ __all__ = [
     "User",
     "BackfillFailure",
     "NationalTeamHolding",
+    "StrategyDailyRun",
+    "StrategyDailyPick",
+    "SavedStrategyCombination",
 ]

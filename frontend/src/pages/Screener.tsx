@@ -41,6 +41,7 @@ import type { Condition, SectorRankItem, StockRow } from "@/api/types";
 import MarkdownContent from "@/components/MarkdownContent";
 import { usePageContext } from "@/pageContext";
 import { screenerState } from "./screenerState";
+import StrategyReview from "./StrategyReview";
 import type { CapFilter } from "./screenerState";
 import { fmtNum, fmtPct, fmtYi, pctClass } from "@/util";
 
@@ -1003,10 +1004,16 @@ function ScreenerTab({ pendingRun, onRunDone }: { pendingRun: boolean; onRunDone
 
 export default function Screener() {
   const isMobile = useIsMobile();
-  const [activeTab, setActiveTab] = useState("screener");
+  const [activeTab, setActiveTab] = useState(screenerState.activeTab);
   const [pendingRun, setPendingRun] = useState(false);
 
+  const handleTabChange = (key: string) => {
+    screenerState.activeTab = key;
+    setActiveTab(key);
+  };
+
   const handleGotoScreener = () => {
+    screenerState.activeTab = "screener";
     setActiveTab("screener");
     setPendingRun(true);
   };
@@ -1016,7 +1023,7 @@ export default function Screener() {
       <Typography.Title level={isMobile ? 5 : 4} style={{ margin: "0 0 12px" }}>选股</Typography.Title>
       <Tabs
         activeKey={activeTab}
-        onChange={setActiveTab}
+        onChange={handleTabChange}
         size={isMobile ? "small" : "middle"}
         destroyInactiveTabPane
         items={[
@@ -1024,6 +1031,7 @@ export default function Screener() {
           { key: "etf", label: "ETF筛选", children: <ETFScreenTab /> },
           { key: "bond", label: "转债行情", children: <BondScreenTab /> },
           { key: "screener", label: "选股", children: <ScreenerTab pendingRun={pendingRun} onRunDone={() => setPendingRun(false)} /> },
+          { key: "review", label: "策略复盘", children: <StrategyReview /> },
         ]}
       />
     </Space>
