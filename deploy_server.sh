@@ -40,6 +40,22 @@ wait_for_url() {
   return 1
 }
 
+wait_for_postgres() {
+  local attempt
+
+  for ((attempt = 1; attempt <= HEALTH_RETRIES; attempt++)); do
+    if "${COMPOSE[@]}" exec -T postgres sh -c \
+      'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"' >/dev/null 2>&1; then
+      echo "    PostgreSQL is healthy"
+      return 0
+    fi
+    sleep "$HEALTH_DELAY"
+  done
+
+  echo "    PostgreSQL did not become healthy" >&2
+  return 1
+}
+
 cd "$APP_DIR"
 cd "$COMPOSE_DIR"
 echo "==> Validating Compose configuration"
@@ -49,7 +65,7 @@ echo "==> Starting database services for backup"
 "${COMPOSE[@]}" up -d postgres redis
 
 echo "==> Waiting for PostgreSQL"
-"${COMPOSE[@]}" ps --wait postgres
+wait_for_postgres
 
 mkdir -p "$BACKUP_DIR"
 backup_file="$BACKUP_DIR/postgres-$(date +%Y%m%d-%H%M%S).sql.gz"
@@ -86,7 +102,7 @@ echo "==> Recreating frontend Nginx"
 "${COMPOSE[@]}" up -d --force-recreate frontend
 
 echo "==> Service status"
-"${COMPOSE[@]}" ps --wait
+"${COMPOSE[@]}" ps
 
 echo "==> Health checks"
 wait_for_url "$HEALTH_URL" "API health endpoint"
