@@ -90,6 +90,7 @@ function SchedulePanel() {
       <Form form={form} onFinish={(v) =>
         save.mutate(v, { onSuccess: () => message.success("已保存"), onError: (e) => message.error(errMsg(e)) })}>
         <Space wrap style={{ marginBottom: 4 }}>
+          <Form.Item name="crawl_days" label="雪球范围(天)" extra="0 表示按页数（最多10页）" style={{ marginBottom: 0 }}><InputNumber min={0} max={3650} /></Form.Item>
           <Form.Item name="enabled" label="定时采集" valuePropName="checked" style={{ marginBottom: 0 }}><Switch /></Form.Item>
           <Form.Item name="start" label="从" style={{ marginBottom: 0 }}><Input style={{ width: 90 }} placeholder="08:00" /></Form.Item>
           <Form.Item name="end" label="到" style={{ marginBottom: 0 }}><Input style={{ width: 90 }} placeholder="22:00" /></Form.Item>

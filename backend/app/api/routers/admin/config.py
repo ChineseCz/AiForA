@@ -44,11 +44,16 @@ async def set_schedule(request: Request):
         stock_sync_interval = max(5, int(body.get("stock_sync_interval", 15) or 15))
     except (ValueError, TypeError):
         stock_sync_interval = 15
+    try:
+        crawl_days = max(0, min(3650, int(body.get("crawl_days", 0) or 0)))
+    except (ValueError, TypeError):
+        crawl_days = 0
     cfg = {
         "enabled": bool(body.get("enabled", False)),
         "start": str(body.get("start", "08:00")),
         "end": str(body.get("end", "22:00")),
         "interval": interval,
+        "crawl_days": crawl_days,
         "stock_auto_sync_enabled": bool(body.get("stock_auto_sync_enabled", True)),
         "stock_sync_interval": stock_sync_interval,
         "weekly_summary_enabled": bool(body.get("weekly_summary_enabled", True)),

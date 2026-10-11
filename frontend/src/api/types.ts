@@ -402,6 +402,7 @@ export interface ScheduleCfg {
   start: string;
   end: string;
   interval: number;
+  crawl_days: number;
   stock_auto_sync_enabled: boolean;
   stock_sync_interval: number;
   weekly_summary_enabled: boolean;

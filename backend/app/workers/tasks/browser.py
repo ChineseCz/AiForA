@@ -10,11 +10,14 @@ from app.workers.runner import job_run
 
 @celery_app.task(name="browser.crawl", queue=QUEUE_BROWSER)
 def task_crawl(source: str = "手动", summarize: bool = True, job_id: int | None = None) -> None:
-    from datetime import date
+    from datetime import date, timedelta
 
     from app.scrapers import xueqiu
     with job_run("crawl", source, invalidate_cache=True, job_id=job_id):
-        updated, pending_brief_ids = xueqiu.crawl_all()
+        from app.repositories import sync_data as db
+        crawl_days = int(db.get_schedule().get("crawl_days") or 0)
+        since = date.today() - timedelta(days=crawl_days) if crawl_days > 0 else None
+        updated, pending_brief_ids = xueqiu.crawl_all(since=since)
         if summarize and updated:
             # 只给"本次真的抓到新帖子"的大V重新生成当日总结，且强制 regen——否则当天已生成过一次
             # 总结的大V，即使后续抓到了新帖子，ensure_daily 命中缓存也不会重新生成，页面看不出变化。
