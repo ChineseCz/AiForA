@@ -391,7 +391,7 @@ def crawl_user(ctx, user: str, since=None, until=None) -> tuple[str, str, int, i
     return user_id, user_name, new_count, blocked, stopped_by_block, pending_brief_ids
 
 
-def crawl_all(since=None, until=None, user_id: str = "") -> tuple[dict[str, tuple[str, int]], list[str]]:
+def crawl_all(since=None, until=None, user_id: str = "", job_id: int | None = None) -> tuple[dict[str, tuple[str, int]], list[str]]:
     """返回 ({user_id: (user_name, 本次新增条数)}, pending_brief_ids)。
 
     第一项仅含新增>0的大V——供调用方决定"谁需要重新生成当天总结"，避免没有新帖子也无脑重跑一遍 LLM。
@@ -409,6 +409,10 @@ def crawl_all(since=None, until=None, user_id: str = "") -> tuple[dict[str, tupl
         print(f"📅 只抓时间段：{since or '最早'} ~ {until or '至今'}")
     print("🚀 启动浏览器，开始采集…")
     total_blocked = 0
+    progress_jobs = None
+    if job_id is not None:
+        from app.repositories import jobs as progress_jobs
+        progress_jobs.update_progress(job_id, {"total": len(users), "completed": 0, "current": 0, "added": 0, "current_user": ""})
     updated: dict[str, tuple[str, int]] = {}
     pending_brief_ids: list[str] = []
     with sync_playwright() as p:
@@ -418,6 +422,8 @@ def crawl_all(since=None, until=None, user_id: str = "") -> tuple[dict[str, tupl
                 if i > 0:
                     _human_sleep(8.0)
                 print(f"→ 正在抓取 {user} …")
+                if progress_jobs is not None:
+                    progress_jobs.update_progress(job_id, {"total": len(users), "completed": i, "current": i + 1, "added": sum(v[1] for v in updated.values()), "current_user": user})
                 try:
                     uid, uname, n, blocked, stopped, brief_ids = crawl_user(ctx, user, since, until)
                     total_blocked += blocked
@@ -430,6 +436,8 @@ def crawl_all(since=None, until=None, user_id: str = "") -> tuple[dict[str, tupl
                         if stopped:
                             msg += "，并因此提前停止（建议稍后重跑补齐）"
                     print(msg)
+                    if progress_jobs is not None:
+                        progress_jobs.update_progress(job_id, {"total": len(users), "completed": i + 1, "current": min(i + 2, len(users)), "added": sum(v[1] for v in updated.values()), "current_user": "" if i + 1 >= len(users) else users[i + 1]})
                 except Exception as e:  # noqa: BLE001
                     # Chromium can close a context after a renderer crash or
                     # an Xvfb hiccup. Recreate it once so one broken page does
