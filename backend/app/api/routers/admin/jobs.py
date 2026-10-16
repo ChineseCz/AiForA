@@ -64,7 +64,7 @@ async def crawl(request: Request, session: AsyncSession = Depends(db_session)):
     from app.workers.tasks.browser import task_crawl
     body = await _json_body(request)
     summarize = bool(body.get("summarize", True))
-    return await _trigger(session, "crawl", task_crawl, source="手动", summarize=summarize)
+    return await _trigger(session, "crawl", task_crawl, source="手动", summarize=summarize, user_id=str(body.get("user_id") or ""), start=str(body.get("start") or ""), end=str(body.get("end") or ""))
 
 
 @router.get("/crawl/status")

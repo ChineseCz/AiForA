@@ -391,7 +391,7 @@ def crawl_user(ctx, user: str, since=None, until=None) -> tuple[str, str, int, i
     return user_id, user_name, new_count, blocked, stopped_by_block, pending_brief_ids
 
 
-def crawl_all(since=None, until=None) -> tuple[dict[str, tuple[str, int]], list[str]]:
+def crawl_all(since=None, until=None, user_id: str = "") -> tuple[dict[str, tuple[str, int]], list[str]]:
     """返回 ({user_id: (user_name, 本次新增条数)}, pending_brief_ids)。
 
     第一项仅含新增>0的大V——供调用方决定"谁需要重新生成当天总结"，避免没有新帖子也无脑重跑一遍 LLM。
@@ -400,6 +400,8 @@ def crawl_all(since=None, until=None) -> tuple[dict[str, tuple[str, int]], list[
     from playwright.sync_api import sync_playwright
 
     users = db.get_enabled_xueqiu_users()
+    if user_id:
+        users = [u for u in users if u == user_id or u.rstrip("/").split("/")[-1] == user_id]
     if not users:
         print("⚠️  xueqiu_users 表里没有启用的大V，无可抓取对象。")
         return {}, []
