@@ -109,6 +109,7 @@ class Settings(BaseSettings):
     smtp_password: str = ""
     smtp_from: str = ""       # 发件人显示地址；空则用 smtp_user
     smtp_use_ssl: bool = True
+    crawl_failure_email: str = ""
 
     # ===== 微信公众号（扫码登录）=====
     wechat_appid: str = ""

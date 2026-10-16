@@ -1,5 +1,5 @@
 import {
-  Button, Card, Checkbox, Col, DatePicker, Form, Input, InputNumber,
+  Button, Card, Checkbox, Col, DatePicker, Form, Input, InputNumber, Tabs,
   Collapse, Row, Select, Space, Statistic, Switch, Table, Tag, Typography, Upload, message,
 } from "antd";
 import dayjs, { type Dayjs } from "dayjs";
@@ -302,72 +302,10 @@ function JobPanelInline(p: { kind: string; triggerPath: string; statusPath: stri
   );
 }
 
-export default function Admin() {
-  const isMobile = useIsMobile();
-
-  const cleanupZombie = () => {
-    api.post("/api/jobs/cleanup-zombie").then((r) => {
-      if (r.data.cleaned === 0) {
-        message.info("没有僵尸任务需要清理");
-      } else {
-        message.success(`已清理 ${r.data.cleaned} 个僵尸任务`);
-      }
-    }).catch((e) => message.error(errMsg(e)));
-  };
-
-  return (
-    <Space direction="vertical" size={isMobile ? 12 : 16} style={{ width: "100%" }}>
-      <Typography.Title level={isMobile ? 5 : 4} style={{ margin: 0 }}>管理后台</Typography.Title>
-
-      <Card size="small" style={{ marginBottom: 12 }}>
-        <Space>
-          <Button danger onClick={cleanupZombie}>
-            清理僵尸任务
-          </Button>
-          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-            如果任务卡住超过 2 小时，点击清理后可重新触发
-          </Typography.Text>
-        </Space>
-      </Card>
-
-      <MonitoringPanel />
-
-      <Row gutter={[isMobile ? 8 : 16, isMobile ? 8 : 16]}>
-        <Col xs={24} md={12}>
-          <Typography.Title level={5}>数据同步</Typography.Title>
-          <JobPanel title="行情快照同步" desc="全市场A股 + ETF最新行情快照" kind="stock_sync"
-            triggerPath="/api/stock/sync" statusPath="/api/stock/sync/status" />
-          <JobPanel title="转债资料同步" desc="转股价、到期日、信用等级等基础资料" kind="bond_basic_sync"
-            triggerPath="/api/bond/basic_sync" statusPath="/api/bond/basic_sync/status" />
-          <JobPanel title="财务指标同步" desc="全市场最新一期财报指标" kind="finance_sync"
-            triggerPath="/api/stock/finance_sync" statusPath="/api/stock/finance_sync/status" />
-          <JobPanel title="板块名单同步" desc="行业/概念板块名录" kind="sector_sync"
-            triggerPath="/api/stock/sync-sectors" statusPath="/api/stock/sync-sectors/status" />
-          <JobPanel title="板块成分股全量同步" desc="供个股「所属板块」反查完整覆盖" kind="sector_members_sync"
-            triggerPath="/api/stock/sync-sector-members" statusPath="/api/stock/sync-sector-members/status" />
-          <JobPanel title="国家队持仓同步" desc="同步东方财富公开披露的国家队历史持仓及增减变化" kind="national_team_sync"
-            triggerPath="/api/stock/sync-national-team" statusPath="/api/stock/sync-national-team/status" />
-          <JobPanel title="历史K线回补" desc="保留已有数据，并向更早日期扩展指定条数" kind="stock_backfill"
-            triggerPath="/api/stock/backfill" statusPath="/api/stock/backfill/status" body={{ days: 60 }} backfill resumePath="/api/stock/backfill/resume" />
-          <JobPanel title="雪球板块同步" desc="申万134个行业（含半导体/软件开发等），耗时较长" kind="sync_xueqiu_sectors"
-            triggerPath="/api/stock/sync-xueqiu-sectors" statusPath="/api/stock/sync-xueqiu-sectors/status" />
-        </Col>
-        <Col xs={24} md={12}>
-          <Typography.Title level={5}>采集与总结</Typography.Title>
-          <JobPanel title="雪球采集" desc="抓取大V新帖（Playwright+Chromium）" kind="crawl"
-            triggerPath="/api/crawl" statusPath="/api/crawl/status" body={{ summarize: true }} />
-          <JobPanel title="沪深 300 基准同步" desc="同步观点复盘所需的沪深 300 历史行情" kind="index_sync"
-            triggerPath="/api/index/sync" statusPath="/api/index/sync/status" />
-          <WechatImportPanel />
-          <WechatDiscoverPanel />
-          <SummarizePanel />
-          <SchedulePanel />
-          <AuthSettingsPanel />
-        </Col>
-      </Row>
-    </Space>
-  );
-}
+function DataSyncPanel() { return <><MonitoringPanel /><Typography.Title level={5}>数据同步</Typography.Title><JobPanel title="行情快照同步" desc="全市场 A 股 + ETF 最新行情快照" kind="stock_sync" triggerPath="/api/stock/sync" statusPath="/api/stock/sync/status" /><JobPanel title="转债资料同步" desc="转债基础资料" kind="bond_basic_sync" triggerPath="/api/bond/basic_sync" statusPath="/api/bond/basic_sync/status" /><JobPanel title="财务指标同步" desc="最新财报指标" kind="finance_sync" triggerPath="/api/stock/finance_sync" statusPath="/api/stock/finance_sync/status" /><JobPanel title="板块名单同步" desc="行业与概念板块" kind="sector_sync" triggerPath="/api/stock/sync-sectors" statusPath="/api/stock/sync-sectors/status" /><JobPanel title="板块成分股同步" desc="个股所属板块关系" kind="sector_members_sync" triggerPath="/api/stock/sync-sector-members" statusPath="/api/stock/sync-sector-members/status" /><JobPanel title="国家队持仓同步" desc="国家队历史持仓" kind="national_team_sync" triggerPath="/api/stock/sync-national-team" statusPath="/api/stock/sync-national-team/status" /><JobPanel title="历史 K 线回补" desc="历史行情补齐与失败重试" kind="stock_backfill" triggerPath="/api/stock/backfill" statusPath="/api/stock/backfill/status" body={{ days: 60 }} backfill resumePath="/api/stock/backfill/resume" /><JobPanel title="雪球板块同步" desc="雪球行业及成分股" kind="sync_xueqiu_sectors" triggerPath="/api/stock/sync-xueqiu-sectors" statusPath="/api/stock/sync-xueqiu-sectors/status" /></>; }
+function CollectionPanel() { return <><Typography.Title level={5}>采集与总结</Typography.Title><JobPanel title="雪球采集" desc="抓取大 V 最新帖子并自动派发总结" kind="crawl" triggerPath="/api/crawl" statusPath="/api/crawl/status" body={{ summarize: true }} /><JobPanel title="沪深 300 基准同步" desc="复盘所需历史行情" kind="index_sync" triggerPath="/api/index/sync" statusPath="/api/index/sync/status" /><WechatImportPanel /><WechatDiscoverPanel /><SummarizePanel /></>; }
+function AutomationPanel({ cleanupZombie }: { cleanupZombie: () => void }) { return <><Typography.Title level={5}>定时任务与自动化</Typography.Title><SchedulePanel /><Card size="small" title="采集失败通知" style={{ marginBottom: 12 }}><Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>采集异常时通过 SMTP 向 CRAWL_FAILURE_EMAIL 配置的邮箱发送通知，请在服务器 backend/.env 配置。</Typography.Paragraph></Card><AuthSettingsPanel /><Card size="small" title="任务维护"><Space><Button danger onClick={cleanupZombie}>清理僵尸任务</Button><Typography.Text type="secondary">清理运行超过 2 小时但 worker 已停止的任务</Typography.Text></Space></Card></>; }
+export default function Admin() { const isMobile = useIsMobile(); const cleanupZombie = () => api.post("/api/jobs/cleanup-zombie").then((r) => r.data.cleaned === 0 ? message.info("没有僵尸任务需要清理") : message.success(`已清理 ${r.data.cleaned} 个僵尸任务`)).catch((e) => message.error(errMsg(e))); return <Space direction="vertical" size={isMobile ? 12 : 16} style={{ width: "100%" }}><Typography.Title level={isMobile ? 5 : 4} style={{ margin: 0 }}>管理后台</Typography.Title><Tabs defaultActiveKey="collection" items={[{ key: "sync", label: "数据同步", children: <DataSyncPanel /> }, { key: "collection", label: "采集与总结", children: <CollectionPanel /> }, { key: "automation", label: "定时任务与自动化", children: <AutomationPanel cleanupZombie={cleanupZombie} /> }]} /></Space>; }
 
 function WechatImportPanel() {
   const [urls, setUrls] = useState("");

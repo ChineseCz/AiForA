@@ -21,19 +21,34 @@ echo Step 1: Exporting login state...
 echo (Edge browser will open, check if you are logged in to xueqiu.com)
 echo.
 
-REM Activate virtual environment
-if exist ".venv\Scripts\activate.bat" (
-    call .venv\Scripts\activate.bat
-    echo Using virtual environment
-) else (
-    echo Warning: Virtual environment not found, using system Python
+REM Select the repository/backend virtual environment first. Windows Store
+REM execution aliases can exist without providing a working python.exe, so
+REM fall back to the Python launcher only when it is actually available.
+set "PYTHON="
+if exist ".venv\Scripts\python.exe" set "PYTHON=.venv\Scripts\python.exe"
+if not defined PYTHON if exist "backend\.venv\Scripts\python.exe" set "PYTHON=backend\.venv\Scripts\python.exe"
+if not defined PYTHON (
+    where py >nul 2>&1
+    if not errorlevel 1 set "PYTHON=py -3"
 )
+if not defined PYTHON (
+    where python >nul 2>&1
+    if not errorlevel 1 set "PYTHON=python"
+)
+if not defined PYTHON (
+    echo ERROR: No working Python interpreter was found.
+    echo Install Python 3 or create a virtual environment, then try again.
+    pause
+    exit /b 1
+)
+echo Using Python: %PYTHON%
 
-cd backend
-python export_xueqiu_state.py
-cd ..
+pushd backend
+%PYTHON% export_xueqiu_state.py
+set "EXPORT_EXIT=%ERRORLEVEL%"
+popd
 
-if %ERRORLEVEL% NEQ 0 (
+if not "%EXPORT_EXIT%"=="0" (
     echo.
     echo ERROR: Failed to export login state
     echo Please check if Edge opened correctly and you completed the login
@@ -43,7 +58,12 @@ if %ERRORLEVEL% NEQ 0 (
 
 echo.
 echo Step 2: Uploading to server...
-scp data\xueqiu-state.json ubuntu@124.222.169.60:/data/app/backend/data/
+if not exist "backend\data\xueqiu-state.json" (
+    echo ERROR: Export completed without creating backend\data\xueqiu-state.json
+    pause
+    exit /b 1
+)
+scp backend\data\xueqiu-state.json ubuntu@124.222.169.60:/data/app/backend/data/
 
 if %ERRORLEVEL% NEQ 0 (
     echo.

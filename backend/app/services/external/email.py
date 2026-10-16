@@ -76,3 +76,33 @@ def send_verification_email(to_addr: str, code: str) -> bool:
     except Exception:
         logger.exception("发送验证码邮件失败: %s", to_addr)
         return False
+
+
+def send_crawl_failure_email(to_addr: str, error: str, source: str = "定时") -> bool:
+    """Notify the operator when an automated Xueqiu crawl fails."""
+    if not to_addr:
+        return False
+    if not settings.smtp_host:
+        logger.warning("[MOCK EMAIL] crawl failure notification to %s: %s", to_addr, error)
+        return True
+    from_addr = settings.smtp_from or settings.smtp_user
+    msg = MIMEMultipart("alternative")
+    body = f"雪球采集任务失败\n\n来源：{source}\n错误：{error}\n"
+    msg.attach(MIMEText(body, "plain", "utf-8"))
+    msg["Subject"] = "【雪球看板】雪球采集失败通知"
+    msg["From"] = from_addr
+    msg["To"] = to_addr
+    try:
+        if settings.smtp_use_ssl:
+            with smtplib.SMTP_SSL(settings.smtp_host, settings.smtp_port, timeout=10) as smtp:
+                smtp.login(settings.smtp_user, settings.smtp_password)
+                smtp.sendmail(from_addr, [to_addr], msg.as_string())
+        else:
+            with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=10) as smtp:
+                smtp.starttls()
+                smtp.login(settings.smtp_user, settings.smtp_password)
+                smtp.sendmail(from_addr, [to_addr], msg.as_string())
+        return True
+    except Exception:
+        logger.exception("crawl failure email failed: %s", to_addr)
+        return False
