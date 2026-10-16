@@ -129,10 +129,10 @@ services:
     restart: unless-stopped
     # 雪球会拦截 Chromium headless 指纹；用 Xvfb 提供虚拟显示并保持
     # Playwright 的 headed 模式，避免把所有抓取请求送进 WAF 挑战页。
-    # Playwright owns an asyncio loop and browser process.  Celery's prefork
-    # pool can lose the consumer after a fork, leaving only xvfb-run alive;
-    # solo keeps one long-lived consumer and isolates the browser in-process.
-    command: xvfb-run -a -s "-screen 0 1280x800x24" celery -A app.workers.celery_app worker -Q browser --pool=solo --loglevel=info
+    # Start Xvfb directly so the container does not depend on xvfb-run's
+    # readiness signal. Celery's solo pool keeps Playwright's asyncio loop
+    # in one long-lived consumer process.
+    command: sh -c "Xvfb :99 -screen 0 1280x800x24 -nolisten tcp & sleep 1; exec env DISPLAY=:99 celery -A app.workers.celery_app worker -Q browser --pool=solo --loglevel=info"
     depends_on:
       postgres:
         condition: service_healthy
