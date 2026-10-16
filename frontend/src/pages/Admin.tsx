@@ -274,12 +274,12 @@ function SummarizePanel() {
           强制重新生成（覆盖范围内已有的总结）
         </Checkbox>
       </Space>
-      <JobPanelInline kind="summarize" triggerPath="/api/summarize" statusPath="/api/summarize/status" body={body} />
+      <SummarizeJobPanel body={body} />
     </Card>
   );
 }
 // 复用 JobPanel 的触发+状态，但嵌在带参数的卡片里（去掉外层卡片）
-function JobPanelInline(p: { kind: string; triggerPath: string; statusPath: string; body: object }) {
+export function JobPanelInline(p: { kind: string; triggerPath: string; statusPath: string; body: object }) {
   const [polling, setPolling] = useState(true);
   const { data: status } = useJobStatus(p.kind, p.statusPath, polling);
   useEffect(() => { setPolling(!!status?.running); }, [status?.running]);
@@ -312,6 +312,17 @@ function JobPanelInline(p: { kind: string; triggerPath: string; statusPath: stri
 }
 
 function DataSyncPanel() { const jobs = [["行情快照同步","全市场 A 股 + ETF 最新行情快照","stock_sync","/api/stock/sync","/api/stock/sync/status"],["转债资料同步","转债基础资料","bond_basic_sync","/api/bond/basic_sync","/api/bond/basic_sync/status"],["财务指标同步","最新财报指标","finance_sync","/api/stock/finance_sync","/api/stock/finance_sync/status"],["板块名单同步","行业与概念板块","sector_sync","/api/stock/sync-sectors","/api/stock/sync-sectors/status"],["板块成分股同步","个股所属板块关系","sector_members_sync","/api/stock/sync-sector-members","/api/stock/sync-sector-members/status"],["国家队持仓同步","国家队历史持仓","national_team_sync","/api/stock/sync-national-team","/api/stock/sync-national-team/status"],["历史 K 线回补","历史行情补齐与失败重试","stock_backfill","/api/stock/backfill","/api/stock/backfill/status"],["雪球板块同步","雪球行业及成分股","sync_xueqiu_sectors","/api/stock/sync-xueqiu-sectors","/api/stock/sync-xueqiu-sectors/status"],["沪深 300 基准同步","复盘所需历史行情","index_sync","/api/index/sync","/api/index/sync/status"]] as const; return <><MonitoringPanel /><Typography.Title level={5}>数据同步</Typography.Title><Row gutter={[12,12]}>{jobs.map(([title,desc,kind,triggerPath,statusPath]) => <Col xs={24} lg={12} key={kind}><JobPanel title={title} desc={desc} kind={kind} triggerPath={triggerPath} statusPath={statusPath} {...(kind === "stock_backfill" ? { body: { days: 60 }, backfill: true, resumePath: "/api/stock/backfill/resume" } : {})} /></Col>)}</Row></>; }
+
+function SummarizeJobPanel({ body }: { body: object }) {
+  const [polling, setPolling] = useState(true);
+  const { data: status } = useJobStatus("summarize", "/api/summarize/status", polling);
+  useEffect(() => setPolling(!!status?.running), [status?.running]);
+  const trigger = () => api.post("/api/summarize", body).then(() => { message.success("已提交总结任务"); setPolling(true); }).catch((e) => message.error(errMsg(e)));
+  const progress = status?.progress || {};
+  const total = Number(progress.total || 0); const completed = Number(progress.completed || 0);
+  const percent = total ? Math.min(100, Math.round(completed * 100 / total)) : 0;
+  return <Space wrap style={{ width: "100%" }}><Button type="primary" onClick={trigger} loading={status?.running}>开始生成</Button>{status?.running && <Tag color="processing">运行中</Tag>}{status?.running ? <Card size="small" style={{ width: "100%", marginTop: 4, background: "var(--bg-elevated)", borderColor: "var(--border-strong)" }}><Space direction="vertical" size={6} style={{ width: "100%" }}><Space wrap><Typography.Text>{total ? `${completed}/${total} 个总结单元` : "正在准备总结任务"}</Typography.Text>{progress.current_user ? <Typography.Text type="secondary">当前：{String(progress.current_user)}</Typography.Text> : null}{progress.current_period ? <Typography.Text type="secondary">周期：{String(progress.current_period)}</Typography.Text> : null}</Space><Progress percent={percent} size="small" status="active" /><Typography.Text type="secondary">成功 {Number(progress.success || 0)} · 无帖子跳过 {Number(progress.skipped || 0)} · 失败 {Number(progress.failed || 0)}</Typography.Text><Typography.Paragraph style={{ whiteSpace: "pre-wrap", margin: 0, maxHeight: 150, overflow: "auto", fontSize: 12, color: "var(--text-primary)" }}>{status.log?.slice(-6).join("\n") || "正在启动 AI 总结任务…"}</Typography.Paragraph></Space></Card> : null}{!status?.running && (status?.finished_at || status?.error || status?.log?.length) ? <Card size="small" title="本次总结执行报告" style={{ width: "100%", marginTop: 4, background: "var(--bg-elevated)", borderColor: "var(--border-strong)" }}><Space direction="vertical" size={2} style={{ width: "100%" }}>{status.finished_at ? <Typography.Text type="secondary">完成时间：{status.finished_at}</Typography.Text> : null}{status.error ? <Typography.Text type="danger">错误：{status.error}</Typography.Text> : null}<Typography.Paragraph style={{ whiteSpace: "pre-wrap", margin: 0, fontSize: 12, color: "var(--text-primary)" }}>{status.log?.slice(-8).join("\n")}</Typography.Paragraph></Space></Card> : null}</Space>;
+}
 
 function CrawlPanel() {
   const { data: users } = useUsers(); const [userId, setUserId] = useState(""); const [range, setRange] = useState<[Dayjs | null, Dayjs | null] | null>(null); const [polling, setPolling] = useState(true); const { data: status } = useJobStatus("crawl", "/api/crawl/status", polling); useEffect(() => setPolling(!!status?.running), [status?.running]);
