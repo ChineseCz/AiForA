@@ -294,10 +294,20 @@ function JobPanelInline(p: { kind: string; triggerPath: string; statusPath: stri
     })
     .catch((e) => message.error(errMsg(e)));
   return (
-    <Space>
+    <Space wrap>
       <Button type="primary" onClick={trigger} loading={status?.running}>开始生成</Button>
       {status?.running && <Tag color="processing">运行中</Tag>}
+      {!status?.running && status?.finished_at ? <Tag color={status.status === "success" ? "success" : "error"}>{status.status === "success" ? "已完成" : "执行失败"}</Tag> : null}
       {status?.log?.length ? <Typography.Text type="secondary" style={{ fontSize: 12 }}>{status.log[status.log.length - 1]}</Typography.Text> : null}
+      {!status?.running && (status?.finished_at || status?.error || status?.log?.length) ? (
+        <Card size="small" title="本次执行报告" style={{ width: "100%", marginTop: 4 }}>
+          <Space direction="vertical" size={2} style={{ width: "100%" }}>
+            {status.finished_at ? <Typography.Text type="secondary">完成时间：{status.finished_at}</Typography.Text> : null}
+            {status.error ? <Typography.Text type="danger">错误：{status.error}</Typography.Text> : null}
+            {status.log?.length ? <Typography.Paragraph style={{ whiteSpace: "pre-wrap", margin: 0, fontSize: 12 }}>{status.log.slice(-8).join("\n")}</Typography.Paragraph> : null}
+          </Space>
+        </Card>
+      ) : null}
     </Space>
   );
 }
@@ -307,9 +317,9 @@ function DataSyncPanel() { const jobs = [["行情快照同步","全市场 A 股 
 function CrawlPanel() {
   const { data: users } = useUsers(); const [userId, setUserId] = useState(""); const [range, setRange] = useState<[Dayjs | null, Dayjs | null] | null>(null); const [polling, setPolling] = useState(true); const { data: status } = useJobStatus("crawl", "/api/crawl/status", polling); useEffect(() => setPolling(!!status?.running), [status?.running]);
   const trigger = () => api.post("/api/crawl", { summarize: true, user_id: userId, start: range?.[0]?.format("YYYY-MM-DD") || "", end: range?.[1]?.format("YYYY-MM-DD") || "" }).then(() => { message.success("已提交雪球采集"); setPolling(true); }).catch((e) => message.error(errMsg(e)));
-  return <Card size="small" title="雪球采集" style={{ marginBottom: 12 }}><Typography.Text type="secondary">选择大V和时间范围，采集完成后自动派发对应 AI 总结。</Typography.Text><Space wrap style={{ marginTop: 10 }}><Select allowClear value={userId || undefined} onChange={(v) => setUserId(v || "")} placeholder="全部大V" style={{ width: 190 }} options={users?.map((u) => ({ value: u.id, label: u.name }))} /><DatePicker.RangePicker value={range as never} onChange={(v) => setRange(v as never)} /><Button type="primary" onClick={trigger} loading={status?.running}>开始采集</Button></Space>{status?.running && <Tag color="processing" style={{ marginTop: 10 }}>采集中</Tag>}{status?.log?.length ? <Typography.Paragraph type="secondary" style={{ whiteSpace: "pre-wrap", margin: "10px 0 0", fontSize: 12 }}>{status.log.slice(-5).join("\n")}</Typography.Paragraph> : null}{status?.error ? <Typography.Text type="danger">{status.error}</Typography.Text> : null}</Card>;
+  return <Card size="small" title="雪球采集" style={{ marginBottom: 12 }}><Typography.Text type="secondary">选择大V和时间范围，采集完成后自动派发对应 AI 总结。</Typography.Text><Space wrap style={{ marginTop: 10 }}><Select allowClear value={userId || undefined} onChange={(v) => setUserId(v || "")} placeholder="全部大V" style={{ width: 190 }} options={users?.map((u) => ({ value: u.id, label: u.name }))} /><DatePicker.RangePicker value={range as never} onChange={(v) => setRange(v as never)} /><Button type="primary" onClick={trigger} loading={status?.running}>开始采集</Button></Space>{status?.running && <Tag color="processing" style={{ marginTop: 10 }}>采集中</Tag>}{!status?.running && (status?.finished_at || status?.error || status?.log?.length) ? <Card size="small" title="本次采集执行报告" style={{ marginTop: 12, background: "#fafafa" }}><Space direction="vertical" size={2} style={{ width: "100%" }}>{status.finished_at ? <Typography.Text type="secondary">完成时间：{status.finished_at}</Typography.Text> : null}{status.error ? <Typography.Text type="danger">错误：{status.error}</Typography.Text> : null}{status.log?.length ? <Typography.Paragraph style={{ whiteSpace: "pre-wrap", margin: 0, fontSize: 12 }}>{status.log.slice(-8).join("\n")}</Typography.Paragraph> : null}</Space></Card> : null}</Card>;
 }
-function CollectionPanel() { return <><Typography.Title level={5}>采集与总结</Typography.Title><CrawlPanel /><WechatImportPanel /><WechatDiscoverPanel /><SummarizePanel /></>; }
+function CollectionPanel() { return <><Typography.Title level={5}>采集与总结</Typography.Title><CrawlPanel /><SummarizePanel /><WechatImportPanel /><WechatDiscoverPanel /></>; }
 
 function AutomationPanel({ cleanupZombie }: { cleanupZombie: () => void }) { return <><Typography.Title level={5}>定时任务与自动化</Typography.Title><SchedulePanel /><Card size="small" title="采集失败通知" style={{ marginBottom: 12 }}><Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>采集异常时通过 SMTP 向 CRAWL_FAILURE_EMAIL 配置的邮箱发送通知，请在服务器 backend/.env 配置。</Typography.Paragraph></Card><AuthSettingsPanel /><Card size="small" title="任务维护"><Space><Button danger onClick={cleanupZombie}>清理僵尸任务</Button><Typography.Text type="secondary">清理运行超过 2 小时但 worker 已停止的任务</Typography.Text></Space></Card></>; }
 export default function Admin() { const isMobile = useIsMobile(); const cleanupZombie = () => api.post("/api/jobs/cleanup-zombie").then((r) => r.data.cleaned === 0 ? message.info("没有僵尸任务需要清理") : message.success(`已清理 ${r.data.cleaned} 个僵尸任务`)).catch((e) => message.error(errMsg(e))); return <Space direction="vertical" size={isMobile ? 12 : 16} style={{ width: "100%" }}><Typography.Title level={isMobile ? 5 : 4} style={{ margin: 0 }}>管理后台</Typography.Title><Tabs defaultActiveKey="collection" items={[{ key: "sync", label: "数据同步", children: <DataSyncPanel /> }, { key: "collection", label: "采集与总结", children: <CollectionPanel /> }, { key: "automation", label: "定时任务与自动化", children: <AutomationPanel cleanupZombie={cleanupZombie} /> }]} /></Space>; }
