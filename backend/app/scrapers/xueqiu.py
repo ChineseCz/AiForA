@@ -431,7 +431,28 @@ def crawl_all(since=None, until=None, user_id: str = "") -> tuple[dict[str, tupl
                             msg += "，并因此提前停止（建议稍后重跑补齐）"
                     print(msg)
                 except Exception as e:  # noqa: BLE001
-                    print(f"❌ 抓取失败 {user}：{e}")
+                    # Chromium can close a context after a renderer crash or
+                    # an Xvfb hiccup. Recreate it once so one broken page does
+                    # not poison every remaining account in this batch.
+                    message = str(e)
+                    if "Target page, context or browser has been closed" in message:
+                        print(f"⚠️ 浏览器上下文已关闭，重启后重试 {user}")
+                        try:
+                            ctx.close()
+                        except Exception:
+                            pass
+                        ctx = open_context(p)
+                        try:
+                            uid, uname, n, blocked, stopped, brief_ids = crawl_user(ctx, user, since, until)
+                            total_blocked += blocked
+                            if n > 0 and uid:
+                                updated[uid] = (uname, n)
+                            pending_brief_ids.extend(brief_ids)
+                            print(f"✅ {uname or uid}（{uid}）：新增 {n} 条（重试成功）")
+                            continue
+                        except Exception as retry_error:  # noqa: BLE001
+                            message = str(retry_error)
+                    print(f"❌ 抓取失败 {user}：{message}")
         finally:
             try:
                 ctx.close()
