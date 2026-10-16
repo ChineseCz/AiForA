@@ -246,7 +246,7 @@ def _day_start_ms(d) -> int:
     return int(datetime(d.year, d.month, d.day).timestamp() * 1000)
 
 
-def crawl_user(ctx, user: str, since=None, until=None) -> tuple[str, str, int, int, bool, list[str]]:
+def crawl_user(ctx, user: str, since=None, until=None) -> tuple[str, str, int, int, int, bool, list[str]]:
     since_ms = _day_start_ms(since) if since else None
     until_ms = _day_start_ms(until) + 86_400_000 if until else None
 
@@ -346,6 +346,7 @@ def crawl_user(ctx, user: str, since=None, until=None) -> tuple[str, str, int, i
     user_id = ""
     user_name = ""
     new_count = 0
+    matched_count = 0
     pending_brief_ids: list[str] = []
     for sid, st in statuses.items():
         uinfo = st.get("user") or {}
@@ -357,6 +358,7 @@ def crawl_user(ctx, user: str, since=None, until=None) -> tuple[str, str, int, i
             continue
         if until_ms is not None and created >= until_ms:
             continue
+        matched_count += 1
         if db.post_exists(sid):
             continue
 
@@ -388,7 +390,7 @@ def crawl_user(ctx, user: str, since=None, until=None) -> tuple[str, str, int, i
         page.close()
     except Exception:
         pass
-    return user_id, user_name, new_count, blocked, stopped_by_block, pending_brief_ids
+    return user_id, user_name, new_count, matched_count, blocked, stopped_by_block, pending_brief_ids
 
 
 def crawl_all(since=None, until=None, user_id: str = "", job_id: int | None = None) -> tuple[dict[str, tuple[str, int]], list[str]]:
@@ -409,6 +411,7 @@ def crawl_all(since=None, until=None, user_id: str = "", job_id: int | None = No
         print(f"📅 只抓时间段：{since or '最早'} ~ {until or '至今'}")
     print("🚀 启动浏览器，开始采集…")
     total_blocked = 0
+    total_matched = 0
     progress_jobs = None
     if job_id is not None:
         from app.repositories import jobs as progress_jobs
@@ -425,12 +428,15 @@ def crawl_all(since=None, until=None, user_id: str = "", job_id: int | None = No
                 if progress_jobs is not None:
                     progress_jobs.update_progress(job_id, {"total": len(users), "completed": i, "current": i + 1, "added": sum(v[1] for v in updated.values()), "current_user": user})
                 try:
-                    uid, uname, n, blocked, stopped, brief_ids = crawl_user(ctx, user, since, until)
+                    uid, uname, n, matched, blocked, stopped, brief_ids = crawl_user(ctx, user, since, until)
                     total_blocked += blocked
+                    total_matched += matched
                     if n > 0 and uid:
                         updated[uid] = (uname, n)
                     pending_brief_ids.extend(brief_ids)
-                    msg = f"✅ {uname or uid}（{uid}）：新增 {n} 条"
+                    msg = f"✅ {uname or uid}（{uid}）：抓到 {matched} 条，新增 {n} 条"
+                    if matched > n:
+                        msg += f"，已存在 {matched - n} 条"
                     if blocked:
                         msg += f"；⚠️ 被 WAF 拦截 {blocked} 次"
                         if stopped:
@@ -451,12 +457,16 @@ def crawl_all(since=None, until=None, user_id: str = "", job_id: int | None = No
                             pass
                         ctx = open_context(p)
                         try:
-                            uid, uname, n, blocked, stopped, brief_ids = crawl_user(ctx, user, since, until)
+                            uid, uname, n, matched, blocked, stopped, brief_ids = crawl_user(ctx, user, since, until)
                             total_blocked += blocked
+                            total_matched += matched
                             if n > 0 and uid:
                                 updated[uid] = (uname, n)
                             pending_brief_ids.extend(brief_ids)
-                            print(f"✅ {uname or uid}（{uid}）：新增 {n} 条（重试成功）")
+                            retry_msg = f"✅ {uname or uid}（{uid}）：抓到 {matched} 条，新增 {n} 条（重试成功）"
+                            if matched > n:
+                                retry_msg += f"，已存在 {matched - n} 条"
+                            print(retry_msg)
                             continue
                         except Exception as retry_error:  # noqa: BLE001
                             message = str(retry_error)
@@ -468,6 +478,10 @@ def crawl_all(since=None, until=None, user_id: str = "", job_id: int | None = No
                 pass
     if total_blocked:
         print(f"\n⚠️  本次共有 {total_blocked} 次请求被 WAF 拦截，过几分钟重跑可补齐。")
+    print(
+        f"采集报告：时间范围内抓到 {total_matched} 条，新增 {sum(v[1] for v in updated.values())} 条；"
+        f"长帖摘要 {len(pending_brief_ids)} 条待处理"
+    )
     return updated, pending_brief_ids
 
 

@@ -19,7 +19,6 @@ def task_crawl(source: str = "手动", summarize: bool = True, job_id: int | Non
         since = datetime.strptime(start, "%Y-%m-%d").date() if start else (date.today() - timedelta(days=crawl_days) if crawl_days > 0 else None)
         until = datetime.strptime(end, "%Y-%m-%d").date() if end else None
         updated, pending_brief_ids = xueqiu.crawl_all(since=since, until=until, user_id=user_id, job_id=job_id)
-        print(f"采集报告：{len(updated)} 位大V有新增，共 {sum(v[1] for v in updated.values())} 条；长帖摘要 {len(pending_brief_ids)} 条待处理")
         if summarize and updated:
             # 只给"本次真的抓到新帖子"的大V重新生成当日总结，且强制 regen——否则当天已生成过一次
             # 总结的大V，即使后续抓到了新帖子，ensure_daily 命中缓存也不会重新生成，页面看不出变化。
