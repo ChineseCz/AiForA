@@ -213,6 +213,17 @@ def fetch_timeline_in_page(page, user_id: str, pg: int) -> tuple[str | None, str
         return None, "empty"
     if raw.lstrip().startswith("<"):
         return None, "blocked"
+    try:
+        payload = json.loads(raw)
+    except (ValueError, TypeError):
+        return None, "error"
+    entries = _extract_statuses(payload)
+    if isinstance(payload, dict) and not entries and (
+        payload.get("error_code") not in (None, 0, "0")
+        or payload.get("error_description")
+        or payload.get("error")
+    ):
+        return None, "blocked"
     return raw, "ok"
 
 
@@ -246,7 +257,7 @@ def _day_start_ms(d) -> int:
     return int(datetime(d.year, d.month, d.day).timestamp() * 1000)
 
 
-def crawl_user(ctx, user: str, since=None, until=None) -> tuple[str, str, int, int, int, bool, list[str]]:
+def crawl_user(ctx, user: str, since=None, until=None) -> tuple[str, str, int, int, int, bool, list[str], bool]:
     since_ms = _day_start_ms(since) if since else None
     until_ms = _day_start_ms(until) + 86_400_000 if until else None
 
@@ -295,8 +306,11 @@ def crawl_user(ctx, user: str, since=None, until=None) -> tuple[str, str, int, i
                 added += 1
         return added, page_min
 
+    initial_min = None
     for raw in bodies:
-        absorb(raw)
+        _, page_min = absorb(raw)
+        if page_min is not None and (initial_min is None or page_min < initial_min):
+            initial_min = page_min
 
     if not statuses:
         print(f"⚠️  {user} 主页未捕获到时间线响应（可能是登录态过期、WAF 或雪球接口变更）")
@@ -312,9 +326,12 @@ def crawl_user(ctx, user: str, since=None, until=None) -> tuple[str, str, int, i
 
     blocked = 0
     stopped_by_block = False
+    reached_since = since_ms is None or (initial_min is not None and initial_min < since_ms)
+    incomplete_range = False
 
     if uid:
         pg = 2
+        duplicate_pages = 0
         while pg <= page_cap:
             raw, status = fetch_timeline_in_page(page, uid, pg)
             if status == "blocked":
@@ -329,19 +346,39 @@ def crawl_user(ctx, user: str, since=None, until=None) -> tuple[str, str, int, i
                 if status == "blocked":
                     blocked += 1
                     stopped_by_block = True
+                    incomplete_range = since_ms is not None and not reached_since
                     break
             if status != "ok" or raw is None:
+                incomplete_range = since_ms is not None and not reached_since
                 break
+            try:
+                page_entries = _extract_statuses(json.loads(raw))
+            except (ValueError, TypeError):
+                page_entries = []
             added, page_min = absorb(raw)
-            if added == 0:
-                break
             if since_ms is not None and page_min is not None and page_min < since_ms:
+                reached_since = True
                 break
+            if not page_entries:
+                incomplete_range = since_ms is not None and not reached_since
+                break
+            if added == 0:
+                duplicate_pages += 1
+                print(f"   第 {pg} 页返回 {len(page_entries)} 条，但没有新帖子 ID（连续重复 {duplicate_pages} 页）")
+                if duplicate_pages >= 3:
+                    incomplete_range = since_ms is not None and not reached_since
+                    break
+            else:
+                duplicate_pages = 0
             _human_wait(page)
             if pg % 8 == 0:
                 _human_wait(page)
                 _human_wait(page)
             pg += 1
+        else:
+            incomplete_range = since_ms is not None and not reached_since
+    elif since_ms is not None:
+        incomplete_range = True
 
     user_id = ""
     user_name = ""
@@ -390,7 +427,7 @@ def crawl_user(ctx, user: str, since=None, until=None) -> tuple[str, str, int, i
         page.close()
     except Exception:
         pass
-    return user_id, user_name, new_count, matched_count, blocked, stopped_by_block, pending_brief_ids
+    return user_id, user_name, new_count, matched_count, blocked, stopped_by_block, pending_brief_ids, incomplete_range
 
 
 def crawl_all(since=None, until=None, user_id: str = "", job_id: int | None = None) -> tuple[dict[str, tuple[str, int]], list[str]]:
@@ -412,6 +449,7 @@ def crawl_all(since=None, until=None, user_id: str = "", job_id: int | None = No
     print("🚀 启动浏览器，开始采集…")
     total_blocked = 0
     total_matched = 0
+    incomplete_users: list[str] = []
     progress_jobs = None
     if job_id is not None:
         from app.repositories import jobs as progress_jobs
@@ -428,12 +466,14 @@ def crawl_all(since=None, until=None, user_id: str = "", job_id: int | None = No
                 if progress_jobs is not None:
                     progress_jobs.update_progress(job_id, {"total": len(users), "completed": i, "current": i + 1, "added": sum(v[1] for v in updated.values()), "current_user": user})
                 try:
-                    uid, uname, n, matched, blocked, stopped, brief_ids = crawl_user(ctx, user, since, until)
+                    uid, uname, n, matched, blocked, stopped, brief_ids, incomplete = crawl_user(ctx, user, since, until)
                     total_blocked += blocked
                     total_matched += matched
                     if n > 0 and uid:
                         updated[uid] = (uname, n)
                     pending_brief_ids.extend(brief_ids)
+                    if incomplete:
+                        incomplete_users.append(uname or user)
                     msg = f"✅ {uname or uid}（{uid}）：抓到 {matched} 条，新增 {n} 条"
                     if matched > n:
                         msg += f"，已存在 {matched - n} 条"
@@ -441,6 +481,8 @@ def crawl_all(since=None, until=None, user_id: str = "", job_id: int | None = No
                         msg += f"；⚠️ 被 WAF 拦截 {blocked} 次"
                         if stopped:
                             msg += "，并因此提前停止（建议稍后重跑补齐）"
+                    if incomplete:
+                        msg += "；⚠️ 未翻到所选起始日期，范围结果不完整"
                     print(msg)
                     if progress_jobs is not None:
                         progress_jobs.update_progress(job_id, {"total": len(users), "completed": i + 1, "current": min(i + 2, len(users)), "added": sum(v[1] for v in updated.values()), "current_user": "" if i + 1 >= len(users) else users[i + 1]})
@@ -457,15 +499,19 @@ def crawl_all(since=None, until=None, user_id: str = "", job_id: int | None = No
                             pass
                         ctx = open_context(p)
                         try:
-                            uid, uname, n, matched, blocked, stopped, brief_ids = crawl_user(ctx, user, since, until)
+                            uid, uname, n, matched, blocked, stopped, brief_ids, incomplete = crawl_user(ctx, user, since, until)
                             total_blocked += blocked
                             total_matched += matched
                             if n > 0 and uid:
                                 updated[uid] = (uname, n)
                             pending_brief_ids.extend(brief_ids)
+                            if incomplete:
+                                incomplete_users.append(uname or user)
                             retry_msg = f"✅ {uname or uid}（{uid}）：抓到 {matched} 条，新增 {n} 条（重试成功）"
                             if matched > n:
                                 retry_msg += f"，已存在 {matched - n} 条"
+                            if incomplete:
+                                retry_msg += "；⚠️ 未翻到所选起始日期，范围结果不完整"
                             print(retry_msg)
                             continue
                         except Exception as retry_error:  # noqa: BLE001
@@ -481,6 +527,7 @@ def crawl_all(since=None, until=None, user_id: str = "", job_id: int | None = No
     print(
         f"采集报告：时间范围内抓到 {total_matched} 条，新增 {sum(v[1] for v in updated.values())} 条；"
         f"长帖摘要 {len(pending_brief_ids)} 条待处理"
+        + (f"；⚠️ {len(incomplete_users)} 位大V未能翻到所选起始日期，范围结果不完整" if incomplete_users else "")
     )
     return updated, pending_brief_ids
 
