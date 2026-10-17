@@ -405,6 +405,7 @@ export interface ScheduleCfg {
   stock_auto_sync_enabled: boolean;
   stock_sync_interval: number;
   weekly_summary_enabled: boolean;
+  daily_summary_enabled: boolean;
 }
 
 export interface AuthSettingsCfg {

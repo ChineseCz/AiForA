@@ -18,7 +18,7 @@ def task_crawl(source: str = "手动", summarize: bool = True, job_id: int | Non
         since = datetime.strptime(start, "%Y-%m-%d").date() if start else None
         until = datetime.strptime(end, "%Y-%m-%d").date() if end else None
         updated, pending_brief_ids = xueqiu.crawl_all(since=since, until=until, user_id=user_id, job_id=job_id)
-        if summarize and updated:
+        if summarize and updated and db.get_schedule().get("daily_summary_enabled", True):
             # 只给"本次真的抓到新帖子"的大V重新生成当日总结，且强制 regen——否则当天已生成过一次
             # 总结的大V，即使后续抓到了新帖子，ensure_daily 命中缓存也不会重新生成，页面看不出变化。
             today = date.today().isoformat()
@@ -76,6 +76,9 @@ def task_sync_xueqiu_sectors(source: str = "手动", job_id: int | None = None) 
 def task_summarize_daily_one(user_id: str, user_name: str, date_str: str, regen: bool = False) -> None:
     from datetime import datetime
 
+    from app.repositories import sync_data as db
+    if not db.get_schedule().get("daily_summary_enabled", True):
+        return
     from app.services import summaries_build
     from app.workers.runner import job_run as _jr
     with _jr("summarize", "自动(采集后)", invalidate_cache=True):

@@ -1072,13 +1072,13 @@ def get_enabled_xueqiu_users() -> list[str]:
 def get_schedule() -> dict:
     with sync_session() as s:
         row = s.execute(text(
-            'SELECT enabled, start, "end", interval, stock_auto_sync_enabled, stock_sync_interval, weekly_summary_enabled '
+            'SELECT enabled, start, "end", interval, stock_auto_sync_enabled, stock_sync_interval, weekly_summary_enabled, daily_summary_enabled '
             "FROM schedules ORDER BY id LIMIT 1"
         )).mappings().first()
         if not row:
             return {
                 "enabled": False, "start": "08:00", "end": "22:00", "interval": 30, "stock_sync_interval": 15,
-                "stock_auto_sync_enabled": True, "weekly_summary_enabled": True,
+                "stock_auto_sync_enabled": True, "weekly_summary_enabled": True, "daily_summary_enabled": True,
             }
         result = dict(row)
         result["stock_sync_interval"] = max(5, int(result.get("stock_sync_interval") or 15))
@@ -1097,6 +1097,7 @@ def save_schedule(cfg: dict) -> dict:
             "stock_auto_sync_enabled": bool(cfg.get("stock_auto_sync_enabled", True)),
             "stock_sync_interval": max(5, int(cfg.get("stock_sync_interval", 15) or 15)),
             "weekly_summary_enabled": bool(cfg.get("weekly_summary_enabled", True)),
+            "daily_summary_enabled": bool(cfg.get("daily_summary_enabled", True)),
             "now": now,
         }
         if existing:
@@ -1104,17 +1105,17 @@ def save_schedule(cfg: dict) -> dict:
             s.execute(text(
                 'UPDATE schedules SET enabled=:enabled, start=:start, "end"=:end, '
                 "interval=:interval, stock_auto_sync_enabled=:stock_auto_sync_enabled, stock_sync_interval=:stock_sync_interval, "
-                "weekly_summary_enabled=:weekly_summary_enabled, updated_at=:now WHERE id=:id"
+                "weekly_summary_enabled=:weekly_summary_enabled, daily_summary_enabled=:daily_summary_enabled, updated_at=:now WHERE id=:id"
             ), params)
         else:
             s.execute(text(
                 'INSERT INTO schedules (enabled, start, "end", interval, '
-                "stock_auto_sync_enabled, stock_sync_interval, weekly_summary_enabled, updated_at) "
+                "stock_auto_sync_enabled, stock_sync_interval, weekly_summary_enabled, daily_summary_enabled, updated_at) "
                 "VALUES (:enabled, :start, :end, :interval, "
-                ":stock_auto_sync_enabled, :stock_sync_interval, :weekly_summary_enabled, :now)"
+                ":stock_auto_sync_enabled, :stock_sync_interval, :weekly_summary_enabled, :daily_summary_enabled, :now)"
             ), params)
     return {k: params[k] for k in (
-        "enabled", "start", "end", "interval", "stock_auto_sync_enabled", "stock_sync_interval", "weekly_summary_enabled",
+        "enabled", "start", "end", "interval", "stock_auto_sync_enabled", "stock_sync_interval", "weekly_summary_enabled", "daily_summary_enabled",
     )}
 
 

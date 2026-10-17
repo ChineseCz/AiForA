@@ -52,6 +52,7 @@ async def set_schedule(request: Request):
         "stock_auto_sync_enabled": bool(body.get("stock_auto_sync_enabled", True)),
         "stock_sync_interval": stock_sync_interval,
         "weekly_summary_enabled": bool(body.get("weekly_summary_enabled", True)),
+        "daily_summary_enabled": bool(body.get("daily_summary_enabled", True)),
     }
     return await run_in_threadpool(db.save_schedule, cfg)
 

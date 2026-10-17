@@ -105,6 +105,9 @@ function SchedulePanel() {
           <Form.Item name="weekly_summary_enabled" label="周三/周日周总结" valuePropName="checked" style={{ marginBottom: 0, display: "inline-block" }}>
             <Switch />
           </Form.Item>
+          <Form.Item name="daily_summary_enabled" label="采集后生成日总结" valuePropName="checked" style={{ marginBottom: 0, display: "inline-block" }}>
+            <Switch />
+          </Form.Item>
         </Space>
         <Button type="primary" htmlType="submit" loading={save.isPending}>保存</Button>
       </Form>

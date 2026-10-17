@@ -19,4 +19,5 @@ class Schedule(Base):
     stock_auto_sync_enabled: Mapped[bool] = mapped_column(Boolean, default=True)  # 全市场行情同步开关
     stock_sync_interval: Mapped[int] = mapped_column(Integer, default=15)  # 全市场行情同步间隔（分钟）
     weekly_summary_enabled: Mapped[bool] = mapped_column(Boolean, default=True)   # 周三/周日周总结
+    daily_summary_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     updated_at: Mapped[int | None] = mapped_column(BigInteger)
