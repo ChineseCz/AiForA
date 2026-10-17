@@ -101,6 +101,11 @@ def _human_sleep(base: float | None = None) -> None:
     time.sleep(_rand_secs(base))
 
 
+def _timeline_backoff(page, seconds: float) -> None:
+    """Give Xueqiu's anti-bot layer time to cool down between timeline pages."""
+    page.wait_for_timeout(int(seconds * 1000))
+
+
 def normalize_profile_url(user: str) -> str:
     user = user.strip()
     if user.startswith("http"):
@@ -336,15 +341,19 @@ def crawl_user(ctx, user: str, since=None, until=None) -> tuple[str, str, int, i
             raw, status = fetch_timeline_in_page(page, uid, pg)
             if status == "blocked":
                 blocked += 1
-                try:
-                    page.goto(HOME, wait_until="domcontentloaded")
-                    _wait_waf(page, "重新预热")
-                except Exception:
-                    pass
-                _human_wait(page)
-                raw, status = fetch_timeline_in_page(page, uid, pg)
-                if status == "blocked":
+                for retry_wait in (20, 40, 60):
+                    print(f"   第 {pg} 页触发 WAF，等待 {retry_wait} 秒后重试")
+                    _timeline_backoff(page, retry_wait)
+                    try:
+                        page.goto(HOME, wait_until="domcontentloaded")
+                        _wait_waf(page, "重新预热")
+                    except Exception:
+                        pass
+                    raw, status = fetch_timeline_in_page(page, uid, pg)
+                    if status != "blocked":
+                        break
                     blocked += 1
+                if status == "blocked":
                     stopped_by_block = True
                     incomplete_range = since_ms is not None and not reached_since
                     break
@@ -371,6 +380,8 @@ def crawl_user(ctx, user: str, since=None, until=None) -> tuple[str, str, int, i
             else:
                 duplicate_pages = 0
             _human_wait(page)
+            if has_range:
+                _timeline_backoff(page, random.uniform(8.0, 14.0))
             if pg % 8 == 0:
                 _human_wait(page)
                 _human_wait(page)
