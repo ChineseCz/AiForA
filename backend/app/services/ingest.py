@@ -67,6 +67,9 @@ def sync_finance_snapshot() -> int:
 
 def sync_bond_snapshot() -> int:
     print("… 拉取全市场可转债行情 …")
+    if not sina.is_market_open_today():
+        print("⏭️ 今日不是交易日，跳过可转债快照同步")
+        return 0
     rows = sina.fetch_bond_snapshot()
     n = db.save_bond_snapshot(date.today().isoformat(), rows)
     print(f"✅ 已写入 {n} 条可转债行情")
