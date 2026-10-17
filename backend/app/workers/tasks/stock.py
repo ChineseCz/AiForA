@@ -63,6 +63,9 @@ def task_auto_sync_tick() -> None:
     interval = max(5, int(db.get_schedule().get("stock_sync_interval", 15) or 15))
     if not _in_trading_hours(now):
         return
+    from app.services.external import sina
+    if not sina.is_market_open_today(now.date()):
+        return
     if jobs.is_running("stock_sync") or jobs.is_running("recompute_indicators"):
         print("… 上一轮行情同步/指标重算尚未结束，本轮跳过 …")
         return

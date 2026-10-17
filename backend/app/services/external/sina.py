@@ -21,6 +21,15 @@ def is_realtime_session_started(now: datetime | None = None) -> bool:
     current = now or datetime.now()
     return current.weekday() < 5 and current.time() >= wall_time(9, 15)
 
+
+def is_market_open_today(day: date | None = None) -> bool:
+    """Use the index feed as the authoritative holiday/trading-day calendar."""
+    target = (day or date.today()).isoformat()
+    if date.fromisoformat(target).weekday() >= 5:
+        return False
+    bars = fetch_index_kline("sh000001", datalen=3)
+    return any(str(row.get("trade_date", ""))[:10] == target for row in bars)
+
 # 板块分类接口（GBK 编码，旧概念分类，覆盖面窄且多年未更新——已弃用，仅行业分类 class_dp 还在用）
 _SINA_CLASS_URL = "http://vip.stock.finance.sina.com.cn/q/view/newFLJK.php"
 

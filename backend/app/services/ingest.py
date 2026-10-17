@@ -28,6 +28,9 @@ def sync_daily_snapshot() -> int:
     if not sina.is_realtime_session_started():
         print("⏸️ 未到 09:15，跳过实时行情快照同步，避免将 0 写入数据库")
         return 0
+    if not sina.is_market_open_today():
+        print("⏭️ 今日不是交易日，跳过行情快照同步")
+        return 0
     print("… 拉取全市场行情快照（A股 + ETF + 可转债）…")
     trade_date = date.today().isoformat()
 

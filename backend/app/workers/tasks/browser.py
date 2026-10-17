@@ -10,13 +10,12 @@ from app.workers.runner import job_run
 
 @celery_app.task(name="browser.crawl", queue=QUEUE_BROWSER)
 def task_crawl(source: str = "手动", summarize: bool = True, job_id: int | None = None, user_id: str = "", start: str = "", end: str = "") -> None:
-    from datetime import date, datetime, timedelta
+    from datetime import date, datetime
 
     from app.scrapers import xueqiu
     with job_run("crawl", source, invalidate_cache=True, job_id=job_id):
         from app.repositories import sync_data as db
-        crawl_days = int(db.get_schedule().get("crawl_days") or 0)
-        since = datetime.strptime(start, "%Y-%m-%d").date() if start else (date.today() - timedelta(days=crawl_days) if crawl_days > 0 else None)
+        since = datetime.strptime(start, "%Y-%m-%d").date() if start else None
         until = datetime.strptime(end, "%Y-%m-%d").date() if end else None
         updated, pending_brief_ids = xueqiu.crawl_all(since=since, until=until, user_id=user_id, job_id=job_id)
         if summarize and updated:
