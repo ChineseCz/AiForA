@@ -449,7 +449,7 @@ async def run_expression_combination(session: AsyncSession, buy_strategies: list
 
 
 async def list_saved_combinations(session: AsyncSession, user_id: str) -> list[dict]:
-    rows = (await session.execute(text("SELECT id, name, buy_expression, sell_expression, created_at, updated_at FROM saved_strategy_combinations WHERE user_id=:u ORDER BY updated_at DESC"), {"u": user_id})).mappings().all()
+    rows = (await session.execute(text("SELECT id, name, buy_expression, sell_expression, alerts_enabled, created_at, updated_at FROM saved_strategy_combinations WHERE user_id=:u ORDER BY updated_at DESC"), {"u": user_id})).mappings().all()
     return [dict(r) for r in rows]
 
 
@@ -459,7 +459,7 @@ async def save_combination(session: AsyncSession, user_id: str, name: str, buy_e
         raise ValueError("组合策略名称不能为空")
     now = int(time.time())
     row = (await session.execute(text("""INSERT INTO saved_strategy_combinations (user_id, name, buy_expression, sell_expression, created_at, updated_at)
-        VALUES (:u, :n, CAST(:b AS json), CAST(:s AS json), :t, :t) RETURNING id, name, buy_expression, sell_expression, created_at, updated_at"""),
+        VALUES (:u, :n, CAST(:b AS json), CAST(:s AS json), :t, :t) RETURNING id, name, buy_expression, sell_expression, alerts_enabled, created_at, updated_at"""),
         {"u": user_id, "n": name, "b": __import__("json").dumps(buy_expression, ensure_ascii=False), "s": __import__("json").dumps(sell_expression, ensure_ascii=False), "t": now})).mappings().one()
     await session.commit()
     return dict(row)
@@ -468,7 +468,7 @@ async def update_combination(session: AsyncSession, user_id: str, combination_id
     now = int(time.time())
     row = (await session.execute(text("""UPDATE saved_strategy_combinations
         SET name=:n, buy_expression=CAST(:b AS json), sell_expression=CAST(:s AS json), updated_at=:t
-        WHERE id=:id AND user_id=:u RETURNING id, name, buy_expression, sell_expression, created_at, updated_at"""),
+        WHERE id=:id AND user_id=:u RETURNING id, name, buy_expression, sell_expression, alerts_enabled, created_at, updated_at"""),
         {"id": combination_id, "u": user_id, "n": name.strip()[:80], "b": json.dumps(buy_expression, ensure_ascii=False), "s": json.dumps(sell_expression, ensure_ascii=False), "t": now})).mappings().first()
     if not row:
         raise ValueError("组合不存在")
@@ -480,6 +480,16 @@ async def delete_combination(session: AsyncSession, user_id: str, combination_id
     result = await session.execute(text("DELETE FROM saved_strategy_combinations WHERE id=:id AND user_id=:u"), {"id": combination_id, "u": user_id})
     await session.commit()
     return result.rowcount > 0
+
+
+async def set_combination_alert(session: AsyncSession, user_id: str, combination_id: int, enabled: bool) -> dict:
+    row = (await session.execute(text("""UPDATE saved_strategy_combinations SET alerts_enabled=:enabled
+        WHERE id=:id AND user_id=:u RETURNING id, alerts_enabled"""),
+        {"id": combination_id, "u": user_id, "enabled": enabled})).mappings().first()
+    if not row:
+        raise ValueError("缁勫悎涓嶅瓨鍦?")
+    await session.commit()
+    return dict(row)
 
 
 async def get_review(session: AsyncSession, start: str | None = None, end: str | None = None,

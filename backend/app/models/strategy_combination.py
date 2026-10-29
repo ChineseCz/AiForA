@@ -1,4 +1,4 @@
-from sqlalchemy import BigInteger, Index, JSON, String
+from sqlalchemy import BigInteger, Boolean, Index, JSON, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -12,6 +12,7 @@ class SavedStrategyCombination(Base):
     name: Mapped[str] = mapped_column(String, nullable=False)
     buy_expression: Mapped[dict] = mapped_column(JSON, nullable=False)
     sell_expression: Mapped[dict] = mapped_column(JSON, nullable=False)
+    alerts_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     created_at: Mapped[int] = mapped_column(BigInteger, nullable=False)
     updated_at: Mapped[int] = mapped_column(BigInteger, nullable=False)
 

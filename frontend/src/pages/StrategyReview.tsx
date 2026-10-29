@@ -1,10 +1,10 @@
-import { Button, Card, Col, Collapse, DatePicker, Empty, Input, InputNumber, Popconfirm, Row, Select, Space, Statistic, Table, Tag, Typography, message } from "antd";
+import { Button, Card, Col, Collapse, DatePicker, Empty, Input, InputNumber, Popconfirm, Row, Select, Space, Statistic, Switch, Table, Tag, Typography, message } from "antd";
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import dayjs from "dayjs";
 import { Link } from "react-router-dom";
 
-import { useDeleteStrategyCombination, useSaveStrategyCombination, useSavedStrategyCombinations, useStartStrategyCombination, useStrategyCombinationStatus, useStrategyReview } from "@/api/hooks";
+import { useDeleteStrategyCombination, useSaveStrategyCombination, useSavedStrategyCombinations, useSetStrategyCombinationAlert, useStartStrategyCombination, useStrategyCombinationStatus, useStrategyReview } from "@/api/hooks";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { useVisitorAuth } from "@/visitorAuth";
 
@@ -51,6 +51,7 @@ export default function StrategyReview() {
   const [tp3Pct, setTp3Pct] = useState(30);
   const [tp3Fraction, setTp3Fraction] = useState(25);
   const [selectedSavedId, setSelectedSavedId] = useState<number | null>(null);
+  const [alertCombinationId, setAlertCombinationId] = useState<number | null>(null);
   const [period, setPeriod] = useState("1y");
   const [customStart, setCustomStart] = useState(dayjs().subtract(1, "year"));
   const [customEnd, setCustomEnd] = useState(dayjs());
@@ -77,6 +78,7 @@ export default function StrategyReview() {
   const { data: saved } = useSavedStrategyCombinations(loggedIn && !isGuest);
   const saveCombination = useSaveStrategyCombination();
   const deleteCombination = useDeleteStrategyCombination();
+  const setStrategyAlert = useSetStrategyCombinationAlert();
   const columns = [
     { title: "策略", dataIndex: "strategy_key", render: (v: string) => labels[v] || v, fixed: "left" as const },
     { title: "信号数", dataIndex: "pick_count" },
@@ -181,6 +183,9 @@ export default function StrategyReview() {
       && Number(item.buy_expression.execution?.max_positions) === maxPositions);
     if (x && x.id !== selectedSavedId) setSelectedSavedId(x.id);
   }, [saved, buyOperator, sellOperator, buyStrategies, sellStrategies, capital, maxPositions, selectedSavedId]);
+  useEffect(() => {
+    if (alertCombinationId != null && saved?.items && !saved.items.some((item) => item.id === alertCombinationId)) setAlertCombinationId(null);
+  }, [saved, alertCombinationId]);
   return <Space className="strategy-review-page" direction="vertical" size={12} style={{ width: "100%" }}>
     <div><Typography.Title level={mobile ? 5 : 4} style={{ margin: 0 }}>每日选股策略复盘</Typography.Title><Typography.Text type="secondary">收盘后自动保存各策略信号，并按后续交易日计算收益。</Typography.Text></div>
     <Card size="small"><Space wrap><Select allowClear placeholder="选择策略" style={{ width: 180 }} value={strategy} onChange={setStrategy} options={(data?.strategies || []).map((v) => ({ value: v, label: labels[v] || v }))} /><Tag color="blue">自动记录全部内置策略</Tag></Space></Card>
@@ -213,6 +218,8 @@ export default function StrategyReview() {
       {period === "custom" ? field("开始日期", <DatePicker value={customStart} onChange={(v) => v && setCustomStart(v)} />) : null}
       {period === "custom" ? field("结束日期", <DatePicker value={customEnd} onChange={(v) => v && setCustomEnd(v)} />) : null}
       {field("执行回测", <Button type="primary" loading={combinationLoading} onClick={() => { setRunStarted(true); setStatusRefreshKey((v) => v + 1); startCombination.mutate({ buy_strategies: buyStrategies.join(","), sell_strategies: sellStrategies.join(","), buy_operator: buyOperator, sell_operator: sellOperator, initial_capital: capital, max_positions: maxPositions, ranking, exclude_chinext: excludeChinext, exclude_star: excludeStar, exclude_st: excludeSt, min_change_pct: minChangePct ?? undefined, max_change_pct: maxChangePct ?? undefined, min_total_mv: minTotalMv ?? undefined, max_total_mv: maxTotalMv ?? undefined, take_profit_1_pct: tp1Pct, take_profit_1_fraction: tp1Fraction / 100, take_profit_2_pct: tp2Pct, take_profit_2_fraction: tp2Fraction / 100, take_profit_3_pct: tp3Pct, take_profit_3_fraction: tp3Fraction / 100, start: periodStart, end: periodEnd, limit: 500 }, { onError: () => setRunStarted(false) }); }}>开始回测</Button>)}
+      {saved?.items?.length ? <div className="strategy-control-info"><Space><Typography.Text>邮件信号提醒</Typography.Text><Switch checked={!!saved.items.find((x) => x.id === alertCombinationId)?.alerts_enabled} disabled={alertCombinationId == null} loading={setStrategyAlert.isPending} onChange={(enabled) => { if (alertCombinationId != null) setStrategyAlert.mutate({ id: alertCombinationId, enabled }); }} /><Typography.Text type="secondary">收盘后扫描真实自选股</Typography.Text></Space></div> : null}
+      {saved?.items?.length ? field("提醒策略", <Select value={alertCombinationId ?? undefined} placeholder="选择策略" options={saved.items.map((x) => ({ value: x.id, label: x.name }))} onChange={setAlertCombinationId} />) : null}
       {runStarted && combinationStatus?.progress?.message ? <div className="strategy-control-info">{combinationStatus.progress.message}</div> : null}
       {combination ? <div className="strategy-control-info"><Tag color="blue">交易 {combination.summary.total_trades} 笔 · 胜率 {combination.summary.win_rate == null ? "-" : `${combination.summary.win_rate}%`} · 平均收益 {pct(combination.summary.avg_return_pct)}</Tag></div> : null}
       {field("组合名称", <Input value={saveName} onChange={(e) => setSaveName(e.target.value)} placeholder="输入名称" />)}

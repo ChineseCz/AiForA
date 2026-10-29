@@ -490,6 +490,7 @@ export interface SavedStrategyCombination {
   id: number; name: string;
   buy_expression: { operator: string; strategies: string[]; execution?: Record<string, number | string | boolean> };
   sell_expression: { operator: string; strategies: string[] };
+  alerts_enabled: boolean;
   created_at: number; updated_at: number;
 }
 

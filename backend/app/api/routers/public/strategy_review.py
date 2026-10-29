@@ -96,6 +96,19 @@ async def api_save_combination(body: SaveCombinationBody, user_id: str = Depends
 async def api_delete_combination(combination_id: int, user_id: str = Depends(require_visitor), session: AsyncSession = Depends(db_session)):
     return {"deleted": await strategy_review.delete_combination(session, user_id, combination_id)}
 
+
+class StrategyAlertBody(BaseModel):
+    enabled: bool
+
+
+@router.patch("/strategy-review/saved/{combination_id}/alerts")
+async def api_set_strategy_alert(combination_id: int, body: StrategyAlertBody,
+                                 user_id: str = Depends(require_visitor), session: AsyncSession = Depends(db_session)):
+    try:
+        return await strategy_review.set_combination_alert(session, user_id, combination_id, body.enabled)
+    except ValueError as exc:
+        raise HTTPException(404, str(exc)) from exc
+
 @router.put("/strategy-review/saved/{combination_id}")
 async def api_update_combination(combination_id: int, body: SaveCombinationBody, user_id: str = Depends(require_visitor), session: AsyncSession = Depends(db_session)):
     execution = body.execution or body.buy_expression.get("execution") or {}

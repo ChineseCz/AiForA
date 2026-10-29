@@ -45,6 +45,10 @@ celery_app.conf.update(
             "schedule": crontab(hour=16, minute=10, day_of_week="1-5"),
         },
         "signal-notifications": {"task": "stock.signal_notifications", "schedule": 300.0},
+        "strategy-email-alerts": {
+            "task": "stock.strategy_email_alerts",
+            "schedule": crontab(minute="*/15", hour="16-19", day_of_week="1-5"),
+        },
         # 周总结：每周三、周日 20:00（day_of_week: 0=周日）门槛检查，通过后派发 summarize.run
         # 生成全部大V本周周总结。指向门槛任务 summarize.weekly_tick 而不是直接指向 summarize.run，
         # 因为后者也被管理后台"生成 AI 总结"手动触发复用，开关只能挡定时这一条路径。

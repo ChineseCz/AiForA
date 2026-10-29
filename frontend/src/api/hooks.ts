@@ -62,6 +62,10 @@ export const useDeleteStrategyCombination = () => {
   const qc = useQueryClient();
   return useMutation({ mutationFn: (id: number) => api.delete(`/api/strategy-review/saved/${id}`), onSuccess: () => qc.invalidateQueries({ queryKey: ["saved_strategy_combinations"] }) });
 };
+export const useSetStrategyCombinationAlert = () => {
+  const qc = useQueryClient();
+  return useMutation({ mutationFn: (body: { id: number; enabled: boolean }) => api.patch(`/api/strategy-review/saved/${body.id}/alerts`, { enabled: body.enabled }), onSuccess: () => qc.invalidateQueries({ queryKey: ["saved_strategy_combinations"] }) });
+};
 
 export const usePosts = (p: { user?: string; start?: string; end?: string; q?: string; page: number; size: number }) =>
   useQuery({ queryKey: ["posts", p], queryFn: () => get<PostsPage>("/api/posts", p) });

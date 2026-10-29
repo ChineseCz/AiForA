@@ -87,6 +87,12 @@ def task_signal_notifications() -> int:
     return scan_signal_notifications()
 
 
+@celery_app.task(name="stock.strategy_email_alerts", queue=QUEUE_DEFAULT)
+def task_strategy_email_alerts() -> int:
+    from app.services.strategy_alerts import scan_strategy_email_alerts
+    return scan_strategy_email_alerts()
+
+
 @celery_app.task(name="stock.recompute_indicators", queue=QUEUE_DEFAULT)
 def task_recompute_indicators(source: str = "手动", job_id: int | None = None) -> int:
     from app.services import indicator_precompute
