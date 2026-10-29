@@ -25,11 +25,9 @@ def sync_index_benchmarks() -> int:
 
 def sync_daily_snapshot() -> int:
     """同步 A股 + ETF + 可转债行情快照。"""
+    # The index daily bar may lag during a live session; use the session gate only.
     if not sina.is_realtime_session_started():
         print("⏸️ 未到 09:15，跳过实时行情快照同步，避免将 0 写入数据库")
-        return 0
-    if not sina.is_market_open_today():
-        print("⏭️ 今日不是交易日，跳过行情快照同步")
         return 0
     print("… 拉取全市场行情快照（A股 + ETF + 可转债）…")
     trade_date = date.today().isoformat()
@@ -67,9 +65,6 @@ def sync_finance_snapshot() -> int:
 
 def sync_bond_snapshot() -> int:
     print("… 拉取全市场可转债行情 …")
-    if not sina.is_market_open_today():
-        print("⏭️ 今日不是交易日，跳过可转债快照同步")
-        return 0
     rows = sina.fetch_bond_snapshot()
     n = db.save_bond_snapshot(date.today().isoformat(), rows)
     print(f"✅ 已写入 {n} 条可转债行情")
