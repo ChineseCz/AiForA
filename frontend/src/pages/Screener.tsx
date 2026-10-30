@@ -667,6 +667,7 @@ function StockAiAnalysisButton({ code }: { code: string }) {
 
 function ScreenerTab({ pendingRun, onRunDone }: { pendingRun: boolean; onRunDone: () => void }) {
   const isMobile = useIsMobile();
+  const [strategySide, setStrategySide] = useState<"buy" | "sell">("buy");
   const { data: fields } = useScreenFields();
   const { data: sectors } = useSectors();
   const { data: users } = useUsers();
@@ -870,8 +871,15 @@ function ScreenerTab({ pendingRun, onRunDone }: { pendingRun: boolean; onRunDone
           </Space>
         )}
       >
-        <div className="preset-grid">
-          {PRESETS.map((p) => {
+        <Space direction="vertical" size={10} style={{ width: "100%" }}>
+          <Segmented
+            value={strategySide}
+            onChange={(value) => setStrategySide(value as "buy" | "sell")}
+            options={[{ label: "买入策略", value: "buy" }, { label: "卖出策略", value: "sell" }]}
+            block={isMobile}
+          />
+          <div className="preset-grid" style={{ gridTemplateColumns: "minmax(0, 1fr)" }}>
+          {PRESETS.filter((p) => strategySide === "sell" ? p.value.startsWith("sell_") : !p.value.startsWith("sell_")).map((p) => {
             const active = strategies.includes(p.value);
             return (
               <div
@@ -906,7 +914,8 @@ function ScreenerTab({ pendingRun, onRunDone }: { pendingRun: boolean; onRunDone
               </div>
             );
           })}
-        </div>
+          </div>
+        </Space>
       </Card>
 
       <Card title={isMobile ? "筛选条件" : "筛选条件（与预设取交集）"} size="small">
