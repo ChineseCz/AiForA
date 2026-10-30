@@ -16,8 +16,8 @@ from app.services import indicators
 
 STRATEGIES = tuple(screening._PRESET_STRATEGIES)
 HORIZONS = (1, 3, 5, 10, 20)
-BUY_STRATEGIES = ("ma_cross", "ma_cross2", "golden_cross", "volume_breakout", "boll_breakout", "rsi_oversold_bounce")
-SELL_STRATEGIES = ("sell_ma_death_cross", "sell_break_ma20", "sell_rsi_overbought", "sell_high_volume_drop")
+BUY_STRATEGIES = ("ma_cross", "ma_cross2", "golden_cross", "volume_breakout", "boll_breakout", "rsi_oversold_bounce", "pullback_low_volume", "volume_price_up")
+SELL_STRATEGIES = ("sell_ma_death_cross", "sell_break_ma20", "sell_rsi_overbought", "sell_high_volume_drop", "sell_stop_loss")
 
 
 def _is_st_name(name: object) -> bool:
@@ -111,6 +111,10 @@ def _signal_series(bars: list[dict], key: str) -> list[bool]:
         return indicators.daily_boll_breakout_series(bars)
     if key == "rsi_oversold_bounce":
         return indicators.daily_rsi_bounce_series(bars)
+    if key == "pullback_low_volume":
+        return [bool((m := indicators.pullback_low_volume_metrics(bars[:i + 1])) and m["had_spike_rise"] and m["near_ma"] and m["low_volume"]) for i in range(len(bars))]
+    if key == "volume_price_up":
+        return [bool((m := indicators.volume_price_up_metrics(bars[:i + 1])) and m["streak_ok"]) for i in range(len(bars))]
     if key == "sell_ma_death_cross":
         closes = [b["close"] for b in bars]
         ma5 = indicators.moving_avg(closes, 5)
@@ -124,6 +128,10 @@ def _signal_series(bars: list[dict], key: str) -> list[bool]:
         return indicators.daily_rsi_overbought_series(bars)
     if key == "sell_high_volume_drop":
         return indicators.daily_high_volume_drop_series(bars)
+    if key == "sell_stop_loss":
+        closes = [b["close"] for b in bars]
+        ma5 = indicators.moving_avg(closes, 5)
+        return [bool(i > 0 and ma5[i] is not None and ma5[i - 1] is not None and closes[i] < ma5[i] and closes[i - 1] >= ma5[i - 1]) for i in range(len(bars))]
     raise ValueError(f"不支持的组合策略：{key}")
 
 

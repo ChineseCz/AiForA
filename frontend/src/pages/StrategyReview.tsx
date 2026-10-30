@@ -158,8 +158,8 @@ export default function StrategyReview() {
     </div>)}
   </div> : <Empty description="暂无信号明细" />;
   const strategyOptions = (keys?: string[]) => (keys || []).map((v) => ({ value: v, label: labels[v] || v }));
-  const buyOptions = strategyOptions(["ma_cross", "ma_cross2", "golden_cross", "volume_breakout", "boll_breakout", "rsi_oversold_bounce"]);
-  const sellOptions = strategyOptions(["sell_ma_death_cross", "sell_break_ma20", "sell_rsi_overbought", "sell_high_volume_drop"]);
+  const buyOptions = strategyOptions(["ma_cross", "ma_cross2", "golden_cross", "volume_breakout", "boll_breakout", "rsi_oversold_bounce", "pullback_low_volume", "volume_price_up"]);
+  const sellOptions = strategyOptions(["sell_ma_death_cross", "sell_break_ma20", "sell_rsi_overbought", "sell_high_volume_drop", "sell_stop_loss"]);
   const field = (label: string, control: ReactNode, className = "") => <div className={`strategy-control ${className}`}>
     <span className="strategy-control-label">{label}</span>
     <div className="strategy-control-input">{control}</div>

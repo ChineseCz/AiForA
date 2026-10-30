@@ -1,4 +1,4 @@
-from app.services.strategy_review import _annualized_return, _is_locked_limit_up, _is_st_name, _max_drawdown, _select_entry_candidates
+from app.services.strategy_review import _annualized_return, _is_locked_limit_up, _is_st_name, _max_drawdown, _select_entry_candidates, _signal_series
 
 
 def _candidate(code: str, name: str, change: float):
@@ -29,3 +29,10 @@ def test_limit_up_with_intraday_range_is_not_marked_locked():
 def test_performance_helpers_report_drawdown_and_annualized_return():
     assert _max_drawdown([100, 110, 99, 120]) == -10.0
     assert _annualized_return(100, 110, 365) == 10.0
+
+
+def test_extended_buy_and_stop_loss_series_are_available():
+    bars = [{"open": 10, "close": 10 + i * 0.1, "high": 10 + i * 0.1, "low": 10, "volume": 100 + i} for i in range(40)]
+    assert len(_signal_series(bars, "pullback_low_volume")) == len(bars)
+    assert len(_signal_series(bars, "volume_price_up")) == len(bars)
+    assert len(_signal_series(bars, "sell_stop_loss")) == len(bars)
