@@ -121,6 +121,8 @@ export interface StockRow {
   bullish_sectors?: string[];
   bullish_concepts?: string[];
   bullish_users?: string[];
+  relative_change_pct?: number;
+  benchmark_change_pct?: number;
   [k: string]: unknown;
 }
 
@@ -456,6 +458,7 @@ export interface StrategyReviewSummary {
   pick_count: number;
   d1_avg: number | null; d3_avg: number | null; d5_avg: number | null; d10_avg: number | null; d20_avg: number | null;
   d1_win_rate: number | null; d3_win_rate: number | null; d5_win_rate: number | null; d10_win_rate: number | null; d20_win_rate: number | null;
+  d5_median?: number | null;
 }
 export interface StrategyReviewResp {
   items: StrategyReviewItem[];
@@ -474,7 +477,7 @@ export interface StrategyCombinationResp {
   end?: string;
   trades: { code: string; name: string; signal_date?: string; buy_date: string; sell_date: string | null; entry_close: number; exit_close: number; holding_days: number; return_pct: number; status: string }[];
   portfolio_trades?: { code: string; name: string; signal_date?: string; buy_date: string; sell_date: string | null; entry_close: number; exit_close: number; holding_days: number; return_pct: number; status: string }[];
-  summary: { total_trades: number; closed_trades: number; win_rate: number | null; avg_return_pct: number | null; portfolio_trades?: number; portfolio_closed_trades?: number; portfolio_return_pct?: number; portfolio_max_drawdown_pct?: number; portfolio_win_rate?: number | null };
+  summary: { total_trades: number; closed_trades: number; win_rate: number | null; avg_return_pct: number | null; portfolio_trades?: number; portfolio_closed_trades?: number; portfolio_return_pct?: number; portfolio_max_drawdown_pct?: number; portfolio_win_rate?: number | null; benchmark_return_pct?: number | null; excess_return_pct?: number | null; annualized_return_pct?: number | null; in_sample_return_pct?: number | null; out_sample_return_pct?: number | null; out_sample_max_drawdown_pct?: number | null };
   execution?: { initial_capital: number; max_positions: number; ranking: string; allow_second_entry?: boolean; second_entry_drawdown_pct?: number; buy_fee_rate: number; sell_fee_rate: number; stamp_duty_rate: number; execution_rule?: string; exclude_chinext?: boolean; exclude_star?: boolean; exclude_st?: boolean; min_change_pct?: number | null; max_change_pct?: number | null; min_total_mv?: number | null; max_total_mv?: number | null };
   equity_curve?: { trade_date: string; equity: number; cash: number; positions: number }[];
 }

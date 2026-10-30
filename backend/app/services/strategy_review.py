@@ -80,6 +80,22 @@ def _combine_series(series: list[list[bool]], operator: str) -> list[bool]:
     return [all(values) if operator == "AND" else any(values) for values in zip(*series)]
 
 
+def _max_drawdown(equity: list[float]) -> float:
+    peak = equity[0] if equity else 0.0
+    drawdown = 0.0
+    for value in equity:
+        peak = max(peak, value)
+        if peak:
+            drawdown = min(drawdown, value / peak - 1)
+    return round(drawdown * 100, 2)
+
+
+def _annualized_return(start_value: float, end_value: float, days: int) -> float | None:
+    if start_value <= 0 or end_value <= 0 or days <= 0:
+        return None
+    return round(((end_value / start_value) ** (365 / days) - 1) * 100, 2)
+
+
 def _signal_series(bars: list[dict], key: str) -> list[bool]:
     if key in ("ma_cross", "ma_cross2"):
         strict, loose = indicators.daily_signal_series(bars)
@@ -423,12 +439,22 @@ async def run_expression_combination(session: AsyncSession, buy_strategies: list
                                      "return_pct": round((price / pos["entry_close"] - 1) * 100, 2), "status": "open",
                                      "shares": pos["shares"], "sell_reason": "end_of_period"})
     portfolio_returns = [x["equity"] / initial_capital - 1 for x in equity_curve]
-    peak = initial_capital
-    max_drawdown = 0.0
-    for x in equity_curve:
-        peak = max(peak, x["equity"])
-        max_drawdown = min(max_drawdown, x["equity"] / peak - 1)
+    equity_values = [x["equity"] for x in equity_curve]
+    max_drawdown = _max_drawdown(equity_values) / 100
     closed_portfolio = [t for t in portfolio_trades if t["status"] == "closed"]
+    benchmark = (await session.execute(text("""
+        SELECT trade_date, close FROM index_daily
+        WHERE code='sh000300' AND trade_date >= :start
+          AND (:end IS NULL OR trade_date <= :end)
+        ORDER BY trade_date
+    """), {"start": start, "end": end})).mappings().all()
+    benchmark_return = None
+    if len(benchmark) >= 2 and benchmark[0]["close"] and benchmark[-1]["close"]:
+        benchmark_return = round((float(benchmark[-1]["close"]) / float(benchmark[0]["close"]) - 1) * 100, 2)
+    split = max(1, len(equity_curve) // 2)
+    in_sample = equity_curve[:split]
+    out_sample = equity_curve[split:]
+    elapsed_days = (date.fromisoformat(str(equity_curve[-1]["trade_date"])) - date.fromisoformat(str(equity_curve[0]["trade_date"]))).days if len(equity_curve) >= 2 else 0
     return {"buy_strategies": buy_strategies, "sell_strategies": sell_strategies, "buy_operator": buy_operator, "sell_operator": sell_operator,
             "start": start, "end": end, "trades": trades[:max(1, min(limit, 1000))],
             "portfolio_trades": portfolio_trades[:max(1, min(limit, 1000))], "equity_curve": equity_curve[-500:],
@@ -445,7 +471,13 @@ async def run_expression_combination(session: AsyncSession, buy_strategies: list
                          "portfolio_trades": len(portfolio_trades), "portfolio_closed_trades": len(closed_portfolio),
                          "portfolio_return_pct": round((last_equity / initial_capital - 1) * 100, 2),
                          "portfolio_max_drawdown_pct": round(max_drawdown * 100, 2),
-                         "portfolio_win_rate": round(sum(t["return_pct"] > 0 for t in closed_portfolio) / len(closed_portfolio) * 100, 1) if closed_portfolio else None}}
+                         "portfolio_win_rate": round(sum(t["return_pct"] > 0 for t in closed_portfolio) / len(closed_portfolio) * 100, 1) if closed_portfolio else None,
+                         "benchmark_return_pct": benchmark_return,
+                         "excess_return_pct": round((last_equity / initial_capital - 1) * 100 - benchmark_return, 2) if benchmark_return is not None else None,
+                         "annualized_return_pct": _annualized_return(initial_capital, last_equity, elapsed_days),
+                         "in_sample_return_pct": round((in_sample[-1]["equity"] / initial_capital - 1) * 100, 2) if in_sample else None,
+                         "out_sample_return_pct": round((out_sample[-1]["equity"] / out_sample[0]["equity"] - 1) * 100, 2) if out_sample else None,
+                         "out_sample_max_drawdown_pct": _max_drawdown([x["equity"] for x in out_sample]) if out_sample else None}}
 
 
 async def list_saved_combinations(session: AsyncSession, user_id: str) -> list[dict]:
@@ -548,6 +580,7 @@ async def get_review(session: AsyncSession, start: str | None = None, end: str |
         for n in HORIZONS:
             known = [v["returns"][str(n)] for v in vals if v["returns"][str(n)] is not None]
             result[f"d{n}_avg"] = round(statistics.mean(known), 2) if known else None
+            result[f"d{n}_median"] = round(statistics.median(known), 2) if known else None
             result[f"d{n}_win_rate"] = round(sum(v > 0 for v in known) / len(known) * 100, 1) if known else None
         summary.append(result)
     summary.sort(key=lambda x: x.get("d5_avg") if x.get("d5_avg") is not None else -999, reverse=True)

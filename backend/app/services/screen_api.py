@@ -79,6 +79,13 @@ def screen(body: dict) -> tuple[dict, int]:
         rows = matching.match_sector(rows, names) if names else []
 
     rows = rows[:limit]
+    benchmark_change = db.get_benchmark_change()
+    if benchmark_change is not None:
+        for row in rows:
+            change = row.get("change_pct")
+            if change is not None:
+                row["relative_change_pct"] = round(float(change) - benchmark_change, 2)
+                row["benchmark_change_pct"] = round(benchmark_change, 2)
     matching.attach_sectors(rows)
     matching.attach_bullish_users(rows)
     return {"trade_date": trade_date, "items": rows, "error": ""}, 200
@@ -106,6 +113,13 @@ def preset(body: dict) -> tuple[dict, int]:
     except (screening.InsufficientHistoryError, screening.InsufficientFinanceError, ValueError) as e:
         return {"error": str(e), "items": [], "trade_date": trade_date}, 400
 
+    benchmark_change = db.get_benchmark_change()
+    if benchmark_change is not None:
+        for row in rows:
+            change = row.get("change_pct")
+            if change is not None:
+                row["relative_change_pct"] = round(float(change) - benchmark_change, 2)
+                row["benchmark_change_pct"] = round(benchmark_change, 2)
     matching.attach_sectors(rows)
     matching.attach_bullish_users(rows)
     return {"trade_date": trade_date, "items": rows, "error": ""}, 200

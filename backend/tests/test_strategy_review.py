@@ -1,4 +1,4 @@
-from app.services.strategy_review import _is_locked_limit_up, _is_st_name, _select_entry_candidates
+from app.services.strategy_review import _annualized_return, _is_locked_limit_up, _is_st_name, _max_drawdown, _select_entry_candidates
 
 
 def _candidate(code: str, name: str, change: float):
@@ -24,3 +24,8 @@ def test_locked_limit_up_is_not_executable():
 def test_limit_up_with_intraday_range_is_not_marked_locked():
     bar = {"open": 25.90, "high": 27.69, "low": 25.90, "close": 27.69, "change_pct": 10.0}
     assert _is_locked_limit_up("603221", bar) is False
+
+
+def test_performance_helpers_report_drawdown_and_annualized_return():
+    assert _max_drawdown([100, 110, 99, 120]) == -10.0
+    assert _annualized_return(100, 110, 365) == 10.0

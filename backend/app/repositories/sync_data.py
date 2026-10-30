@@ -53,6 +53,20 @@ def get_latest_trade_date() -> str | None:
         return s.execute(text("SELECT MAX(trade_date) FROM stock_daily")).scalar()
 
 
+def get_benchmark_change(code: str = "sh000300") -> float | None:
+    with sync_session() as s:
+        row = s.execute(text("""
+            SELECT today.close, previous.close AS previous_close
+            FROM index_daily today
+            LEFT JOIN index_daily previous ON previous.code=today.code
+              AND previous.trade_date=(SELECT MAX(trade_date) FROM index_daily WHERE code=today.code AND trade_date < today.trade_date)
+            WHERE today.code=:code ORDER BY today.trade_date DESC LIMIT 1
+        """), {"code": code}).mappings().first()
+    if not row or not row["close"] or not row["previous_close"]:
+        return None
+    return (float(row["close"]) / float(row["previous_close"]) - 1) * 100
+
+
 def save_strategy_daily_runs(trade_date: str, results: dict[str, tuple[dict, list[dict]]]) -> int:
     """Persist one immutable-ish daily signal snapshot per strategy; reruns replace that date."""
     now = int(time.time())
