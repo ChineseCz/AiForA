@@ -3,7 +3,6 @@
 从旧 stock.py 的 sync_* 函数移植：拉取 + 落库。由 Phase 2 的 Celery 容器化 worker 调用。
 K线回补（backfill）依赖真实浏览器，不在此文件，见 scrapers/kline.py（宿主 worker）。
 """
-from datetime import date
 import re
 
 from app.repositories import sync_data as db
@@ -30,7 +29,10 @@ def sync_daily_snapshot() -> int:
         print("⏸️ 未到 09:15，跳过实时行情快照同步，避免将 0 写入数据库")
         return 0
     print("… 拉取全市场行情快照（A股 + ETF + 可转债）…")
-    trade_date = date.today().isoformat()
+    trade_date = sina.current_market_trade_date()
+    if not trade_date:
+        print("skip snapshot: live benchmark quote does not confirm today's market date")
+        return 0
 
     # A股快照
     print("  → 拉取 A股 …")
@@ -65,8 +67,12 @@ def sync_finance_snapshot() -> int:
 
 def sync_bond_snapshot() -> int:
     print("… 拉取全市场可转债行情 …")
+    trade_date = sina.current_market_trade_date()
+    if not trade_date:
+        print("skip bond snapshot: live benchmark quote does not confirm today's market date")
+        return 0
     rows = sina.fetch_bond_snapshot()
-    n = db.save_bond_snapshot(date.today().isoformat(), rows)
+    n = db.save_bond_snapshot(trade_date, rows)
     print(f"✅ 已写入 {n} 条可转债行情")
     return n
 

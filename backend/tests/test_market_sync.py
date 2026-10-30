@@ -42,6 +42,7 @@ def test_auto_sync_dispatches_during_session_without_same_day_index_bar(monkeypa
 
 def test_daily_snapshot_does_not_require_same_day_index_bar(monkeypatch):
     monkeypatch.setattr(sina, "is_realtime_session_started", lambda: True)
+    monkeypatch.setattr(sina, "current_market_trade_date", lambda: "2026-10-29")
     monkeypatch.setattr(sina, "fetch_spot_snapshot", lambda: [])
     monkeypatch.setattr(sina, "fetch_etf_snapshot", lambda: [])
     monkeypatch.setattr(sina, "fetch_bond_snapshot", lambda: [])
@@ -49,3 +50,25 @@ def test_daily_snapshot_does_not_require_same_day_index_bar(monkeypatch):
     monkeypatch.setattr(ingest.db, "save_bond_snapshot", lambda *_args: 2)
 
     assert ingest.sync_daily_snapshot() == 4
+
+
+def test_daily_snapshot_skips_when_realtime_market_date_is_stale(monkeypatch):
+    monkeypatch.setattr(sina, "is_realtime_session_started", lambda: True)
+    monkeypatch.setattr(sina, "current_market_trade_date", lambda: None)
+    monkeypatch.setattr(sina, "fetch_spot_snapshot", lambda: (_ for _ in ()).throw(AssertionError("must skip fetch")))
+    saved = []
+    monkeypatch.setattr(ingest.db, "save_snapshot", lambda *args: saved.append(args))
+    monkeypatch.setattr(ingest.db, "save_bond_snapshot", lambda *args: saved.append(args))
+
+    assert ingest.sync_daily_snapshot() == 0
+    assert saved == []
+
+
+def test_bond_snapshot_skips_when_realtime_market_date_is_stale(monkeypatch):
+    monkeypatch.setattr(sina, "current_market_trade_date", lambda: None)
+    monkeypatch.setattr(sina, "fetch_bond_snapshot", lambda: (_ for _ in ()).throw(AssertionError("must skip fetch")))
+    saved = []
+    monkeypatch.setattr(ingest.db, "save_bond_snapshot", lambda *args: saved.append(args))
+
+    assert ingest.sync_bond_snapshot() == 0
+    assert saved == []

@@ -20,7 +20,7 @@ def task_stock_sync(source: str = "手动", job_id: int | None = None) -> int:
             print("⏸️ 未到 09:15，跳过股票实时行情同步")
     # job_run 会记录并吞掉异常；只有快照任务确实成功时才触发全表指标重算。
     from app.repositories import jobs
-    if jobs.get_status_sync(current_job_id) == "success":
+    if n > 0 and jobs.get_status_sync(current_job_id) == "success":
         task_recompute_indicators.delay(source="自动(快照后)")  # 快照更新 → 重算预计算指标
     return n
 

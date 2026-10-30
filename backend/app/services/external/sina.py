@@ -7,6 +7,7 @@ import json
 import re
 import time
 from datetime import date, datetime, time as wall_time, timedelta
+from zoneinfo import ZoneInfo
 
 import requests
 from bs4 import BeautifulSoup
@@ -20,6 +21,19 @@ def is_realtime_session_started(now: datetime | None = None) -> bool:
     """A-share live quote requests may start at 09:15 on trading weekdays."""
     current = now or datetime.now()
     return current.weekday() < 5 and current.time() >= wall_time(9, 15)
+
+
+def current_market_trade_date(now: datetime | None = None) -> str | None:
+    """Return today's date only when Sina's live benchmark quote confirms a session today."""
+    current = now or datetime.now(ZoneInfo("Asia/Shanghai"))
+    if current.weekday() >= 5 or current.time() < wall_time(9, 15):
+        return None
+
+    quote = fetch_realtime_quote("sh000001")
+    today = current.date().isoformat()
+    if not quote or quote.get("trade_date") != today:
+        return None
+    return today
 
 
 # 板块分类接口（GBK 编码，旧概念分类，覆盖面窄且多年未更新——已弃用，仅行业分类 class_dp 还在用）
