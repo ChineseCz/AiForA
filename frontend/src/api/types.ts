@@ -471,6 +471,7 @@ export interface StrategyReviewResp {
 }
 
 export interface StrategyCombinationResp {
+  cache?: { hit: boolean };
   buy_strategies?: string[];
   sell_strategies?: string[];
   start: string;

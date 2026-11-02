@@ -6,6 +6,8 @@ from collections.abc import Callable
 import time
 import math
 import json
+import hashlib
+import inspect
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -112,9 +114,9 @@ def _signal_series(bars: list[dict], key: str) -> list[bool]:
     if key == "rsi_oversold_bounce":
         return indicators.daily_rsi_bounce_series(bars)
     if key == "pullback_low_volume":
-        return [bool((m := indicators.pullback_low_volume_metrics(bars[:i + 1])) and m["had_spike_rise"] and m["near_ma"] and m["low_volume"]) for i in range(len(bars))]
+        return indicators.daily_pullback_low_volume_series(bars)
     if key == "volume_price_up":
-        return [bool((m := indicators.volume_price_up_metrics(bars[:i + 1])) and m["streak_ok"]) for i in range(len(bars))]
+        return indicators.daily_volume_price_up_series(bars)
     if key == "sell_ma_death_cross":
         closes = [b["close"] for b in bars]
         ma5 = indicators.moving_avg(closes, 5)
@@ -213,7 +215,7 @@ async def run_combination(session: AsyncSession, buy_strategy: str, sell_strateg
                          "avg_return_pct": round(statistics.mean(t["return_pct"] for t in closed), 2) if closed else None}}
 
 
-async def run_expression_combination(session: AsyncSession, buy_strategies: list[str], sell_strategies: list[str],
+async def _run_expression_combination_uncached(session: AsyncSession, buy_strategies: list[str], sell_strategies: list[str],
                                      buy_operator: str = "OR", sell_operator: str = "OR",
                                      start: str | None = None, end: str | None = None, limit: int = 500,
                                      initial_capital: float = 100000, max_positions: int = 10,
@@ -255,6 +257,8 @@ async def run_expression_combination(session: AsyncSession, buy_strategies: list
     signals_by_date: dict[str, list[dict]] = defaultdict(list)
     # 组合估值只需要收盘价，不保留整行行情，显著降低内存占用。
     prices_by_date: dict[str, dict[str, float]] = defaultdict(dict)
+    trade_dates: set[str] = set()
+    candidate_codes: set[str] = set()
 
     def process_code(code: str, bars: list[dict]) -> None:
         buy = _combine_series([_signal_series(bars, key) for key in buy_strategies], buy_operator)
@@ -263,12 +267,14 @@ async def run_expression_combination(session: AsyncSession, buy_strategies: list
         for i, bar in enumerate(bars):
             day = str(bar["trade_date"])
             if day >= start and (not end or day <= end):
-                prices_by_date[day][code] = float(bar["close"])
+                trade_dates.add(day)
                 # 信号在收盘前确认，按当日收盘价计入执行；锁死涨停由执行层跳过。
-                signals_by_date[day].append({
-                    "code": code, "bar": bar, "execution_bar": bar,
-                    "signal_date": day, "buy": buy[i], "sell": sell[i],
-                })
+                if buy[i] or sell[i]:
+                    candidate_codes.add(code)
+                    signals_by_date[day].append({
+                        "code": code, "bar": bar, "execution_bar": bar,
+                        "signal_date": day, "buy": buy[i], "sell": sell[i],
+                    })
             if holding is None and buy[i] and not _is_locked_limit_up(code, bar):
                 holding = (i, bar)
             elif holding is not None and i > holding[0] and sell[i]:
@@ -317,6 +323,21 @@ async def run_expression_combination(session: AsyncSession, buy_strategies: list
         if row["close"] and row["close"] > 0 and row["open"] is not None and row["volume"] is not None:
             current_bars.append(row)
     finish_code()
+    if candidate_codes and trade_dates:
+        price_rows = await session.stream(
+            text("""
+                SELECT code, trade_date, close
+                FROM stock_daily
+                WHERE code = ANY(:codes)
+                  AND trade_date >= :start
+                  AND (:end IS NULL OR trade_date <= :end)
+                  AND close > 0
+                ORDER BY trade_date, code
+            """),
+            {"codes": list(candidate_codes), "start": start, "end": end},
+        )
+        async for price_row in price_rows.mappings():
+            prices_by_date[str(price_row["trade_date"])][price_row["code"]] = float(price_row["close"])
     trades.sort(key=lambda x: x["buy_date"], reverse=True)
     closed = [t for t in trades if t["status"] == "closed"]
     # 组合层：仍按逐股票信号驱动，但增加资金、持仓上限、排序和费用约束。
@@ -345,19 +366,16 @@ async def run_expression_combination(session: AsyncSession, buy_strategies: list
     positions: dict[str, dict] = {}
     portfolio_trades = []
     equity_curve = []
-    for day in sorted(signals_by_date):
-        day_signals = signals_by_date[day]
+    for day in sorted(trade_dates):
+        day_signals = signals_by_date.get(day, [])
+        sell_codes = {signal["code"] for signal in day_signals if signal["sell"]}
         # 先卖出，释放资金后再处理当日买入信号。
-        for signal in day_signals:
-            code = signal["code"]
-            pos = positions.get(code)
-            if not pos:
-                continue
-            price = signal["execution_bar"].get("close")
+        for code, pos in list(positions.items()):
+            price = prices_by_date.get(day, {}).get(code)
             price = float(price) if price is not None and float(price) > 0 else None
             if price is None:
                 continue
-            if signal["sell"]:
+            if code in sell_codes:
                 sell_shares = pos["shares"]
                 reason = "sell_signal"
             else:
@@ -486,6 +504,56 @@ async def run_expression_combination(session: AsyncSession, buy_strategies: list
                          "in_sample_return_pct": round((in_sample[-1]["equity"] / initial_capital - 1) * 100, 2) if in_sample else None,
                          "out_sample_return_pct": round((out_sample[-1]["equity"] / out_sample[0]["equity"] - 1) * 100, 2) if out_sample else None,
                          "out_sample_max_drawdown_pct": _max_drawdown([x["equity"] for x in out_sample]) if out_sample else None}}
+
+
+async def run_expression_combination(session: AsyncSession, *args, **kwargs) -> dict:
+    signature = inspect.signature(_run_expression_combination_uncached)
+    bound = signature.bind(session, *args, **kwargs)
+    bound.apply_defaults()
+    params = dict(bound.arguments)
+    params.pop("session")
+    progress_callback = params.pop("progress_callback", None)
+    today = date.today()
+    start = params.get("start") or date(today.year - 2, today.month, today.day).isoformat()
+    end = params.get("end")
+    cache_inputs = {key: value for key, value in params.items()}
+    cache_inputs["start"] = start
+    cache_inputs["signal_engine_version"] = 1
+    cache_key = hashlib.sha256(json.dumps(cache_inputs, sort_keys=True, separators=(",", ":"), default=str).encode()).hexdigest()
+    from datetime import timedelta
+    history_start = (date.fromisoformat(start) - timedelta(days=420)).isoformat()
+    source = (await session.execute(text("""
+        SELECT COUNT(*) AS row_count, MAX(trade_date) AS latest_date, MAX(fetched_at) AS latest_fetch
+        FROM stock_daily
+        WHERE trade_date >= :start AND (:end IS NULL OR trade_date <= :end)
+    """), {"start": history_start, "end": end})).mappings().one()
+    data_signature = f"{source['row_count']}:{source['latest_date']}:{source['latest_fetch']}"
+    cached = (await session.execute(text("""
+        SELECT result FROM strategy_backtest_cache
+        WHERE cache_key = :key AND data_signature = :signature
+    """), {"key": cache_key, "signature": data_signature})).scalar_one_or_none()
+    if cached is not None:
+        if progress_callback:
+            progress_callback(1, 1)
+        result = dict(cached)
+        result["cache"] = {"hit": True}
+        return result
+
+    result = await _run_expression_combination_uncached(session, *args, **kwargs)
+    await session.execute(text("""
+        INSERT INTO strategy_backtest_cache (cache_key, data_signature, result, created_at)
+        VALUES (:key, :signature, CAST(:result AS json), :created_at)
+        ON CONFLICT (cache_key) DO UPDATE SET
+            data_signature = EXCLUDED.data_signature,
+            result = EXCLUDED.result,
+            created_at = EXCLUDED.created_at
+    """), {"key": cache_key, "signature": data_signature,
+          "result": json.dumps(result, ensure_ascii=False), "created_at": int(time.time())})
+    await session.execute(text("DELETE FROM strategy_backtest_cache WHERE created_at < :cutoff"),
+                          {"cutoff": int(time.time()) - 90 * 24 * 3600})
+    await session.commit()
+    result["cache"] = {"hit": False}
+    return result
 
 
 async def list_saved_combinations(session: AsyncSession, user_id: str) -> list[dict]:

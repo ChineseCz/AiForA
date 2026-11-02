@@ -1,3 +1,4 @@
+from app.services import indicators
 from app.services.strategy_review import _annualized_return, _is_locked_limit_up, _is_st_name, _max_drawdown, _select_entry_candidates, _signal_series
 
 
@@ -36,3 +37,25 @@ def test_extended_buy_and_stop_loss_series_are_available():
     assert len(_signal_series(bars, "pullback_low_volume")) == len(bars)
     assert len(_signal_series(bars, "volume_price_up")) == len(bars)
     assert len(_signal_series(bars, "sell_stop_loss")) == len(bars)
+
+
+def test_optimized_daily_signals_match_prefix_metric_calculations():
+    bars = []
+    close = 20.0
+    volume = 1000.0
+    for i in range(160):
+        close += ((i * 17) % 9 - 4) * 0.08
+        volume = 500 + (i * 137) % 900
+        bars.append({"open": close - 0.1, "close": close, "high": close + 0.2, "low": close - 0.3, "volume": volume})
+
+    expected_pullback = []
+    expected_volume_price = []
+    for i in range(len(bars)):
+        prefix = bars[:i + 1]
+        metrics = indicators.pullback_low_volume_metrics(prefix)
+        expected_pullback.append(bool(metrics and metrics["had_spike_rise"] and metrics["near_ma"] and metrics["low_volume"]))
+        volume_metrics = indicators.volume_price_up_metrics(prefix)
+        expected_volume_price.append(bool(volume_metrics and volume_metrics["streak_ok"]))
+
+    assert indicators.daily_pullback_low_volume_series(bars) == expected_pullback
+    assert indicators.daily_volume_price_up_series(bars) == expected_volume_price

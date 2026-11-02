@@ -303,6 +303,59 @@ def volume_price_up_metrics(bars: list[dict], streak_days: int = 3) -> dict | No
     return {"streak_ok": streak_ok}
 
 
+def daily_volume_price_up_series(bars: list[dict], streak_days: int = 3) -> list[bool]:
+    """Linear-time daily equivalent of volume_price_up_metrics."""
+    n = len(bars)
+    out = [False] * n
+    for i in range(streak_days, n):
+        out[i] = all(
+            bars[j]["close"] > bars[j - 1]["close"]
+            and bars[j]["volume"] > bars[j - 1]["volume"]
+            for j in range(i - streak_days + 1, i + 1)
+        )
+    return out
+
+
+def daily_pullback_low_volume_series(
+    bars: list[dict], lookback_days: int = 10, ma_period: int = 20,
+    near_pct: float = 0.02, recent_days: int = 3, avg_days: int = 20,
+    spike_mult: float = 1.5, low_volume_mult: float = 0.7,
+) -> list[bool]:
+    """Linear-time daily equivalent of pullback_low_volume_metrics."""
+    n = len(bars)
+    out = [False] * n
+    min_len = max(lookback_days, avg_days) + recent_days + 1
+    if n < min_len:
+        return out
+
+    closes = [bar["close"] for bar in bars]
+    volumes = [bar["volume"] for bar in bars]
+    ma = moving_avg(closes, ma_period)
+    volume_prefix = [0.0]
+    for volume in volumes:
+        volume_prefix.append(volume_prefix[-1] + volume)
+
+    spike_prefix = [0]
+    for i in range(n):
+        spike = False
+        if i >= avg_days:
+            baseline = (volume_prefix[i] - volume_prefix[i - avg_days]) / avg_days
+            spike = baseline > 0 and volumes[i] > baseline * spike_mult and closes[i] > closes[i - 1]
+        spike_prefix.append(spike_prefix[-1] + int(spike))
+
+    for i in range(min_len - 1, n):
+        if ma[i] is None or not ma[i]:
+            continue
+        spike_start = i - lookback_days + 1
+        had_spike_rise = spike_prefix[i + 1] > spike_prefix[spike_start]
+        near_ma = abs(closes[i] / ma[i] - 1) <= near_pct
+        recent_avg = (volume_prefix[i + 1] - volume_prefix[i + 1 - recent_days]) / recent_days
+        base_avg = (volume_prefix[i + 1] - volume_prefix[i + 1 - avg_days]) / avg_days
+        low_volume = base_avg > 0 and recent_avg < base_avg * low_volume_mult
+        out[i] = had_spike_rise and near_ma and low_volume
+    return out
+
+
 def daily_golden_signal_series(
     dif: list[float], dea: list[float], k_list: list[float], d_list: list[float],
     cross_days: int = 4, require_both: bool = True,
