@@ -1,6 +1,6 @@
 import {
   BulbFilled, BulbOutlined, DashboardOutlined, MessageOutlined,
-  MoreOutlined, RadarChartOutlined, SettingOutlined, StarOutlined, UserOutlined,
+  BookOutlined, MoreOutlined, RadarChartOutlined, SettingOutlined, StarOutlined, UserOutlined,
 } from "@ant-design/icons";
 import { Button, Dropdown, Input, Layout, Menu, Modal, Tabs, theme, Typography, message } from "antd";
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
@@ -26,6 +26,7 @@ const Dashboard = lazy(() => import("./pages/Dashboard"));
 const Screener = lazy(() => import("./pages/Screener"));
 const StockDetail = lazy(() => import("./pages/StockDetail"));
 const NationalTeam = lazy(() => import("./pages/NationalTeam"));
+const LearningCenter = lazy(() => import("./pages/LearningCenter"));
 
 const { Sider, Content, Header } = Layout;
 
@@ -33,6 +34,7 @@ const NAV = [
   { key: "/", icon: <DashboardOutlined />, label: "看板" },
   { key: "/feed", icon: <MessageOutlined />, label: "大V动态" },
   { key: "/screener", icon: <RadarChartOutlined />, label: "选股" },
+  { key: "/learn", icon: <BookOutlined />, label: "投资学习" },
   { key: "/my", icon: <StarOutlined />, label: "我的" },
 ];
 
@@ -417,6 +419,7 @@ export default function App() {
                 <Route path="/posts" element={<Navigate to="/feed" replace />} />
                 <Route path="/summary" element={<Navigate to="/feed" replace />} />
                 <Route path="/screener" element={<Screener />} />
+                <Route path="/learn" element={<LearningCenter />} />
                 <Route path="/sectors" element={<Navigate to="/screener" replace />} />
                 <Route path="/my" element={<My />} />
                 <Route path="/stock/:code" element={<StockDetail />} />
