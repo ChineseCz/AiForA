@@ -45,6 +45,11 @@ def scheduler_tick() -> None:
     rc = sync_redis.from_url(settings.redis_url, decode_responses=True)
     try:
         if rc.set(dedup_key, "1", nx=True, ex=86400):
+            # A crawl often takes longer than one scheduling interval. Do not
+            # accumulate browser jobs while a previous crawl is still active.
+            from app.repositories import jobs
+            if jobs.is_running("crawl"):
+                return
             from app.workers.tasks.browser import task_crawl
             task_crawl.delay(source="定时", summarize=True)
     finally:

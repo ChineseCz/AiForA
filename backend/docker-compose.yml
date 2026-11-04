@@ -132,7 +132,7 @@ services:
     # Start Xvfb directly so the container does not depend on xvfb-run's
     # readiness signal. Celery's solo pool keeps Playwright's asyncio loop
     # in one long-lived consumer process.
-    command: sh -c "Xvfb :99 -screen 0 1280x800x24 -nolisten tcp & sleep 1; exec env DISPLAY=:99 celery -A app.workers.celery_app worker -Q browser --pool=solo --loglevel=info"
+    command: sh -c "Xvfb :99 -screen 0 1280x800x24 -nolisten tcp & xvfb_pid=$$!; trap 'kill $$xvfb_pid 2>/dev/null || true; wait $$xvfb_pid 2>/dev/null || true' EXIT; sleep 1; env DISPLAY=:99 celery -A app.workers.celery_app worker -Q browser --pool=solo --loglevel=info & worker_pid=$$!; wait $$worker_pid"
     depends_on:
       postgres:
         condition: service_healthy
